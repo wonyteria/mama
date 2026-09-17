@@ -1,0 +1,18 @@
+{
+  "package": "kr.mom.probe",
+  "version": "0.1.0-probe",
+  "minSdk": 33,
+  "targetSdk": 36,
+  "apk": "mom-probe-0.1.0-debug.apk",
+  "bytes": 28335871,
+  "sha256": "1c7916ab00e228bb09897ff352abf0b4ac956706af8b57084e984e28a3a11382",
+  "signature": "Android debug certificate; APK signature v2 verified",
+  "testsPassed": 17,
+  "testsFailed": 0,
+  "lintErrors": 0,
+  "lintWarnings": 18,
+  "screenshots": "Production Compose views, Robolectric Android34 native Canvas; not physical device",
+  "physicalDeviceValidated": false,
+  "realSchoolNotificationValidated": false,
+  "aiFeaturesImplemented": false
+}

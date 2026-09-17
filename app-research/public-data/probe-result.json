@@ -1,0 +1,22 @@
+{
+  "requestedAt": "2026-09-12T23:30:14.126Z",
+  "url": "https://open.neis.go.kr/hub/SchoolSchedule?Type=json&pIndex=1&pSize=5",
+  "credentialUsed": false,
+  "requestCount": 1,
+  "status": 200,
+  "contentType": "application/json;charset=UTF-8",
+  "sha256": "c668d00a52956a81569728e3e3a336267c534a9c784c9a4ef69356dfe25b9def",
+  "responseBytes": 121,
+  "head": {
+    "CODE": "ERROR-300",
+    "MESSAGE": "필수 값이 누락되어 있습니다. 요청인자를 참고 하십시오."
+  },
+  "rowsReceived": 0,
+  "fieldsReceived": [],
+  "todayKst": "20260913",
+  "sample": [],
+  "upcomingRowsInSample": 0,
+  "privateCompletionFieldsObserved": [],
+  "apiJsonParsed": true,
+  "completedAt": "2026-09-12T23:30:14.396Z"
+}

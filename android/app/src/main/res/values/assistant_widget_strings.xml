@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="assistant_widget_name">모모 비서</string>
+    <string name="assistant_widget_description">모모를 눌러 챙길 일을 적고 확인하세요. 부탁 내용은 홈 화면에 표시하지 않아요.</string>
+    <string name="assistant_widget_title">모모</string>
+    <string name="assistant_widget_subtitle">소식을 함께 챙겨요</string>
+    <string name="assistant_widget_action">부탁하기</string>
+    <string name="assistant_widget_accessibility">모모 비서. 눌러서 부탁 적기와 준비 완료 표시</string>
+</resources>

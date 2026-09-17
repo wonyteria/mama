@@ -1,0 +1,56 @@
+[
+  {
+    "name": "베이비타임 - BabyTime (수유, 육아, 일기)",
+    "packageId": "yducky.application.babytime",
+    "reachEvidence": "2026-09-13 한국어 Google Play 표시 100만+ 다운로드(국가별 아님). MAU·한국 엄마 침투율 미확인.",
+    "workflow": "출생 후 영아 중심. 보호자가 수유·수면·기저귀 등을 입력/타이머로 기록하고 가족과 동기화·통계 확인. 자동 백업은 자동 측정이 아님.",
+    "agentValue": "[가설] 기존 기록으로 보호자 인수인계 요약. 기록을 새로 요구하는 독립 앱은 무입력 목표에 부적합.",
+    "accessStatus": "현재 Play에 통계 그림 공유 명시. 과거 공식 보도키트에 PDF export 명시(현재 Android 제공 범위 재확인 필요). 공개 API 미확인.",
+    "limitations": "앱 설치 실증 없음. 2021-04-03 노출 리뷰는 가족 간 확인 부담 감소와 시차 혼란을 함께 언급; 오래된 단일 사례로 현재 결함 판단 불가.",
+    "sources": [
+      "https://play.google.com/store/apps/details?hl=ko&id=yducky.application.babytime",
+      "https://www.babytime.care/ko/",
+      "https://www.babytime.care/wp-content/uploads/2016/06/BabyTIme-Press.pdf"
+    ]
+  },
+  {
+    "name": "베이비빌리 - 임신, 임신준비, 육아, 태교 앱",
+    "packageId": "kr.villagebaby.billyapplication",
+    "reachEvidence": "2026-09-13 한국어 Google Play 표시 100만+ 다운로드. 공식 200만 엄빠 문구는 산정 범위 불명인 마케팅 주장; MAU 아님.",
+    "workflow": "임신준비·임신·육아. 시기별 콘텐츠, 건강/성장 기록, 커뮤니티·쇼핑. 일지와 건강 수치는 사용자 기록이며 콘텐츠 푸시는 상태 측정이 아님.",
+    "agentValue": "[가설] 이미 저장된 준비 항목·일정을 실행 시점으로 연결. 월령별 콘텐츠 요약만으로는 기존 기능과 차별화 약함.",
+    "accessStatus": "현재 한국어 Play에 성장 기록 PDF 다운로드와 부부 기록/공유 명시. PDF의 포함 필드·기계 판독성·자동 갱신 및 공개 API는 미확인.",
+    "limitations": "2026-03-02 노출 리뷰의 주수/메시지 불일치 불안과 2026-09-04 시기별 정보 유용성은 가설 재료. 리뷰 대표성·현행 재현 미검증.",
+    "sources": [
+      "https://play.google.com/store/apps/details?hl=ko&id=kr.villagebaby.billyapplication",
+      "https://babybilly.co/ko"
+    ]
+  },
+  {
+    "name": "마미톡 - 임신, 육아 필수 앱",
+    "packageId": "com.mommytalkappv1",
+    "reachEvidence": "2026-09-13 한국어 Google Play 표시 50만+ 다운로드. No.1/모든 산모 문구는 보급률 근거로 미사용.",
+    "workflow": "임신부터 신생아·유아. 병원 녹화 초음파 영상 수신·가족 공유, 시기별 정보, 사용자 수유·수면·성장 기록, 커뮤니티·쇼핑.",
+    "agentValue": "[가설] 병원에서 생성된 자료의 재입력 감소를 참고. 검사 예약·준비 안내 연결은 실제 전달 내용/접근 증거가 있어야 가능.",
+    "accessStatus": "초음파 영상 가족 공유는 공식 안내됨. 외부 에이전트용 기록 API·구조화 export·캘린더 연동은 미확인.",
+    "limitations": "초음파 영상은 의료 상태를 비서가 추론할 근거로 사용하지 않음. 영어권 노출 리뷰 2024-05-29/12-05에 언어 추가 요청; 한국 엄마 수요 대표성 없음.",
+    "sources": [
+      "https://play.google.com/store/apps/details?hl=ko&id=com.mommytalkappv1",
+      "https://play.google.com/store/apps/details?gl=KR&id=com.mommytalkappv1",
+      "https://mmtalk.kr/"
+    ]
+  },
+  {
+    "name": "열나요 - 집에서 시작하는 우리 아이 열관리",
+    "packageId": "com.appmd.fever",
+    "reachEvidence": "2026-09-13 한국어 Google Play 표시 100만+ 다운로드. 모바일닥터 앱. 열기(com.crespfab.yeoljigi.yeoljigi)와 다른 제품.",
+    "workflow": "영유아·소아 발열 에피소드. 보호자가 체온·복약·증상 등을 입력, 타임라인과 케어 알림 확인. 미측정 체온/실제 투약의 무입력 확보 근거 없음.",
+    "agentValue": "[가설] 적법하게 받은 기존 기록으로 인수인계·진료 전 자료 정리. 투약 판단 재생산보다 전문 앱 원문 연결. 상시 가족 비서 초기 기능 우선순위는 낮음.",
+    "accessStatus": "공식 사이트에 이력 공유·진료용 1장 차트 명시. 기계 판독 export·공개 API·자동 동기화는 미확인. 제휴 문의는 API 제공 증거가 아님.",
+    "limitations": "2021-11-05 그래프/알림 유용성, 2019-12-09 알림 통제/내보내기 불만 리뷰는 과거 사례. 현행 결함 판단 불가. 의료 효능을 검증하지 않음.",
+    "sources": [
+      "https://play.google.com/store/apps/details?hl=ko&id=com.appmd.fever",
+      "https://fevercoach.net/"
+    ]
+  }
+]

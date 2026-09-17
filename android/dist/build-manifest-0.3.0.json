@@ -1,0 +1,28 @@
+{
+  "package": "kr.mom.probe",
+  "version": "0.3.0-companion",
+  "versionCode": 3,
+  "minSdk": 33,
+  "targetSdk": 36,
+  "apk": "나는엄마다-0.3.0.apk",
+  "bytes": 21210614,
+  "sha256": "6694363F10CBF39B60B086D33A71DF4815ABD44F1B30922B0404CCE58A41F7DE",
+  "signature": "Android debug certificate; APK Signature Scheme v2 verified",
+  "testsPassed": 27,
+  "testsFailed": 0,
+  "lintErrors": 0,
+  "lintWarnings": 46,
+  "features": [
+    "encrypted assistant tasks",
+    "home screen widget",
+    "morning/noon/evening briefings",
+    "optional exact-alarm/full-screen permission",
+    "tap-to-listen Korean TTS",
+    "web session prototype with honest UNVERIFIED wording"
+  ],
+  "websiteDataReadingValidated": false,
+  "websiteSessionRenewalValidated": false,
+  "parentAccountAutomationImplemented": false,
+  "agentTaskEngineImplemented": false,
+  "physicalDevice": "Galaxy S24+ SM-S926N / Android 16 pending fresh install"
+}

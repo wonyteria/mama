@@ -1,0 +1,94 @@
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stream=
+kr.mom.probe.DeviceAgentSmokeTest:
+INSTRUMENTATION_STATUS: test=datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stack=androidx.compose.ui.test.ComposeTimeoutException: Condition still not satisfied after 10000 ms
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:504)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:138)
+	at kr.mom.probe.DeviceAgentSmokeTest.datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch(DeviceAgentSmokeTest.kt:101)
+
+INSTRUMENTATION_STATUS: stream=
+Error in datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch(kr.mom.probe.DeviceAgentSmokeTest):
+androidx.compose.ui.test.ComposeTimeoutException: Condition still not satisfied after 10000 ms
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:504)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:138)
+	at kr.mom.probe.DeviceAgentSmokeTest.datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch(DeviceAgentSmokeTest.kt:101)
+
+INSTRUMENTATION_STATUS: test=datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: Failed to perform checkIsDisplayed check: Expected at most 1 node but found 2 nodes that satisfy (Text + InputText + EditableText contains '오전인지 오후인지 알려주세요' (ignoreCase: false) as substring)
+	at androidx.compose.ui.test.AndroidAssertions_androidKt.checkIsDisplayed(AndroidAssertions.android.kt:35)
+	at androidx.compose.ui.test.AssertionsKt.isDisplayed(Assertions.kt:347)
+	at androidx.compose.ui.test.AssertionsKt.assertIsDisplayed(Assertions.kt:33)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:141)
+	at kr.mom.probe.DeviceAgentSmokeTest.ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath(DeviceAgentSmokeTest.kt:77)
+
+INSTRUMENTATION_STATUS: stream=
+Error in ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath(kr.mom.probe.DeviceAgentSmokeTest):
+java.lang.AssertionError: Failed to perform checkIsDisplayed check: Expected at most 1 node but found 2 nodes that satisfy (Text + InputText + EditableText contains '오전인지 오후인지 알려주세요' (ignoreCase: false) as substring)
+	at androidx.compose.ui.test.AndroidAssertions_androidKt.checkIsDisplayed(AndroidAssertions.android.kt:35)
+	at androidx.compose.ui.test.AssertionsKt.isDisplayed(Assertions.kt:347)
+	at androidx.compose.ui.test.AssertionsKt.assertIsDisplayed(Assertions.kt:33)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:141)
+	at kr.mom.probe.DeviceAgentSmokeTest.ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath(DeviceAgentSmokeTest.kt:77)
+
+INSTRUMENTATION_STATUS: test=ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=localTaskCommandSavesAndUndoesWithScreenshots
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=3
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=localTaskCommandSavesAndUndoesWithScreenshots
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=
+
+Time: 16.352
+There were 2 failures:
+1) datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch(kr.mom.probe.DeviceAgentSmokeTest)
+androidx.compose.ui.test.ComposeTimeoutException: Condition still not satisfied after 10000 ms
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:504)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:138)
+	at kr.mom.probe.DeviceAgentSmokeTest.datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch(DeviceAgentSmokeTest.kt:101)
+2) ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath(kr.mom.probe.DeviceAgentSmokeTest)
+java.lang.AssertionError: Failed to perform checkIsDisplayed check: Expected at most 1 node but found 2 nodes that satisfy (Text + InputText + EditableText contains '오전인지 오후인지 알려주세요' (ignoreCase: false) as substring)
+	at androidx.compose.ui.test.AndroidAssertions_androidKt.checkIsDisplayed(AndroidAssertions.android.kt:35)
+	at androidx.compose.ui.test.AssertionsKt.isDisplayed(Assertions.kt:347)
+	at androidx.compose.ui.test.AssertionsKt.assertIsDisplayed(Assertions.kt:33)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:141)
+	at kr.mom.probe.DeviceAgentSmokeTest.ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath(DeviceAgentSmokeTest.kt:77)
+
+FAILURES!!!
+Tests run: 3,  Failures: 2
+
+
+INSTRUMENTATION_CODE: -1

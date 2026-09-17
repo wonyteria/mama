@@ -1,0 +1,26 @@
+{
+  "label": "Entirely synthetic, hand-labelled cases. Not real school notifications or LLM outputs.",
+  "observationalCounterexample": {
+    "notificationA": {"source":"synthetic.school","title":"새 공지","text":"새 공지가 등록되었습니다.","key":"same-key","postedAt":"2026-09-13T09:00:00+09:00"},
+    "notificationB": {"source":"synthetic.school","title":"새 공지","text":"새 공지가 등록되었습니다.","key":"same-key","postedAt":"2026-09-13T09:00:00+09:00"},
+    "documentA": {"text":"9월 14일까지 동의서를 제출하세요.","requiredAction":"동의서 제출","due":"2026-09-14"},
+    "documentB": {"text":"9월 18일까지 체험학습비를 납부하세요.","requiredAction":"체험학습비 납부","due":"2026-09-18"}
+  },
+  "baseEvent": {"source":"synthetic.school","text":"첫째 동의서 제출 2026-09-14","proposal":{"kind":"task","documentId":"doc-1","action":"동의서 제출","child":"첫째","due":"2026-09-14"}},
+  "cases": [
+    {"name":"unselected source produces no storage or queue", "operations":[{"type":"ingest","patch":{"source":"synthetic.bank"}}], "results":["ignored_source"], "records":0,"queue":0,"writes":0},
+    {"name":"explicit supported fields form one task", "operations":[{"type":"ingest"}], "results":["created"], "records":1,"queue":1,"writes":1,"status":"open"},
+    {"name":"duplicate produces no additional write", "operations":[{"type":"ingest"},{"type":"ingest"}], "results":["created","duplicate"], "records":1,"queue":1,"writes":1},
+    {"name":"notification dismissal is not completion or business cancellation", "operations":[{"type":"ingest"},{"type":"ingest","patch":{"kind":"notification_removed"}}], "results":["created","notification_only"], "records":1,"queue":1,"writes":1,"status":"open"},
+    {"name":"user completion clears reminder", "operations":[{"type":"ingest"},{"type":"complete"}], "results":["created","complete"], "records":1,"queue":0,"writes":2,"status":"complete"},
+    {"name":"late duplicate cannot resurrect completed task", "operations":[{"type":"ingest"},{"type":"complete"},{"type":"ingest"}], "results":["created","complete","closed_task_unchanged"], "records":1,"queue":0,"writes":2,"status":"complete"},
+    {"name":"revocation clears unsent queue and blocks new payload", "operations":[{"type":"ingest"},{"type":"revoke"},{"type":"ingest"}], "results":["created","revoked","ignored_source"], "records":1,"queue":0,"writes":1},
+    {"name":"same verified document update replaces reminder", "operations":[{"type":"ingest"},{"type":"ingest","patch":{"text":"첫째 동의서 제출 2026-09-15","proposal":{"kind":"task","documentId":"doc-1","action":"동의서 제출","child":"첫째","due":"2026-09-15"}}}], "results":["created","updated"], "records":1,"queue":1,"writes":2,"due":"2026-09-15"},
+    {"name":"explicit supported cancellation clears reminder", "operations":[{"type":"ingest"},{"type":"ingest","patch":{"text":"행사 취소","proposal":{"kind":"cancel","documentId":"doc-1","evidence":"행사 취소"}}}], "results":["created","cancelled"], "records":1,"queue":0,"writes":2,"status":"cancelled"},
+    {"name":"cancellation without evidence cannot cancel task", "operations":[{"type":"ingest"},{"type":"ingest","patch":{"text":"공지 확인","proposal":{"kind":"cancel","documentId":"doc-1","evidence":"행사 취소"}}}], "results":["created","needs_confirmation"], "records":1,"queue":1,"writes":1,"status":"open"},
+    {"name":"generic notification cannot support fabricated fields", "operations":[{"type":"ingest","patch":{"text":"새 공지가 등록되었습니다."}}], "results":["needs_confirmation"], "records":0,"queue":0,"writes":0},
+    {"name":"missing proposal asks for source", "operations":[{"type":"ingest","patch":{"text":"새 공지가 등록되었습니다.","proposal":null}}], "results":["needs_source"], "records":0,"queue":0,"writes":0},
+    {"name":"impossible calendar date is rejected", "operations":[{"type":"ingest","patch":{"text":"첫째 동의서 제출 2026-02-30","proposal":{"kind":"task","documentId":"doc-1","action":"동의서 제출","child":"첫째","due":"2026-02-30"}}}], "results":["needs_confirmation"], "records":0,"queue":0,"writes":0},
+    {"name":"source identity namespaces tasks", "operations":[{"type":"ingest"},{"type":"ingest","patch":{"source":"synthetic.otherSchool"}}], "results":["created","created"], "records":2,"queue":2,"writes":2}
+  ]
+}

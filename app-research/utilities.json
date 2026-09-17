@@ -1,0 +1,56 @@
+[
+  {
+    "name":"똑닥","packageId":"com.bbros.sayup",
+    "reachEvidence":{"type":"PLAY_INSTALL_BUCKET","value":"500만+","observedAt":"2026-09-13","scope":"Play 표시 누적 설치 구간. 한국 엄마 MAU·점유율 아님"},
+    "workflow":"병원 검색·예약·접수·실시간 대기순서",
+    "agentValue":"실제로 확보한 예약·방문 준비 정보를 교육 일정과 연결하는 후보",
+    "accessStatus":"NOTIFICATION_CONTENT_UNTESTED; PARENT_BOOKING_READ_API_NOT_FOUND_IN_REVIEWED_DOCS",
+    "limitations":["병원 EMR 연동은 공급자 시스템이며 우리 앱에 개인 예약 접근권한을 주지 않음","알림만으로 현재 대기순서·접수 유효성·진료 완료 보장 불가","증상 판단이나 복약 지시를 제품 효용으로 추정하지 않음"],
+    "sources":["https://play.google.com/store/apps/details?hl=ko&id=com.bbros.sayup","https://hospital.ddocdoc.com/signin"]
+  },
+  {
+    "name":"카카오톡","packageId":"com.kakao.talk",
+    "reachEvidence":{"type":"PLAY_INSTALL_BUCKET","value":"1억+","observedAt":"2026-09-13","scope":"Play 표시 글로벌 누적 설치 구간. 한국 엄마 이용률 아님"},
+    "workflow":"개인·가족·단체 대화, 기업 알림톡의 주문·결제·예약·배송 안내",
+    "agentValue":"실제 수신 알림에 있는 업무 사실을 기존 맥락과 연결하는 후보",
+    "accessStatus":"NO_GENERAL_PERSONAL_CHAT_READ_API; NOTIFICATION_CONTENT_UNTESTED",
+    "limitations":["개인 대화 전체·발신·사진·수정·삭제·과거 대화의 완전성 보장 못함","발송 API를 개인 수신함 조회 API로 취급하지 않음","최초 필수 소스로 강제하지 않으며 사용자 동의와 공개 지원 범위가 필요"],
+    "sources":["https://play.google.com/web/store/apps/details?gl=KR&hl=ko&id=com.kakao.talk","https://devtalk.kakao.com/t/topic/148362","https://developers.kakao.com/docs/ko/kakaotalk-message/rest-api"]
+  },
+  {
+    "name":"쿠팡","packageId":"com.coupang.mobile",
+    "reachEvidence":{"type":"PLAY_INSTALL_BUCKET","value":"5,000만+","observedAt":"2026-09-13","scope":"Play 누적 설치 구간. 지역·엄마·활성 계정 수 아님"},
+    "workflow":"생활용품 구매·주문·배송·반품",
+    "agentValue":"상품과 업무를 확실히 연결할 수 있을 때 준비물 도착·반품 확인 후보",
+    "accessStatus":"SELLER_API_DOCUMENTED_NOT_CONSUMER_ORDER_HISTORY; NOTIFICATION_CONTENT_UNTESTED",
+    "limitations":["OpenAPI의 vendorId/WING 판매자 권한은 보호자의 전체 구매 이력 권한이 아님","결제금액·배송완료 알림만으로 상품 상세나 준비 완료를 확정하지 않음","소비자 원문 주문 읽기 공개 API는 조사 문서에서 미발견"],
+    "sources":["https://play.google.com/store/apps/details?hl=ko&id=com.coupang.mobile","https://developers.coupangcorp.com/hc/ko/categories/360001818893-FAQs"]
+  },
+  {
+    "name":"뱅크샐러드","packageId":"com.rainist.banksalad2",
+    "reachEvidence":{"type":"PLAY_INSTALL_BUCKET","value":"500만+","observedAt":"2026-09-13","scope":"Play 누적 설치 구간. 엄마 사용자·유료 사용자 수 아님"},
+    "workflow":"자동 수입·지출·이체 분류와 자산 연결",
+    "agentValue":"자동 가계부의 대체재·품질 기대치. 교육 납부 업무 연결의 추가 가치 비교",
+    "accessStatus":"COMPETITOR_SUBSTITUTE; CONSUMER_READ_API_NOT_FOUND_IN_REVIEWED_DOCS",
+    "limitations":["뱅크샐러드가 금융정보를 연결한다고 제3자 비서도 같은 권한을 얻지 않음","카드 결제는 쇼핑 품목과 다름","초기 가계부 통합 사업은 무입력 확보·규정·유지비를 별도 검토해야 함"],
+    "sources":["https://play.google.com/store/apps/details?hl=ko&id=com.rainist.banksalad2","https://help.banksalad.com/2d2116e2-39f6-800b-84d4-cd26a7ba7dc4"]
+  },
+  {
+    "name":"Google Calendar","packageId":"com.google.android.calendar",
+    "reachEvidence":{"type":"PLAY_INSTALL_BUCKET","value":"100억+","observedAt":"2026-09-13","scope":"Play 표시 글로벌 누적 설치 구간. 사전설치·광범위 배포 영향과 별개로 실제 한국 엄마 활성 사용 미확인"},
+    "workflow":"이미 있는 개인·공유 일정, 일부 Gmail 예약의 자동 일정 추가",
+    "agentValue":"기존 일정의 읽기·갱신·취소 상태를 공식 API로 연결할 수 있는 후보",
+    "accessStatus":"OFFICIAL_READ_API_DOCUMENTED_AUTH_REQUIRED_FOR_PRIVATE_DATA; NOT_EXECUTED",
+    "limitations":["개인 일정은 사용자의 동의와 적절한 OAuth 범위 또는 기기 권한 필요","일정이 없는 사용자의 가족 행사를 자동 생성하는 증거가 아님","공개 일정 조회와 비공개 일정 권한은 별개","일정 존재는 참석·업무 완료를 뜻하지 않음"],
+    "sources":["https://play.google.com/store/apps/details?hl=ko&id=com.google.android.calendar","https://developers.google.com/workspace/calendar/api/auth","https://developers.google.com/workspace/calendar/api/v3/reference/events/list"]
+  },
+  {
+    "name":"TimeTree","packageId":"works.jubilee.timetree",
+    "reachEvidence":{"type":"PLAY_INSTALL_BUCKET","value":"1,000만+","observedAt":"2026-09-13","scope":"Play 누적 설치 구간. 글로벌 가족·커플·그룹 등을 포함, 한국 엄마 비율 미확인"},
+    "workflow":"가족 공유 일정·메모·댓글·변경 알림·음력 반복 일정",
+    "agentValue":"가족 일정 습관과 대체재 연구; 기존 Google 캘린더가 별도로 있으면 그 원천을 검토",
+    "accessStatus":"CONNECT_APP_PUBLIC_API_TERMINATED_2023_12_22",
+    "limitations":["과거 TimeTree API 가이드를 현재 연결 가능 근거로 쓰지 않음","외부 캘린더를 TimeTree에 가져오는 기능과 TimeTree 일정을 우리 앱이 읽는 기능은 다름","API 재개·별도 파트너 연동은 이번 조사에서 확인하지 못함"],
+    "sources":["https://play.google.com/store/apps/details?hl=ko&id=works.jubilee.timetree","https://timetreeapp.com/intl/en/newsroom/2023-12-14/connect-app-api-202312"]
+  }
+]

@@ -1,0 +1,151 @@
+{
+  "label": "Actual public API response experiment, not synthetic fixtures or product app.",
+  "attempts": [
+    {
+      "name": "schoolInfo",
+      "url": "https://open.neis.go.kr/hub/schoolInfo?Type=json&pIndex=1&pSize=5",
+      "requestedAt": "2026-09-12T23:31:08.717Z",
+      "credentialUsed": false,
+      "status": 200,
+      "sha256": "74c039c8544997778ca74ccf02ce26b2e9a168cfd5abb3f2b4c38537234326d7",
+      "bytes": 3991,
+      "result": [
+        {
+          "list_total_count": 12669
+        },
+        {
+          "RESULT": {
+            "CODE": "INFO-000",
+            "MESSAGE": "정상 처리되었습니다."
+          }
+        }
+      ],
+      "rowsReceived": 5,
+      "completedAt": "2026-09-12T23:31:08.865Z"
+    },
+    {
+      "name": "SchoolSchedule",
+      "url": "https://open.neis.go.kr/hub/SchoolSchedule?Type=json&pIndex=1&pSize=5&ATPT_OFCDC_SC_CODE=B10&SD_SCHUL_CODE=7010057",
+      "requestedAt": "2026-09-12T23:31:08.865Z",
+      "credentialUsed": false,
+      "status": 200,
+      "sha256": "42ddb3e9d227e0069de7b8aa2530ef07cb15a63ad947dbb94137fdf161344e08",
+      "bytes": 2493,
+      "result": [
+        {
+          "list_total_count": 391
+        },
+        {
+          "RESULT": {
+            "CODE": "INFO-000",
+            "MESSAGE": "정상 처리되었습니다."
+          }
+        }
+      ],
+      "rowsReceived": 5,
+      "completedAt": "2026-09-12T23:31:08.914Z"
+    }
+  ],
+  "selectedSchool": {
+    "name": "가락고등학교",
+    "officeCode": "B10",
+    "schoolCode": "7010057"
+  },
+  "observedFields": [
+    "ATPT_OFCDC_SC_CODE",
+    "SD_SCHUL_CODE",
+    "AY",
+    "AA_YMD",
+    "ATPT_OFCDC_SC_NM",
+    "SCHUL_NM",
+    "DGHT_CRSE_SC_NM",
+    "SCHUL_CRSE_SC_NM",
+    "EVENT_NM",
+    "EVENT_CNTNT",
+    "ONE_GRADE_EVENT_YN",
+    "TW_GRADE_EVENT_YN",
+    "THREE_GRADE_EVENT_YN",
+    "FR_GRADE_EVENT_YN",
+    "FIV_GRADE_EVENT_YN",
+    "SIX_GRADE_EVENT_YN",
+    "SBTR_DD_SC_NM",
+    "LOAD_DTM"
+  ],
+  "events": [
+    {
+      "school": "가락고등학교",
+      "schoolYear": "2025",
+      "date": "20250301",
+      "event": "토요휴업일",
+      "description": "",
+      "grades": [
+        "Y",
+        "Y",
+        "Y",
+        "*",
+        "*",
+        "*"
+      ]
+    },
+    {
+      "school": "가락고등학교",
+      "schoolYear": "2025",
+      "date": "20250303",
+      "event": "대체공휴일",
+      "description": "",
+      "grades": [
+        "Y",
+        "Y",
+        "Y",
+        "*",
+        "*",
+        "*"
+      ]
+    },
+    {
+      "school": "가락고등학교",
+      "schoolYear": "2025",
+      "date": "20250304",
+      "event": "입학식",
+      "description": "",
+      "grades": [
+        "Y",
+        "N",
+        "N",
+        "*",
+        "*",
+        "*"
+      ]
+    },
+    {
+      "school": "가락고등학교",
+      "schoolYear": "2025",
+      "date": "20250304",
+      "event": "개학식",
+      "description": "",
+      "grades": [
+        "N",
+        "Y",
+        "Y",
+        "*",
+        "*",
+        "*"
+      ]
+    },
+    {
+      "school": "가락고등학교",
+      "schoolYear": "2025",
+      "date": "20250308",
+      "event": "토요휴업일",
+      "description": "",
+      "grades": [
+        "Y",
+        "Y",
+        "Y",
+        "*",
+        "*",
+        "*"
+      ]
+    }
+  ]
+}

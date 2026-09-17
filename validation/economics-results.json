@@ -1,0 +1,143 @@
+{
+  "status": "ILLUSTRATIVE_SCENARIOS_NOT_OBSERVED_BUSINESS_RESULTS",
+  "generatedAt": "2026-09-12T22:53:24.133Z",
+  "assumptions": {
+    "notice": "공식 API 단가·스토어 요율 외에는 모두 시나리오 가정. 토큰량·환율·세금·CS·해지·획득비는 실측 또는 확정 회계처리 아님. API 품질을 검증하거나 모델을 선정한 것이 아님.",
+    "sources": {
+      "apiPrice": "https://ai.google.dev/gemini-api/docs/pricing",
+      "apiPriceNote": "2026-09-13 열람, 2.5 Flash-Lite standard text $0.10/$0.40, 2.5 Flash standard text $0.30/$2.50 per million input/output tokens. Output includes thinking tokens. Not model endorsement.",
+      "storeFee": "https://support.google.com/googleplay/android-developer/answer/112622?hl=en",
+      "storeFeeNote": "한국 Google Play 자동 갱신 구독 기본 15% 시나리오. 다른 지역·결제 프로그램·향후 변경은 미반영."
+    },
+    "pricesKrw": [
+      4900,
+      7900
+    ],
+    "common": {
+      "taxRate": 0.1,
+      "storeFeeRate": 0.15,
+      "refundRate": 0.02,
+      "fxKrwPerUsd": 1400,
+      "supportHourlyKrw": 30000,
+      "fixedMonthlyKrw": 5000000,
+      "paidCacKrw": 15000,
+      "monthlyChurn": 0.08
+    },
+    "scenarios": [
+      {
+        "name": "lean",
+        "calls": 100,
+        "inputTokens": 600,
+        "outputTokens": 100,
+        "inputUsdPerMillion": 0.1,
+        "outputUsdPerMillion": 0.4,
+        "infraKrw": 100,
+        "supportMinutes": 0.5
+      },
+      {
+        "name": "base",
+        "calls": 300,
+        "inputTokens": 800,
+        "outputTokens": 150,
+        "inputUsdPerMillion": 0.1,
+        "outputUsdPerMillion": 0.4,
+        "infraKrw": 300,
+        "supportMinutes": 2
+      },
+      {
+        "name": "stress",
+        "calls": 2500,
+        "inputTokens": 2000,
+        "outputTokens": 400,
+        "inputUsdPerMillion": 0.3,
+        "outputUsdPerMillion": 2.5,
+        "infraKrw": 700,
+        "supportMinutes": 8
+      }
+    ]
+  },
+  "results": [
+    {
+      "name": "lean",
+      "priceKrw": 4900,
+      "proceedsKrw": 3710.636363636363,
+      "modelCostKrw": 14,
+      "supportCostKrw": 250,
+      "contributionKrw": 3346.636363636363,
+      "breakEvenPaidHouseholds": 1495,
+      "contribution12MonthsKrw": 26452.383262796386,
+      "contribution12MonthsAfterCacKrw": 11452.383262796386,
+      "paybackMonthsWithin24": 6
+    },
+    {
+      "name": "lean",
+      "priceKrw": 7900,
+      "proceedsKrw": 5982.454545454545,
+      "modelCostKrw": 14,
+      "supportCostKrw": 250,
+      "contributionKrw": 5618.454545454545,
+      "breakEvenPaidHouseholds": 890,
+      "contribution12MonthsKrw": 44409.2207315515,
+      "contribution12MonthsAfterCacKrw": 29409.220731551497,
+      "paybackMonthsWithin24": 3
+    },
+    {
+      "name": "base",
+      "priceKrw": 4900,
+      "proceedsKrw": 3710.636363636363,
+      "modelCostKrw": 58.800000000000004,
+      "supportCostKrw": 1000,
+      "contributionKrw": 2351.836363636363,
+      "breakEvenPaidHouseholds": 2126,
+      "contribution12MonthsKrw": 18589.314793284844,
+      "contribution12MonthsAfterCacKrw": 3589.314793284844,
+      "paybackMonthsWithin24": 9
+    },
+    {
+      "name": "base",
+      "priceKrw": 7900,
+      "proceedsKrw": 5982.454545454545,
+      "modelCostKrw": 58.800000000000004,
+      "supportCostKrw": 1000,
+      "contributionKrw": 4623.654545454545,
+      "breakEvenPaidHouseholds": 1082,
+      "contribution12MonthsKrw": 36546.152262039956,
+      "contribution12MonthsAfterCacKrw": 21546.152262039956,
+      "paybackMonthsWithin24": 4
+    },
+    {
+      "name": "stress",
+      "priceKrw": 4900,
+      "proceedsKrw": 3710.636363636363,
+      "modelCostKrw": 5600,
+      "supportCostKrw": 4000,
+      "contributionKrw": -6589.363636363637,
+      "breakEvenPaidHouseholds": null,
+      "contribution12MonthsKrw": -52083.45139046725,
+      "contribution12MonthsAfterCacKrw": -67083.45139046725,
+      "paybackMonthsWithin24": null
+    },
+    {
+      "name": "stress",
+      "priceKrw": 7900,
+      "proceedsKrw": 5982.454545454545,
+      "modelCostKrw": 5600,
+      "supportCostKrw": 4000,
+      "contributionKrw": -4317.545454545455,
+      "breakEvenPaidHouseholds": null,
+      "contribution12MonthsKrw": -34126.613921712145,
+      "contribution12MonthsAfterCacKrw": -49126.613921712145,
+      "paybackMonthsWithin24": null
+    }
+  ],
+  "freeCostSensitivity": [
+    {
+      "freeCostKrw": 300,
+      "minimumPaidShare": 0.11312915235411485
+    },
+    {
+      "freeCostKrw": 800,
+      "minimumPaidShare": 0.2538202837018535
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "package": "kr.mom.probe",
+  "version": "0.4.0",
+  "versionCode": 4,
+  "minSdk": 33,
+  "targetSdk": 36,
+  "apk": "나는엄마다-0.4.0.apk",
+  "bytes": 21226998,
+  "sha256": "0983842C165B2BA8C97B79C91D0A7B39DDBF4B679B058CB5A70D555453BC2940",
+  "signature": "Android debug certificate; APK Signature Scheme v2 verified",
+  "testsPassed": 29,
+  "testsFailed": 0,
+  "lintErrors": 0,
+  "lintWarnings": 48,
+  "websiteHealthWorkerSource": true,
+  "websiteDataReadingValidated": false,
+  "websiteSessionRenewalValidated": false,
+  "installedSourceRecommendations": true,
+  "assistantTasks": true,
+  "briefings": true,
+  "lockscreenPrivateNotificationValidated": true,
+  "physicalDevice": "Galaxy S24+ SM-S926N / Android 16"
+}

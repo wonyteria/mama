@@ -1,0 +1,25 @@
+{
+  "notice": "공식 API 단가·스토어 요율 외에는 모두 시나리오 가정. 토큰량·환율·세금·CS·해지·획득비는 실측 또는 확정 회계처리 아님. API 품질을 검증하거나 모델을 선정한 것이 아님.",
+  "sources": {
+    "apiPrice": "https://ai.google.dev/gemini-api/docs/pricing",
+    "apiPriceNote": "2026-09-13 열람, 2.5 Flash-Lite standard text $0.10/$0.40, 2.5 Flash standard text $0.30/$2.50 per million input/output tokens. Output includes thinking tokens. Not model endorsement.",
+    "storeFee": "https://support.google.com/googleplay/android-developer/answer/112622?hl=en",
+    "storeFeeNote": "한국 Google Play 자동 갱신 구독 기본 15% 시나리오. 다른 지역·결제 프로그램·향후 변경은 미반영."
+  },
+  "pricesKrw": [4900, 7900],
+  "common": {
+    "taxRate": 0.1,
+    "storeFeeRate": 0.15,
+    "refundRate": 0.02,
+    "fxKrwPerUsd": 1400,
+    "supportHourlyKrw": 30000,
+    "fixedMonthlyKrw": 5000000,
+    "paidCacKrw": 15000,
+    "monthlyChurn": 0.08
+  },
+  "scenarios": [
+    {"name":"lean","calls":100,"inputTokens":600,"outputTokens":100,"inputUsdPerMillion":0.1,"outputUsdPerMillion":0.4,"infraKrw":100,"supportMinutes":0.5},
+    {"name":"base","calls":300,"inputTokens":800,"outputTokens":150,"inputUsdPerMillion":0.1,"outputUsdPerMillion":0.4,"infraKrw":300,"supportMinutes":2},
+    {"name":"stress","calls":2500,"inputTokens":2000,"outputTokens":400,"inputUsdPerMillion":0.3,"outputUsdPerMillion":2.5,"infraKrw":700,"supportMinutes":8}
+  ]
+}

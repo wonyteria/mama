@@ -1,0 +1,54 @@
+{
+  "reviewedAtKst": "2026-09-13",
+  "sources": [
+    {
+      "id": "neis-school-schedule",
+      "provider": "교육부/나이스 교육정보개방포털",
+      "status": "live_keyless_sample_verified",
+      "documentation": "https://open.neis.go.kr/portal/data/service/selectServicePage.do?cateId=A0005&infId=OPEN17220190722175038389180&infSeq=2&page=1&rows=10&sortColumn=&sortDirection=",
+      "endpoint": "https://open.neis.go.kr/hub/SchoolSchedule",
+      "authentication": "Keyless sample permitted; production use requires issued API key per official guide.",
+      "documentedSampleLimits": {"page":1,"rows":5},
+      "documentedRequestsPerSecond": null,
+      "documentedDailyQuota": null,
+      "licenseOnDatasetPage": "이용 허락 범위 제한없음",
+      "documentedLoadFrequency": "매일",
+      "observedSampleSchool": "가락고등학교",
+      "observedSampleDateRange": ["2025-03-01","2025-03-08"],
+      "observedLoadDate": "2026-09-13",
+      "eventTruthIndependentlyVerified": false,
+      "currentUpcomingCoverageVerified": false,
+      "childSpecificActionsAvailable": false,
+      "consentOrPaymentCompletionAvailable": false,
+      "nextEvidenceNeeded": "Production credentials and explicit selected-school date-bounded evaluation, plus source-school freshness cross-check; not performed."
+    },
+    {
+      "id":"android-calendar-provider",
+      "provider":"Android device Calendar Provider",
+      "status":"official_api_documented_no_device_test",
+      "documentation":"https://developer.android.com/identity/providers/calendar-provider",
+      "access":"READ_CALENDAR runtime permission plus app-selected calendar IDs; read only initially",
+      "requiresAlreadyPresentCalendarData":true,
+      "capturesAbsentFamilyEvents":false,
+      "assumesEveryCalendarAppExposesProvider":false,
+      "crossFamilySharingAuthorizedByReadPermission":false,
+      "nextEvidenceNeeded":"Consented real device: enumerate calendars after permission, select calendars, inspect recurring events, deletion, timezone and sync latency; no private data was accessed."
+    },
+    {
+      "id":"schoolbell-private-notices",
+      "status":"public_third_party_read_api_not_found_in_searched_docs",
+      "documentation":"https://schoolbell-e.oopy.io/post_visibility_issue",
+      "unattendedAccessVerified":false,
+      "notificationContentSufficiencyVerified":false,
+      "knownLimit":"Notification can remain after source post deletion or recipient eligibility change."
+    },
+    {
+      "id":"ealimi-private-notices",
+      "status":"public_third_party_read_api_not_found_in_searched_docs",
+      "documentation":"https://www.ealimi.com/Promotion/Promotion",
+      "unattendedAccessVerified":false,
+      "notificationContentSufficiencyVerified":false,
+      "knownLimit":"Advertised API integration describes importing NEIS/public website data; it does not establish third-party access to private notices."
+    }
+  ]
+}

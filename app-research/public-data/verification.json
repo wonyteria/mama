@@ -1,0 +1,36 @@
+{
+  "checkedAt": "2026-09-12T23:37:36.675Z",
+  "label": "Offline evidence integrity and scope checks only; no user or product validation.",
+  "passed": 7,
+  "total": 7,
+  "checks": [
+    {
+      "name": "HTTP 200 alone was not treated as API success",
+      "pass": true
+    },
+    {
+      "name": "successful capture matches recorded content hash",
+      "pass": true
+    },
+    {
+      "name": "official sample has INFO-000 and five rows",
+      "pass": true
+    },
+    {
+      "name": "parsed output corresponds to captured source dates and names",
+      "pass": true
+    },
+    {
+      "name": "all five captured rows are historical as of capture date",
+      "pass": true
+    },
+    {
+      "name": "sample has no explicit individual consent or payment completion fields",
+      "pass": true
+    },
+    {
+      "name": "both successful reads used no credentials",
+      "pass": true
+    }
+  ]
+}

@@ -1,0 +1,468 @@
+INSTRUMENTATION_STATUS: class=kr.mom.probe.document.DocumentTextExtractorDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+kr.mom.probe.document.DocumentTextExtractorDeviceTest:
+INSTRUMENTATION_STATUS: test=optInPublicHwpFixtureExtractsSecondGradeRowsAndReportsBinDataPartial
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.document.DocumentTextExtractorDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stack=org.junit.AssumptionViolatedException: Push fixture to externalFilesDir/qa-input/parent-class-notice-1951993.hwp for this opt-in QA test.
+	at org.junit.Assume.assumeTrue(Assume.java:68)
+	at kr.mom.probe.document.DocumentTextExtractorDeviceTest.optInPublicHwpFixtureExtractsSecondGradeRowsAndReportsBinDataPartial(DocumentTextExtractorDeviceTest.kt:52)
+	at java.lang.reflect.Method.invoke(Native Method)
+	at org.junit.runners.model.FrameworkMethod$1.runReflectiveCall(FrameworkMethod.java:59)
+	at org.junit.internal.runners.model.ReflectiveCallable.run(ReflectiveCallable.java:12)
+	at org.junit.runners.model.FrameworkMethod.invokeExplosively(FrameworkMethod.java:56)
+	at org.junit.internal.runners.statements.InvokeMethod.evaluate(InvokeMethod.java:17)
+	at androidx.test.internal.runner.junit4.statement.RunBefores.evaluate(RunBefores.java:80)
+	at org.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)
+	at org.junit.runners.BlockJUnit4ClassRunner$1.evaluate(BlockJUnit4ClassRunner.java:100)
+	at org.junit.runners.ParentRunner.runLeaf(ParentRunner.java:366)
+	at org.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:103)
+	at org.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:63)
+	at org.junit.runners.ParentRunner$4.run(ParentRunner.java:331)
+	at org.junit.runners.ParentRunner$1.schedule(ParentRunner.java:79)
+	at org.junit.runners.ParentRunner.runChildren(ParentRunner.java:329)
+	at org.junit.runners.ParentRunner.access$100(ParentRunner.java:66)
+	at org.junit.runners.ParentRunner$2.evaluate(ParentRunner.java:293)
+	at org.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)
+	at org.junit.runners.ParentRunner.run(ParentRunner.java:413)
+	at androidx.test.ext.junit.runners.AndroidJUnit4.run(AndroidJUnit4.java:162)
+	at org.junit.runners.Suite.runChild(Suite.java:128)
+	at org.junit.runners.Suite.runChild(Suite.java:27)
+	at org.junit.runners.ParentRunner$4.run(ParentRunner.java:331)
+	at org.junit.runners.ParentRunner$1.schedule(ParentRunner.java:79)
+	at org.junit.runners.ParentRunner.runChildren(ParentRunner.java:329)
+	at org.junit.runners.ParentRunner.access$100(ParentRunner.java:66)
+	at org.junit.runners.ParentRunner$2.evaluate(ParentRunner.java:293)
+	at org.junit.runners.ParentRunner$3.evaluate(ParentRunner.java:306)
+	at org.junit.runners.ParentRunner.run(ParentRunner.java:413)
+	at org.junit.runner.JUnitCore.run(JUnitCore.java:137)
+	at org.junit.runner.JUnitCore.run(JUnitCore.java:115)
+	at androidx.test.internal.runner.TestExecutor.execute(TestExecutor.java:68)
+	at androidx.test.internal.runner.TestExecutor.execute(TestExecutor.java:59)
+	at androidx.test.runner.AndroidJUnitRunner.onStart(AndroidJUnitRunner.java:463)
+	at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:2683)
+
+INSTRUMENTATION_STATUS: stream=
+kr.mom.probe.document.DocumentTextExtractorDeviceTest:
+INSTRUMENTATION_STATUS: test=optInPublicHwpFixtureExtractsSecondGradeRowsAndReportsBinDataPartial
+INSTRUMENTATION_STATUS_CODE: -4
+INSTRUMENTATION_STATUS: class=kr.mom.probe.document.DocumentTextExtractorDeviceTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=syntheticHwpxExtractsKoreanAndChineseTextOnAndroidSax
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.document.DocumentTextExtractorDeviceTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: expected:<COMPLETE> but was:<UNSUPPORTED>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at kr.mom.probe.document.DocumentTextExtractorDeviceTest.syntheticHwpxExtractsKoreanAndChineseTextOnAndroidSax(DocumentTextExtractorDeviceTest.kt:44)
+
+INSTRUMENTATION_STATUS: stream=
+Error in syntheticHwpxExtractsKoreanAndChineseTextOnAndroidSax(kr.mom.probe.document.DocumentTextExtractorDeviceTest):
+java.lang.AssertionError: expected:<COMPLETE> but was:<UNSUPPORTED>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at kr.mom.probe.document.DocumentTextExtractorDeviceTest.syntheticHwpxExtractsKoreanAndChineseTextOnAndroidSax(DocumentTextExtractorDeviceTest.kt:44)
+
+INSTRUMENTATION_STATUS: test=syntheticHwpxExtractsKoreanAndChineseTextOnAndroidSax
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+kr.mom.probe.sync.SourceIngestFlowTest:
+INSTRUMENTATION_STATUS: test=emptyPartialMissingKeyDoesNotAdvanceSuccessOrCheckpoint
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=emptyPartialMissingKeyDoesNotAdvanceSuccessOrCheckpoint
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=4
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=duplicateRevisionIsIdempotentAndDeletedSourceItemStaysSuppressed
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=4
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=duplicateRevisionIsIdempotentAndDeletedSourceItemStaysSuppressed
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=5
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=noNotificationPermissionStillUsesStoredGradeTwoInformationalAgendaEveryEventDate
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=5
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=noNotificationPermissionStillUsesStoredGradeTwoInformationalAgendaEveryEventDate
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=6
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=stateStoreRejectsLateResultAfterResetInsteadOfRecreatingState
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=6
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=stateStoreRejectsLateResultAfterResetInsteadOfRecreatingState
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=7
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=changedRevisionKeepsOriginalFirstSeenAt
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=7
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=changedRevisionKeepsOriginalFirstSeenAt
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=8
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=batchPublishesOnlyOneRevisionPerSourceItem
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=8
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=batchPublishesOnlyOneRevisionPerSourceItem
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=9
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=sourceGenerationChangeHidesOldSourceRecordsFromAgendaChatAndBriefing
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=9
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=sourceGenerationChangeHidesOldSourceRecordsFromAgendaChatAndBriefing
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=10
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=stateStoreMutationFailsClosedWhenEncryptedPayloadIsCorrupt
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=10
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=stateStoreMutationFailsClosedWhenEncryptedPayloadIsCorrupt
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=11
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=sourceSyncRunnerFetchesIngestsAndUpdatesSnapshotWithoutNotificationPermission
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.sync.SourceIngestFlowTest
+INSTRUMENTATION_STATUS: current=11
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=sourceSyncRunnerFetchesIngestsAndUpdatesSnapshotWithoutNotificationPermission
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=12
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+kr.mom.probe.DeviceAgentSmokeTest:
+INSTRUMENTATION_STATUS: test=datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=12
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.launchAgent(DeviceAgentSmokeTest.kt:188)
+	at kr.mom.probe.DeviceAgentSmokeTest.datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch(DeviceAgentSmokeTest.kt:153)
+
+INSTRUMENTATION_STATUS: stream=
+Error in datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch(kr.mom.probe.DeviceAgentSmokeTest):
+java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.launchAgent(DeviceAgentSmokeTest.kt:188)
+	at kr.mom.probe.DeviceAgentSmokeTest.datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch(DeviceAgentSmokeTest.kt:153)
+
+INSTRUMENTATION_STATUS: test=datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=13
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=13
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.launchAgent(DeviceAgentSmokeTest.kt:188)
+	at kr.mom.probe.DeviceAgentSmokeTest.ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath(DeviceAgentSmokeTest.kt:133)
+
+INSTRUMENTATION_STATUS: stream=
+Error in ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath(kr.mom.probe.DeviceAgentSmokeTest):
+java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.launchAgent(DeviceAgentSmokeTest.kt:188)
+	at kr.mom.probe.DeviceAgentSmokeTest.ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath(DeviceAgentSmokeTest.kt:133)
+
+INSTRUMENTATION_STATUS: test=ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=14
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=14
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence(DeviceAgentSmokeTest.kt:95)
+
+INSTRUMENTATION_STATUS: stream=
+Error in taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence(kr.mom.probe.DeviceAgentSmokeTest):
+java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence(DeviceAgentSmokeTest.kt:95)
+
+INSTRUMENTATION_STATUS: test=taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=15
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=localTaskCommandSavesAndUndoesWithScreenshots
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=15
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stack=java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.launchAgent(DeviceAgentSmokeTest.kt:188)
+	at kr.mom.probe.DeviceAgentSmokeTest.localTaskCommandSavesAndUndoesWithScreenshots(DeviceAgentSmokeTest.kt:116)
+
+INSTRUMENTATION_STATUS: stream=
+Error in localTaskCommandSavesAndUndoesWithScreenshots(kr.mom.probe.DeviceAgentSmokeTest):
+java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.launchAgent(DeviceAgentSmokeTest.kt:188)
+	at kr.mom.probe.DeviceAgentSmokeTest.localTaskCommandSavesAndUndoesWithScreenshots(DeviceAgentSmokeTest.kt:116)
+
+INSTRUMENTATION_STATUS: test=localTaskCommandSavesAndUndoesWithScreenshots
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=kr.mom.probe.CalendarProviderDeviceTest
+INSTRUMENTATION_STATUS: current=16
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=
+kr.mom.probe.CalendarProviderDeviceTest:
+INSTRUMENTATION_STATUS: test=productionGatewaySavesReadsBackAndUndoesOwnedLocalCalendarEvent
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.CalendarProviderDeviceTest
+INSTRUMENTATION_STATUS: current=16
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=16
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=productionGatewaySavesReadsBackAndUndoesOwnedLocalCalendarEvent
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=
+
+Time: 25.949
+There were 5 failures:
+1) syntheticHwpxExtractsKoreanAndChineseTextOnAndroidSax(kr.mom.probe.document.DocumentTextExtractorDeviceTest)
+java.lang.AssertionError: expected:<COMPLETE> but was:<UNSUPPORTED>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at org.junit.Assert.assertEquals(Assert.java:146)
+	at kr.mom.probe.document.DocumentTextExtractorDeviceTest.syntheticHwpxExtractsKoreanAndChineseTextOnAndroidSax(DocumentTextExtractorDeviceTest.kt:44)
+2) datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch(kr.mom.probe.DeviceAgentSmokeTest)
+java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.launchAgent(DeviceAgentSmokeTest.kt:188)
+	at kr.mom.probe.DeviceAgentSmokeTest.datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch(DeviceAgentSmokeTest.kt:153)
+3) ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath(kr.mom.probe.DeviceAgentSmokeTest)
+java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.launchAgent(DeviceAgentSmokeTest.kt:188)
+	at kr.mom.probe.DeviceAgentSmokeTest.ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath(DeviceAgentSmokeTest.kt:133)
+4) taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence(kr.mom.probe.DeviceAgentSmokeTest)
+java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence(DeviceAgentSmokeTest.kt:95)
+5) localTaskCommandSavesAndUndoesWithScreenshots(kr.mom.probe.DeviceAgentSmokeTest)
+java.lang.IllegalStateException: No compose hierarchies found in the app. Possible reasons include: (1) the Activity that calls setContent did not launch; (2) setContent was not called; (3) setContent was called before the ComposeTestRule ran. If setContent is called by the Activity, make sure the Activity is launched after the ComposeTestRule runs
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes(TestOwner.kt:82)
+	at androidx.compose.ui.test.TestOwnerKt.getAllSemanticsNodes$default(TestOwner.kt:74)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes(SemanticsNodeInteraction.kt:249)
+	at androidx.compose.ui.test.SemanticsNodeInteractionCollection.fetchSemanticsNodes$default(SemanticsNodeInteraction.kt:245)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText$lambda$5(DeviceAgentSmokeTest.kt:199)
+	at kr.mom.probe.DeviceAgentSmokeTest.$r8$lambda$AskGUlExiAgeHSAMvWyiFpngSoU(DeviceAgentSmokeTest.kt:0)
+	at kr.mom.probe.DeviceAgentSmokeTest$$ExternalSyntheticLambda1.invoke(D8$$SyntheticClass:0)
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:497)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:339)
+	at kr.mom.probe.DeviceAgentSmokeTest.waitForText(DeviceAgentSmokeTest.kt:198)
+	at kr.mom.probe.DeviceAgentSmokeTest.launchAgent(DeviceAgentSmokeTest.kt:188)
+	at kr.mom.probe.DeviceAgentSmokeTest.localTaskCommandSavesAndUndoesWithScreenshots(DeviceAgentSmokeTest.kt:116)
+
+FAILURES!!!
+Tests run: 16,  Failures: 5
+
+
+INSTRUMENTATION_CODE: -1

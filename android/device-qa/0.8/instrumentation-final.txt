@@ -1,0 +1,123 @@
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=5
+INSTRUMENTATION_STATUS: stream=
+kr.mom.probe.DeviceAgentSmokeTest:
+INSTRUMENTATION_STATUS: test=datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=5
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=5
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=5
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=5
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=3
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=5
+INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: expected null, but was:<null>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotNull(Assert.java:756)
+	at org.junit.Assert.assertNull(Assert.java:738)
+	at org.junit.Assert.assertNull(Assert.java:748)
+	at kr.mom.probe.DeviceAgentSmokeTest.taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence(DeviceAgentSmokeTest.kt:103)
+
+INSTRUMENTATION_STATUS: stream=
+Error in taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence(kr.mom.probe.DeviceAgentSmokeTest):
+java.lang.AssertionError: expected null, but was:<null>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotNull(Assert.java:756)
+	at org.junit.Assert.assertNull(Assert.java:738)
+	at org.junit.Assert.assertNull(Assert.java:748)
+	at kr.mom.probe.DeviceAgentSmokeTest.taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence(DeviceAgentSmokeTest.kt:103)
+
+INSTRUMENTATION_STATUS: test=taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=4
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=5
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=localTaskCommandSavesAndUndoesWithScreenshots
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.DeviceAgentSmokeTest
+INSTRUMENTATION_STATUS: current=4
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=5
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=localTaskCommandSavesAndUndoesWithScreenshots
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=kr.mom.probe.CalendarProviderDeviceTest
+INSTRUMENTATION_STATUS: current=5
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=5
+INSTRUMENTATION_STATUS: stream=
+kr.mom.probe.CalendarProviderDeviceTest:
+INSTRUMENTATION_STATUS: test=productionGatewaySavesReadsBackAndUndoesOwnedLocalCalendarEvent
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=kr.mom.probe.CalendarProviderDeviceTest
+INSTRUMENTATION_STATUS: current=5
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=5
+INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: 삭제 요청 뒤에도 일정이 남아 있는지 확인이 필요해요. expected:<UNDONE> but was:<CANNOT_VERIFY>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at kr.mom.probe.CalendarProviderDeviceTest.productionGatewaySavesReadsBackAndUndoesOwnedLocalCalendarEvent(CalendarProviderDeviceTest.kt:84)
+
+INSTRUMENTATION_STATUS: stream=
+Error in productionGatewaySavesReadsBackAndUndoesOwnedLocalCalendarEvent(kr.mom.probe.CalendarProviderDeviceTest):
+java.lang.AssertionError: 삭제 요청 뒤에도 일정이 남아 있는지 확인이 필요해요. expected:<UNDONE> but was:<CANNOT_VERIFY>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at kr.mom.probe.CalendarProviderDeviceTest.productionGatewaySavesReadsBackAndUndoesOwnedLocalCalendarEvent(CalendarProviderDeviceTest.kt:84)
+
+INSTRUMENTATION_STATUS: test=productionGatewaySavesReadsBackAndUndoesOwnedLocalCalendarEvent
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_RESULT: stream=
+
+Time: 11.313
+There were 2 failures:
+1) taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence(kr.mom.probe.DeviceAgentSmokeTest)
+java.lang.AssertionError: expected null, but was:<null>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotNull(Assert.java:756)
+	at org.junit.Assert.assertNull(Assert.java:738)
+	at org.junit.Assert.assertNull(Assert.java:748)
+	at kr.mom.probe.DeviceAgentSmokeTest.taskAlarmSnoozeKeepsTaskIncompleteAndSchedulesNextOccurrence(DeviceAgentSmokeTest.kt:103)
+2) productionGatewaySavesReadsBackAndUndoesOwnedLocalCalendarEvent(kr.mom.probe.CalendarProviderDeviceTest)
+java.lang.AssertionError: 삭제 요청 뒤에도 일정이 남아 있는지 확인이 필요해요. expected:<UNDONE> but was:<CANNOT_VERIFY>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at kr.mom.probe.CalendarProviderDeviceTest.productionGatewaySavesReadsBackAndUndoesOwnedLocalCalendarEvent(CalendarProviderDeviceTest.kt:84)
+
+FAILURES!!!
+Tests run: 5,  Failures: 2
+
+
+INSTRUMENTATION_CODE: -1

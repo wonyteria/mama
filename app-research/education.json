@@ -1,0 +1,475 @@
+[
+  {
+    "name": "키즈노트",
+    "packageId": "com.vaultmicro.kidsnote",
+    "reachEvidence": {
+      "playInstallBucket": "500만+",
+      "observedAt": "2026-09-13",
+      "appUpdatedAt": "2026-09-07",
+      "vendorClaims": [
+        {
+          "claim": "누적 가입 430만+, 앱 누적 다운로드 1,000만+, 전 세계 사용 원 85,000+, 알림장 9.2억+; 전국 원장님 85% 선택 문구",
+          "asOf": "2023-08",
+          "scope": "공급자 자사 통계; 글로벌 기관·전 역할 포함; 현재 한국 엄마 MAU가 아님",
+          "sourceUrl": "https://www.kidsnote.com/"
+        }
+      ]
+    },
+    "workflow": {
+      "lifeStage": "어린이집·유치원 영유아 중심, 일부 학원",
+      "users": [
+        "원장",
+        "교사",
+        "학부모"
+      ],
+      "actions": [
+        "원·반 가입 후 알림장·공지 확인과 댓글",
+        "행사 일정·식단 확인",
+        "투약의뢰·귀가동의·전자문서 요청 처리",
+        "아이 사진·영상 보관"
+      ]
+    },
+    "agentValue": [
+      "준비물·행사·서류 요청을 가족별 업무로 연결",
+      "누적 공지에서 다음 행동과 필요한 준비를 정리",
+      "기존 투약·귀가 동의 화면으로 안내하되 의학적 결정·서명·제출은 별개"
+    ],
+    "accessStatus": {
+      "thirdPartyReadApi": "NOT_FOUND_IN_SEARCH",
+      "manualExport": "DOCUMENTED_LIMITED: 학부모 사진/영상 다운로드·앨범 출력, 키즈노트북 PDF/원본 파일 상품. 기관용 전자문서 엑셀 다운로드는 보호자 원문 API가 아님.",
+      "calendarFeed": "NOT_FOUND_IN_SEARCH: 앱 일정표 존재와 ICS/외부 캘린더 연동은 별개",
+      "notificationPayload": "UNTESTED",
+      "partnerSignal": "공식 계정/원 소속 이용, 원별 메뉴 선택; 제휴 읽기 권한은 미확인"
+    },
+    "limitations": [
+      "2023-08 채택 통계를 2026 현황으로 부풀리지 않음",
+      "다운로드는 사용자가 로그인해 이용하는 기능이며 지속적 무입력 수집 아님",
+      "공식 GitHub 또는 비공식 downloader가 공개 보호자 API의 근거는 아님",
+      "타 아이·교사 사진 및 민감한 투약/귀가 정보의 과수집 방지 필요"
+    ],
+    "sources": [
+      {
+        "title": "Google Play",
+        "url": "https://play.google.com/store/apps/details?hl=ko&id=com.vaultmicro.kidsnote",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "공식 제품·2023-08 통계",
+        "url": "https://www.kidsnote.com/",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "공식 사용자 가이드",
+        "url": "https://www.with-kidsnote.com/guide",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "학부모 앨범 출력·다운로드",
+        "url": "https://www.with-kidsnote.com/guide/parentsalbum",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "사진/영상 다운로드 상품",
+        "url": "https://www.with-kidsnote.com/guide/knbbasic/app",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "키즈노트북 2025 버전",
+        "url": "https://www.with-kidsnote.com/guide/knbpremium/app",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "전자문서+",
+        "url": "https://campaign.kidsnote.com/e-docu/",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      }
+    ]
+  },
+  {
+    "name": "학교종이",
+    "packageId": "com.schoolbell_e.schoolbell_e",
+    "reachEvidence": {
+      "playInstallBucket": "100만+",
+      "observedAt": "2026-09-13",
+      "appUpdatedAt": "2026-09-02",
+      "vendorClaims": [
+        {
+          "claim": "250만 사용자가 함께하는 웹 기반 앱",
+          "asOf": null,
+          "scope": "Play 자사 소개; 측정 기간·누적/활성 정의 미표시",
+          "sourceUrl": "https://play.google.com/store/apps/details?hl=ko&id=com.schoolbell_e.schoolbell_e"
+        }
+      ]
+    },
+    "workflow": {
+      "lifeStage": "유치원·초중고 등 학교 교육공동체; 실제 학교 채택 필요",
+      "users": [
+        "교사",
+        "학부모",
+        "학생",
+        "학교 관리자"
+      ],
+      "actions": [
+        "가정통신문·알림장·준비물·숙제·수행평가 확인",
+        "방과후·돌봄·상담·우유 신청 및 설문",
+        "결석신고·교외체험학습·투약의뢰 서명과 증빙 제출",
+        "학교 방문 예약 및 종이톡/종이콜"
+      ]
+    },
+    "agentValue": [
+      "학교별 마감·준비·제출 단계 기억과 자료 준비",
+      "여러 아이 공지 충돌·변경 정리",
+      "서류 초안 준비와 원 서비스 승인/제출 경로 연결"
+    ],
+    "accessStatus": {
+      "thirdPartyReadApi": "NOT_FOUND_IN_SEARCH",
+      "manualExport": "DOCUMENTED_LIMITED: Play가 파일 업로드/다운로드 설명; 보호자 개인 공지의 구조화 일괄 export는 미발견",
+      "calendarFeed": "NOT_FOUND_IN_SEARCH",
+      "notificationPayload": "UNTESTED",
+      "partnerSignal": "공식 학교 홈페이지→학교종이 게시판 연동 존재; 반대 방향 개인 데이터 개방 증거 아님"
+    },
+    "limitations": [
+      "삭제/발행대상 제외 뒤에도 알림이 남을 수 있음",
+      "학교 홈페이지 연동은 지연될 수 있고 개인 공지 전체 대체 불가",
+      "새글 알림을 현재 유효·열람 가능한 업무로 단정 금지"
+    ],
+    "sources": [
+      {
+        "title": "Google Play",
+        "url": "https://play.google.com/store/apps/details?hl=ko&id=com.schoolbell_e.schoolbell_e",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "새글 알림 후 글이 안 보이는 경우",
+        "url": "https://schoolbell-e.oopy.io/post_visibility_issue",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "홈페이지 게시판 연동",
+        "url": "https://schoolbell-e.oopy.io/f5bb0bbe-2102-4479-a4be-9d8b17fd56d0",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "공식 학교 도입 대상",
+        "url": "https://schoolbell-e.com/support/ko/purchase",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      }
+    ]
+  },
+  {
+    "name": "스마트 공지시스템 e알리미",
+    "packageId": "com.ewut.allealimi",
+    "reachEvidence": {
+      "playInstallBucket": "500만+",
+      "observedAt": "2026-09-13",
+      "appUpdatedAt": "2026-08-30",
+      "vendorClaims": [
+        {
+          "claim": "학교 평균 이용기간 5.8년, 재계약률 95%, 전국 초중고 3학교 중 1곳 사용",
+          "asOf": null,
+          "scope": "공식 홍보 페이지 자사 주장; 산정시점·분모 미표시, 보호자 유료 유지율 아님",
+          "sourceUrl": "https://www.ealimi.com/Promotion/Promotion"
+        }
+      ]
+    },
+    "workflow": {
+      "lifeStage": "초중고 중심; 기업·아파트·단체·공공기관도 사용",
+      "users": [
+        "기관 관리자",
+        "교사",
+        "학생",
+        "학부모",
+        "일반 기관 구성원"
+      ],
+      "actions": [
+        "승인된 단체에서 공지 열람·응답",
+        "방과후 선착순/추첨·상담 신청",
+        "결석·체험학습 서류 작성·승인/반려",
+        "출결·개인 시간표·학교방문·급식 확인"
+      ]
+    },
+    "agentValue": [
+      "서명/회신/상담/강좌 신청을 필요한 행동으로 구분",
+      "서류 준비와 제출 뒤 상태 확인을 분리",
+      "학교·아파트 소식을 출처와 가족 맥락에 따라 필터링"
+    ],
+    "accessStatus": {
+      "thirdPartyReadApi": "NOT_FOUND_IN_SEARCH",
+      "manualExport": "DOCUMENTED_LIMITED: 관리자 설문 Raw Data 엑셀, 파일·사진 일괄 다운로드 설명. 보호자 전용 전체 업무 export 보장 아님.",
+      "calendarFeed": "INBOUND_PUBLIC_DATA_DOCUMENTED: NEIS 학사·급식 API 및 학교 홈페이지를 e알리미가 읽는 연동; 외부 비서가 e알리미 개인 공지를 읽는 API 아님",
+      "notificationPayload": "UNTESTED",
+      "partnerSignal": "상담 경로 존재, 제3자 개인 공지 API 문서는 미발견"
+    },
+    "limitations": [
+      "관리자 승인 필요",
+      "회원·기업 사용자도 포함하므로 설치수를 엄마 수로 계산 불가",
+      "홈페이지 변경/삭제 반영 24시간 이내 안내",
+      "검색에서 다른 e알리미 package도 보였으나 이 조사에서 공식 열람 검증된 package는 com.ewut.allealimi"
+    ],
+    "sources": [
+      {
+        "title": "Google Play",
+        "url": "https://play.google.com/store/apps/details?hl=ko&id=com.ewut.allealimi",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "공식 기능·도입 지표",
+        "url": "https://www.ealimi.com/Promotion/Promotion",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      }
+    ]
+  },
+  {
+    "name": "하이클래스",
+    "packageId": "com.iscreammedia.app.hiclass.android",
+    "reachEvidence": {
+      "playInstallBucket": "100만+",
+      "observedAt": "2026-09-13",
+      "appUpdatedAt": "2026-09-10",
+      "vendorClaims": [
+        {
+          "claim": "MAU 435만 명, 누적 회원 530만 명 달성",
+          "asOf": "2025-04",
+          "scope": "아이스크림미디어 회사 연혁 자사 주장; 교사·학생·학부모를 포함하며 한국 엄마만의 MAU 아님",
+          "sourceUrl": "https://www.i-screammedia.com/www/company_history.html"
+        },
+        {
+          "claim": "학부모 227만·학생 220만 누적 가입",
+          "asOf": "2025-03-31",
+          "scope": "공시; 탈퇴 회원 포함, 활성 사용자 아님",
+          "sourceUrl": "https://kind.krx.co.kr/external/2025/05/15/002722/20250515006372/11013.htm"
+        }
+      ]
+    },
+    "workflow": {
+      "lifeStage": "초등 중심으로 학교·교사·학생·학부모 연결; 유치원·중고 확대도 회사 설명",
+      "users": [
+        "교사",
+        "학생",
+        "학부모",
+        "학교 관리자"
+      ],
+      "actions": [
+        "가정통신문·설문·상담 신청·학교 양식 제출",
+        "급식 알레르기 정보·시간표 확인",
+        "출결·과제 제출·학생 활동 리포트",
+        "하이톡·하이콜로 상담"
+      ]
+    },
+    "agentValue": [
+      "공지에 담긴 준비와 제출·상담을 가족 일정에 연결",
+      "접수/서류 결과를 확인하는 보조 비서",
+      "학습 리포트에서 부모가 확인할 질문 정리; AI 튜터 중복 구축 피하기"
+    ],
+    "accessStatus": {
+      "thirdPartyReadApi": "NOT_FOUND_IN_SEARCH",
+      "manualExport": "DOCUMENTED_LIMITED: 설문 수합·통계·출력과 사진/파일 저장. 보호자 전체 데이터 export는 미발견.",
+      "calendarFeed": "NOT_FOUND_IN_SEARCH: 시간표 조회 기능만 확인",
+      "notificationPayload": "UNTESTED",
+      "partnerSignal": "공식 웹 앱은 존재하나 공개 화면 추출 제한; 제휴 개인 읽기 문서 미발견"
+    },
+    "limitations": [
+      "회사 전체 i-Scream S 교사 점유율 93%를 하이클래스 점유율로 사용하지 않음",
+      "기관/반 역할·교사 설정에 따른 기능 차이 미측정",
+      "개인 과제·출결 상태를 NLS만으로 확보 가능하다고 보장하지 않음"
+    ],
+    "sources": [
+      {
+        "title": "Google Play",
+        "url": "https://play.google.com/store/apps/details?hl=ko&id=com.iscreammedia.app.hiclass.android",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "아이스크림미디어 공식 연혁",
+        "url": "https://www.i-screammedia.com/www/company_history.html",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "2025-1분기 공시",
+        "url": "https://kind.krx.co.kr/external/2025/05/15/002722/20250515006372/11013.htm",
+        "publishedAt": "2025-05-15",
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "공식 웹",
+        "url": "https://www.hiclass.net/",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      }
+    ]
+  },
+  {
+    "name": "클래스팅",
+    "packageId": "com.Classting",
+    "reachEvidence": {
+      "playInstallBucket": "500만+",
+      "observedAt": "2026-09-13",
+      "appUpdatedAt": "2026-06-23",
+      "vendorClaims": [
+        {
+          "claim": "학부모/학생 900만+, 선생님 40만+, 클래스 100만+, 학교 점유율 98%",
+          "asOf": null,
+          "scope": "공식 광고 안내 자사 수치; 시점·활성 기준·학교 점유율 분모 미표시, 시장점유율 확정치로 쓰지 않음",
+          "sourceUrl": "https://business.classting.com/"
+        }
+      ]
+    },
+    "workflow": {
+      "lifeStage": "초1~고3 학습 및 학급 소통",
+      "users": [
+        "학생",
+        "교사",
+        "학부모",
+        "학교/기관 관리자"
+      ],
+      "actions": [
+        "우리 반 소식·과제·클래스톡",
+        "AI 진단평가·맞춤학습·학습 현황",
+        "AI 튜터와 중단 평가/놓친 학습 확인"
+      ]
+    },
+    "agentValue": [
+      "여러 학습·가정 일정 사이 부모의 확인 업무 정리",
+      "기존 AI 튜터와 경쟁하기보다 학급 소식의 준비·마감 보조",
+      "기관 제휴가 성립하면 허용된 학습 상태를 가족 계획에 연결할 후보"
+    ],
+    "accessStatus": {
+      "thirdPartyReadApi": "ENTERPRISE_API_SIGNAL_ONLY: 공식 요금제에 학습 데이터 API·SSO·기관 플랫폼 연동 명시. 공개 부모 공지 읽기 API/OAuth 명세는 NOT_FOUND_IN_SEARCH.",
+      "manualExport": "NOT_FOUND_IN_SEARCH_FOR_PARENT_NOTICE_EXPORT",
+      "calendarFeed": "NOT_FOUND_IN_SEARCH",
+      "notificationPayload": "UNTESTED",
+      "partnerSignal": "공식 기업 요금제에서 학습 데이터 API 연동을 판매 기능으로 명시; 제휴 가격·범위·개인 동의 필요"
+    },
+    "limitations": [
+      "API 연동이라는 단어만으로 부모 공지·톡·제출 상태 전체 접근이 된다고 추정 금지",
+      "학습 데이터 분석과 부모 행동 관리의 가치 차이 검증 필요",
+      "광고 페이지 누적 채택 지표가 엄마의 자발적 유료 비서 수요를 증명하지 않음"
+    ],
+    "sources": [
+      {
+        "title": "Google Play",
+        "url": "https://play.google.com/store/apps/details?hl=ko&id=com.Classting",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "공식 광고·사용자 규모",
+        "url": "https://business.classting.com/",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "공식 요금제 및 API 연동",
+        "url": "https://www.classting.com/pricing",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      }
+    ]
+  },
+  {
+    "name": "클래스노트",
+    "packageId": "com.classnote.android.release",
+    "reachEvidence": {
+      "playInstallBucket": "10만+",
+      "observedAt": "2026-09-13",
+      "appUpdatedAt": "2026-09-07",
+      "vendorClaims": []
+    },
+    "workflow": {
+      "lifeStage": "학원·교육기관, 원생 연령은 기관에 따라 다름",
+      "users": [
+        "교육기관 관리자",
+        "선생님",
+        "학부모"
+      ],
+      "actions": [
+        "기관이 학부모를 초대해 1:1 알림장/공지 소통",
+        "전자출결과 실시간 출석 알림",
+        "교육비 청구/수납·알림톡",
+        "문서/음성 숙제·학습 피드백과 앨범"
+      ]
+    },
+    "agentValue": [
+      "교육과 지출을 연결하는 구체적 후보: 청구서·납부기한·관련 결제·중복/미확인 상태",
+      "숙제 파일과 준비물을 다음 일정에 연결",
+      "출석 정보는 실제 소스가 있을 때만 가족 픽업 계획에 보조적으로 사용"
+    ],
+    "accessStatus": {
+      "thirdPartyReadApi": "NOT_FOUND_IN_SEARCH",
+      "manualExport": "DOCUMENTED_LIMITED: 공식 파일 첨부/다운로드 안내, 부모 문서/음성 제출. 구조화 공지·청구 전체 export는 미발견.",
+      "calendarFeed": "NOT_FOUND_IN_SEARCH",
+      "notificationPayload": "UNTESTED",
+      "partnerSignal": "키즈노트 운영, 원비 결제 지원은 올댓페이 문의 경로 안내. 제3자 읽기 API 제공 증거 아님"
+    },
+    "limitations": [
+      "청구와 수납이 앱 안에 있다는 것과 비서가 그 상태를 읽을 수 있다는 것은 별개",
+      "공개 Play 리뷰 본문 표본 미확보; 불만을 지어내지 않음",
+      "설치 규모가 다른 5종보다 작다고 표시되나 타깃 학원 밀도·거래 빈도는 미측정"
+    ],
+    "sources": [
+      {
+        "title": "Google Play",
+        "url": "https://play.google.com/store/apps/details?hl=ko&id=com.classnote.android.release",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "공식 서비스",
+        "url": "https://www.classnote.com/welcome",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "공식 이용 가이드",
+        "url": "https://www.with-classnote.com/",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      },
+      {
+        "title": "문서·음성 첨부와 부모 제출",
+        "url": "https://www.with-classnote.com/news/9",
+        "publishedAt": null,
+        "accessedAt": "2026-09-13",
+        "type": "official"
+      }
+    ]
+  }
+]

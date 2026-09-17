@@ -1,0 +1,27 @@
+# Android / Gradle
+.gradle/
+.kotlin/
+**/build/
+local.properties
+*.jks
+*.keystore
+.idea/
+captures/
+.build-user/
+.omx/
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Tooling / OS
+.DS_Store
+Thumbs.db
+*.iml
+.vscode/
+.toolchains/
+
+# Local device captures that may include personal data
+device-tests/private/

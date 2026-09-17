@@ -1,0 +1,18 @@
+{
+  "asOf": "2026-09-13",
+  "status": "PRE_DEVELOPMENT_APP_RESEARCH_COMPLETE",
+  "appCount": 16,
+  "uniqueAndroidPackages": 16,
+  "capturedOfficialSchoolSampleRows": 5,
+  "capturedOfficialScheduleSampleRows": 5,
+  "sampleSchool": "가락고등학교",
+  "sampleEventPeriod": "2025-03-01 through 2025-03-08",
+  "offlineCaptureChecks": {"passed":7,"total":7},
+  "personalAppAccountsAccessed": 0,
+  "realParentNotificationsObserved": 0,
+  "outboundPartnerMessagesSent": 0,
+  "productDevelopmentStarted": false,
+  "independentReview": "APPROVED for evidence package only; not product or market validation",
+  "report": "business-opportunities.md",
+  "catalog": "app-catalog.json"
+}

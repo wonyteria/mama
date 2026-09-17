@@ -1,0 +1,78 @@
+{
+  "generatedAt": "2026-09-12T23:06:25.875Z",
+  "runtime": "v24.14.1",
+  "scope": "Synthetic rule/state unit tests only; no Android, school-source payload, LLM, user or business validation.",
+  "counterexample": "Two incompatible hidden documents share identical observed notification payload. Notification-only input cannot uniquely recover the hidden document.",
+  "passed": 17,
+  "total": 17,
+  "results": [
+    {
+      "name": "identical observed payloads can correspond to incompatible hidden documents",
+      "pass": true
+    },
+    {
+      "name": "unselected source produces no storage or queue",
+      "pass": true
+    },
+    {
+      "name": "explicit supported fields form one task",
+      "pass": true
+    },
+    {
+      "name": "duplicate produces no additional write",
+      "pass": true
+    },
+    {
+      "name": "notification dismissal is not completion or business cancellation",
+      "pass": true
+    },
+    {
+      "name": "user completion clears reminder",
+      "pass": true
+    },
+    {
+      "name": "late duplicate cannot resurrect completed task",
+      "pass": true
+    },
+    {
+      "name": "revocation clears unsent queue and blocks new payload",
+      "pass": true
+    },
+    {
+      "name": "same verified document update replaces reminder",
+      "pass": true
+    },
+    {
+      "name": "explicit supported cancellation clears reminder",
+      "pass": true
+    },
+    {
+      "name": "cancellation without evidence cannot cancel task",
+      "pass": true
+    },
+    {
+      "name": "generic notification cannot support fabricated fields",
+      "pass": true
+    },
+    {
+      "name": "missing proposal asks for source",
+      "pass": true
+    },
+    {
+      "name": "impossible calendar date is rejected",
+      "pass": true
+    },
+    {
+      "name": "source identity namespaces tasks",
+      "pass": true
+    },
+    {
+      "name": "unselected raw text is never inspected",
+      "pass": true
+    },
+    {
+      "name": "final delivery boundary rejects stale revoked-source queue entry",
+      "pass": true
+    }
+  ]
+}
