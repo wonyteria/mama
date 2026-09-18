@@ -62,6 +62,7 @@ enum class SourceRunTrigger {
     PERIODIC,
     FOREGROUND_STALE,
     BRIEFING_STALE,
+    POSTING_WINDOW,
 }
 
 enum class SourceRecordState {

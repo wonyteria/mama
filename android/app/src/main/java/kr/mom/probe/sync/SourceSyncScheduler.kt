@@ -11,6 +11,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
@@ -44,6 +45,9 @@ object SourceFetcherRegistry {
 object SourceSyncScheduler {
     private const val SOURCE_ID = "sourceId"
     private const val TRIGGER = "trigger"
+    private val seoul: ZoneId = ZoneId.of("Asia/Seoul")
+
+    private val learnableSourceIds = setOf(SourceIds.SCHOOL_WEBSITE, SourceIds.EALIMI_WEB)
 
     fun schedulePeriodic(context: Context) {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
@@ -57,6 +61,43 @@ object SourceSyncScheduler {
                     .build(),
             )
         }
+        scheduleLearnedWindows(context)
+    }
+
+    /**
+     * Once a source's usual discovery hour is learned, an extra one-shot check
+     * runs just before that window each day. The 6-hour baseline poll stays in
+     * place, so coverage never depends on the learned estimate being right.
+     */
+    fun scheduleLearnedWindows(context: Context, now: Long = System.currentTimeMillis()) {
+        val workManager = WorkManager.getInstance(context)
+        val activeIds = SourceScopeFactory.activeScopes(context, SourceRunTrigger.POSTING_WINDOW)
+            .map { it.sourceId }.toSet()
+        learnableSourceIds.forEach { sourceId ->
+            val workName = "source-sync-window-$sourceId"
+            val checkHour = if (sourceId in activeIds) PostingTimeStore.learnedCheckHour(context, sourceId) else null
+            if (checkHour == null) {
+                workManager.cancelUniqueWork(workName)
+                return@forEach
+            }
+            val delayMs = millisUntilNextHour(checkHour, now)
+            workManager.enqueueUniqueWork(
+                workName,
+                ExistingWorkPolicy.REPLACE,
+                OneTimeWorkRequestBuilder<SourceSyncWorker>()
+                    .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
+                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                    .setInputData(input(sourceId, SourceRunTrigger.POSTING_WINDOW))
+                    .build(),
+            )
+        }
+    }
+
+    internal fun millisUntilNextHour(hour: Int, now: Long): Long {
+        val zonedNow = Instant.ofEpochMilli(now).atZone(seoul)
+        var target = zonedNow.withMinute(0).withSecond(0).withNano(0).withHour(hour)
+        if (!target.isAfter(zonedNow.plusMinutes(5))) target = target.plusDays(1)
+        return target.toInstant().toEpochMilli() - now
     }
 
     fun enqueue(context: Context, sourceId: String, trigger: SourceRunTrigger = SourceRunTrigger.MANUAL) {
@@ -79,6 +120,7 @@ object SourceSyncScheduler {
         val workManager = WorkManager.getInstance(context)
         workManager.cancelUniqueWork("source-sync-now-$sourceId")
         workManager.cancelUniqueWork("source-sync-periodic-$sourceId")
+        workManager.cancelUniqueWork("source-sync-window-$sourceId")
     }
 
     fun cancelAll(context: Context) {
@@ -248,7 +290,12 @@ class SourceSyncWorker(context: Context, private val workerParameters: WorkerPar
     override suspend fun doWork(): Result {
         val sourceId = SourceSyncScheduler.sourceId(workerParameters) ?: return Result.success()
         val trigger = SourceSyncScheduler.trigger(workerParameters)
-        return when (SourceSyncRunner(applicationContext).run(sourceId, trigger)) {
+        val disposition = SourceSyncRunner(applicationContext).run(sourceId, trigger)
+        if (trigger == SourceRunTrigger.POSTING_WINDOW && disposition == SourceSyncRunDisposition.SUCCESS) {
+            // One-shot window checks re-enqueue themselves for the next day.
+            SourceSyncScheduler.scheduleLearnedWindows(applicationContext)
+        }
+        return when (disposition) {
             SourceSyncRunDisposition.SUCCESS -> Result.success()
             SourceSyncRunDisposition.RETRY -> Result.retry()
         }

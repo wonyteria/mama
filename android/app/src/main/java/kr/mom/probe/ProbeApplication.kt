@@ -10,6 +10,11 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kr.mom.probe.data.ProbeRepository
 import kr.mom.probe.connector.EalimiNoticeClient
 import kr.mom.probe.connector.PublicSourceFetchers
@@ -26,6 +31,7 @@ class ProbeApplication : Application() {
             val removed = getSharedPreferences("candidate_feedback", MODE_PRIVATE).edit().clear().commit()
             if (removed) migrations.edit().putBoolean("removed-candidate-feedback-v1", true).commit()
         }
+        if (BuildConfig.DEBUG) android.webkit.WebView.setWebContentsDebuggingEnabled(true)
         PublicSourceFetchers.registerDefaults()
         SourceFetcherRegistry.register(SourceIds.EALIMI_WEB, EalimiNoticeClient(this))
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
@@ -39,6 +45,12 @@ class ProbeApplication : Application() {
                 .build()
         )
         SourceSyncScheduler.schedulePeriodic(this)
+        // Learned posting windows need loaded settings; schedulePeriodic runs
+        // before the repository is ready, so re-run once startup completes.
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            ProbeRepository.get(this@ProbeApplication).isReady.first { it }
+            SourceSyncScheduler.scheduleLearnedWindows(this@ProbeApplication)
+        }
     }
 }
 

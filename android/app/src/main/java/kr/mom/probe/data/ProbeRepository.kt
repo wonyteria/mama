@@ -345,6 +345,7 @@ class ProbeRepository private constructor(context: Context) {
         var skipped = 0
         val replacedIds = mutableListOf<String>()
         val seenItemIdentities = mutableSetOf<String>()
+        val discoveryTimes = mutableListOf<Long>()
         database.withTransaction {
             result.items.forEach { item ->
                 if (item.sourceId != scope.sourceId || !originHostMatchesScope(item.origin.host, scope)) {
@@ -375,7 +376,10 @@ class ProbeRepository private constructor(context: Context) {
                 }
                 previous?.takeIf { it.id != revisionId }?.let { replacedIds += it.id }
                 storedIds += revisionId
-                if (previous == null) inserted++ else changed++
+                if (previous == null) {
+                    inserted++
+                    discoveryTimes += item.firstSeenAt.takeIf { it > 0L } ?: result.fetchedAt
+                } else changed++
             }
         }
         if (!sameSourceGeneration(app, scope) || !sameChildScope(settings.value, scope)) {
@@ -395,6 +399,7 @@ class ProbeRepository private constructor(context: Context) {
             kr.mom.probe.task.AutoActionCoordinator.handle(app, record, settings.value)
             kr.mom.probe.reminder.AssistantAlertNotifier.notify(app, record)
         }
+        kr.mom.probe.sync.PostingTimeStore.recordDiscoveries(app, scope.sourceId, discoveryTimes)
         return IngestReceipt(
             sourceId = result.sourceId,
             status = result.status,

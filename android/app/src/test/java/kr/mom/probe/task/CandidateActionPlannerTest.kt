@@ -30,6 +30,13 @@ class CandidateActionPlannerTest {
         assertNull(CandidateActionPlanner.plan(notice, now, ChildNoticeProfile(5, SchoolLevel.ELEMENTARY)))
     }
 
+    @Test fun createsPlanWhenCollapsedAndExpandedTextAreIdentical() {
+        val body = "준비물: 물통. 내일 오전 9시까지"
+        val plan = CandidateActionPlanner.plan(record("준비물 안내", body).copy(bigText = body), now)
+
+        assertNotNull(plan)
+    }
+
     @Test fun doesNotCreatePlanFromPartialOrAttachmentMissingContent() {
         assertNull(CandidateActionPlanner.plan(record("준비물 안내", "준비물: 물통. 내일 오전 9시까지").copy(truncated = true), now))
         assertNull(CandidateActionPlanner.plan(record("첨부 대상 확인", "첨부 대상 확인. 준비물: 물통. 내일 오전 9시까지"), now))

@@ -30,6 +30,29 @@ class DocumentTextExtractorTest {
         assertFalse(result.issues.any { it.code == DocumentIssueCode.NO_TEXT })
     }
 
+    @Test fun skipsHwp5ExtendedControlBlocksSoFieldDataDoesNotLeakAsText() {
+        // 공개 학교 HWP에서 관찰된 구조: 인라인/확장 제어 = 제어 문자 + 6 WCHAR 데이터 + 제어 문자(총 8 WCHAR).
+        // CTRL ID는 4바이트 역순 저장이라 UTF-16으로 디코딩하면 깨진 CJK 문자가 된다.
+        val hyperlinkStart = hwpControlBlock('\u0003', "\u6C6B\u2568") // %hlk
+        val hyperlinkEnd = hwpControlBlock('\u0004', "\u6C6B\u0068")
+        val sectionDef = hwpControlBlock('\u0002', "\u6364\u7365") // secd
+        val inlineObject = hwpControlBlock('\u000B', "\u6F20\u6773") // gso
+        val wideTab = hwpControlBlock('\u0009', "\u0916\u0100")
+        val text = "홈페이지: $hyperlinkStart" + "https://example.kr" + hyperlinkEnd +
+            "\n$sectionDef$inlineObject" + "학부모 안내\n" + wideTab + "1. 준비물 안내\r"
+        val bytes = syntheticHwp5(text = text, flags = 1)
+
+        val result = DocumentTextExtractor.extract(bytes, filename = "controls.hwp")
+
+        assertTrue(result.text.contains("홈페이지: https://example.kr"))
+        assertTrue(result.text.contains("학부모 안내"))
+        assertTrue(result.text.contains("\t1. 준비물 안내"))
+        assertFalse(result.text.contains('汫'))
+        assertFalse(result.text.contains('漠'))
+        assertFalse(result.text.contains('╨'))
+        assertFalse(result.text.contains('ख'))
+    }
+
     @Test fun rejectsPasswordProtectedHwp5WithoutAttemptingBypass() {
         val bytes = syntheticHwp5(
             text = "읽으면 안 되는 보호 문서",
@@ -306,6 +329,9 @@ class DocumentTextExtractorTest {
         assertTrue(result.text.contains("학부모"))
         assertTrue(result.issues.any { it.code == DocumentIssueCode.EMBEDDED_BINARY_SKIPPED })
     }
+
+    private fun hwpControlBlock(code: Char, id: String): String =
+        "$code${id.padEnd(6, 0.toChar())}$code"
 
     private fun syntheticHwp5(text: String, flags: Int): ByteArray {
         val fileHeader = ByteArray(64)

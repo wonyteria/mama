@@ -98,6 +98,8 @@ object AutoActionCoordinator {
                 sourceRevisionId = record.id,
                 sourceKind = AssistantTaskSource.AUTO_NOTICE,
             )
+        }.onFailure {
+            android.util.Log.w("AutoActionCoordinator", "auto-action failed for ${record.id}", it)
         }
     }
 }

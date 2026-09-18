@@ -571,6 +571,31 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             catch (_: Exception) { message = "설치 페이지를 열지 못했어요." }
                         }
                     },
+                    listenerAccess = access,
+                    appPopupOn = installed.associate { it.packageName to kr.mom.probe.data.AppNotificationAccess.canPostNotifications(context, it.packageName) },
+                    onOpenAppNotifications = { packageName ->
+                        if (!kr.mom.probe.data.AppNotificationAccess.openNotificationSettings(context, packageName)) {
+                            message = "알림 설정 화면을 열지 못했어요. 휴대폰 설정에서 앱 알림을 확인해주세요."
+                        }
+                    },
+                    onOpenWebsite = { siteId ->
+                        val url = when (siteId) {
+                            SourceIds.SCHOOL_WEBSITE -> "https://snjj-e.goesn.kr/snjj-e/main.do"
+                            else -> ConnectorCatalog.site(siteId)?.startUrl
+                        }
+                        if (url == null) {
+                            message = "열 주소를 찾지 못했어요."
+                        } else {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                            }.onFailure { message = "브라우저를 열지 못했어요." }
+                        }
+                    },
+                    postingHints = buildMap {
+                        listOf(SourceIds.SCHOOL_WEBSITE, SourceIds.EALIMI_WEB).forEach { sourceId ->
+                            kr.mom.probe.sync.PostingTimeStore.describeLearnedWindow(context, sourceId)?.let { put(sourceId, it) }
+                        }
+                    },
                 )
                 "child" -> ChildProfileScreen(settings, busy, { name, school, grade, level ->
                     command({
@@ -586,6 +611,8 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             sourceStateStore.bumpGeneration(SourceIds.SCHOOL_WEBSITE)
                             sourceStateStore.bumpGeneration(SourceIds.NEIS_PUBLIC)
                             sourceStateStore.bumpGeneration(SourceIds.EALIMI_WEB)
+                            kr.mom.probe.sync.PostingTimeStore.reset(context, SourceIds.SCHOOL_WEBSITE)
+                            kr.mom.probe.sync.PostingTimeStore.reset(context, SourceIds.EALIMI_WEB)
                             repository.clearSourceRecords(setOf(SourceIds.SCHOOL_WEBSITE, SourceIds.NEIS_PUBLIC, SourceIds.EALIMI_WEB))
                         }
                         if (saved && changedSchool) connectorRepository.disconnect("neis-public") else saved
@@ -736,6 +763,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     SourceSyncScheduler.cancel(context, SourceIds.EALIMI_WEB)
                     suspendAutomaticTasksForSources(setOf(SourceIds.EALIMI_WEB))
                     sourceStateStore.bumpGeneration(SourceIds.EALIMI_WEB)
+                    kr.mom.probe.sync.PostingTimeStore.reset(context, SourceIds.EALIMI_WEB)
                     repository.clearSourceRecords(setOf(SourceIds.EALIMI_WEB))
                 }
                 cleared

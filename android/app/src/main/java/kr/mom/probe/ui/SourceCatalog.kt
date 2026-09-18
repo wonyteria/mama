@@ -9,11 +9,13 @@ data class SourceApp(val packageName: String, val name: String, val category: St
 object SourceCatalog {
     // Package identities verified against official Play listings; payload support is NOT yet validated.
     val candidates = listOf(
+        SourceApp("com.imcompany.school2", "아이엠스쿨", "학교·학원 소식", "아"),
         SourceApp("com.schoolbell_e.schoolbell_e", "학교종이", "학교 소식", "종"),
         SourceApp("com.ewut.allealimi", "e알리미", "학교 소식", "e"),
         SourceApp("com.iscreammedia.app.hiclass.android", "하이클래스", "학교 소식", "Hi"),
         SourceApp("com.vaultmicro.kidsnote", "키즈노트", "교육기관 소식", "K"),
-        SourceApp("com.classnote.android.release", "클래스노트", "학원 소식", "C")
+        SourceApp("com.classnote.android.release", "클래스노트", "학원 소식", "C"),
+        SourceApp("com.Classting", "클래스팅", "학급 소식", "팅"),
     )
     private val fixture = SourceApp("kr.mom.probe.fixture", "알림 테스트 도우미", "개발용 합성 알림", "T")
     fun installed(context: Context): List<SourceApp> = (candidates + if (BuildConfig.DEBUG) listOf(fixture) else emptyList()).mapNotNull { candidate ->

@@ -103,6 +103,11 @@ fun ConnectionsScreen(
     onToggleWebsite: (String, Boolean) -> Unit,
     onRecommendApp: (SourceApp) -> Unit,
     onSkip: () -> Unit = {},
+    listenerAccess: Boolean = true,
+    appPopupOn: Map<String, Boolean?> = emptyMap(),
+    onOpenAppNotifications: (String) -> Unit = {},
+    onOpenWebsite: (String) -> Unit = {},
+    postingHints: Map<String, String> = emptyMap(),
 ) {
     val publicConnection = connectorState.sites[SourceIds.NEIS_PUBLIC]
     val schoolLevel = settings.schoolLevel ?: NoticeDecisionEngine.inferLevel(settings.schoolName)
@@ -118,15 +123,26 @@ fun ConnectionsScreen(
             if (installedApps.isEmpty()) ConnectionEmptyRow("연결할 수 있는 앱이 없어요")
             installedApps.forEach { app ->
                 val enabled = app.packageName in settings.selectedPackages
+                val popupOn = appPopupOn[app.packageName]
                 ConnectionSwitchRow(
                     mark = app.mark,
                     name = app.name,
-                    status = if (enabled && app.packageName in verifiedAppPackages) "알림 수신 이력 있음"
-                        else if (enabled) "첫 알림 기다리는 중" else "꺼짐",
+                    status = when {
+                        enabled && popupOn == false -> "이 앱의 알림이 꺼져 있어요 · 켜야 가져올 수 있어요"
+                        enabled && !listenerAccess -> "알림 읽기 권한이 꺼져 있어요"
+                        enabled && app.packageName in verifiedAppPackages -> "알림 수신 이력 있음"
+                        enabled -> "첫 알림 기다리는 중"
+                        else -> "꺼짐"
+                    },
                     checked = enabled,
                     enabled = !busy,
                     onCheckedChange = { onToggleApp(app.packageName, it) },
                 )
+                if (enabled && popupOn == false) {
+                    TextButton(onClick = { onOpenAppNotifications(app.packageName) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("${app.name} 알림 설정 열기")
+                    }
+                }
             }
         }
 
@@ -148,7 +164,11 @@ fun ConnectionsScreen(
                     snapshot = sourceSnapshots[SourceIds.SCHOOL_WEBSITE],
                     enabled = !busy && settings.onboardingDone,
                     onRefresh = { onRefreshSource(SourceIds.SCHOOL_WEBSITE) },
+                    hint = postingHints[SourceIds.SCHOOL_WEBSITE],
                 )
+                TextButton(onClick = { onOpenWebsite(SourceIds.SCHOOL_WEBSITE) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Text("홈페이지 열기")
+                }
                 HorizontalDivider(color = Color.White.copy(alpha = .8f))
             }
             ConnectionSwitchRow(
@@ -171,6 +191,9 @@ fun ConnectionsScreen(
             ConnectionSwitchRow("e", "e알리미 웹", websiteStatus(ealimi, sourceSnapshots[SourceIds.EALIMI_WEB]), ealimi?.status in setOf(ConnectionStatus.SESSION_READY, ConnectionStatus.CONNECTED), !busy) {
                 onToggleWebsite("ealimi-web", it)
             }
+            TextButton(onClick = { onOpenWebsite("ealimi-web") }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                Text("e알리미 사이트 열기")
+            }
             if (ealimi?.status in setOf(ConnectionStatus.SESSION_READY, ConnectionStatus.CONNECTED)) {
                 TextButton(onClick = { onRefreshSource(SourceIds.EALIMI_WEB) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                     Text("e알리미 지금 확인")
@@ -180,6 +203,9 @@ fun ConnectionsScreen(
             val hiclass = connectorState.sites["hiclass-web"]
             ConnectionSwitchRow("Hi", "하이클래스 웹", websiteStatus(hiclass), hiclass?.status in setOf(ConnectionStatus.SESSION_READY, ConnectionStatus.CONNECTED), !busy) {
                 onToggleWebsite("hiclass-web", it)
+            }
+            TextButton(onClick = { onOpenWebsite("hiclass-web") }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                Text("하이클래스 사이트 열기")
             }
         }
         Text("AI 분석 미연결 · 이 기기에서 기본 정리. 웹 로그인은 시험 연결이며 개인 공지 자동 조회·로그인 갱신은 아직 지원하지 않아요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
@@ -230,13 +256,14 @@ private fun ConnectionSwitchRow(mark: String, name: String, status: String, chec
 }
 
 @Composable
-private fun SourceStatusRow(mark: String, name: String, sourceId: String, snapshot: SourceSyncSnapshot?, enabled: Boolean, onRefresh: () -> Unit) {
+private fun SourceStatusRow(mark: String, name: String, sourceId: String, snapshot: SourceSyncSnapshot?, enabled: Boolean, onRefresh: () -> Unit, hint: String? = null) {
     Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         ConnectorMark(mark, Clay.Sage)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(name, style = MaterialTheme.typography.titleMedium)
             Text("${sourceStatusText(snapshot)} · sourceId $sourceId", style = MaterialTheme.typography.bodySmall, color = Clay.Green)
+            if (hint != null) Text(hint, style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
         }
         TextButton(onClick = onRefresh, enabled = enabled) { Text("지금") }
     }
