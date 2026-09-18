@@ -549,19 +549,6 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         refreshSourceSnapshots()
                         message = "출처 확인을 시작했어요."
                     },
-                    onToggleWebsite = { siteId, enabled ->
-                        val definition = ConnectorCatalog.site(siteId)
-                        if (definition == null) message = "연결 정보를 찾지 못했어요."
-                        else if (enabled) {
-                            command({ connectorRepository.markConnecting(siteId) }) {
-                                pendingWebsiteId = siteId
-                                websiteLogin.launch(Intent(context, WebsiteLoginActivity::class.java)
-                                    .putExtra(WebsiteLoginActivity.EXTRA_SITE_ID, siteId))
-                            }
-                        } else {
-                            resetWebsites = true
-                        }
-                    },
                     onRecommendApp = { app ->
                         val market = android.net.Uri.parse("market://details?id=${app.packageName}")
                         val web = android.net.Uri.parse("https://play.google.com/store/apps/details?id=${app.packageName}")
@@ -629,7 +616,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     HomeScreen(settings, homeRecords, access, connected, ::proceedSetup, { screen = "inbox" }, {
                     selectedId = it.id; previous = "home"; screen = "detail"
                 }, connectedSiteCount = connectorState.sites.values.count {
-                    it.status == ConnectionStatus.CONNECTED
+                    it.status == ConnectionStatus.CONNECTED && ConnectorCatalog.shouldShowWebsite(it.id)
                 } + activeSourceScopes
                     .count { it.sourceId == SourceIds.SCHOOL_WEBSITE },
                     schoolEvents = emptyList(),

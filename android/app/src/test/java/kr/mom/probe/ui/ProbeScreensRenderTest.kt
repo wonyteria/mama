@@ -33,6 +33,7 @@ import kr.mom.probe.data.ProbeRecord
 import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.data.NotificationCandidateParser
 import kr.mom.probe.connector.NeisEvent
+import kr.mom.probe.connector.ConnectorState
 import kr.mom.probe.sync.SourceAgendaItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -87,6 +88,42 @@ class ProbeScreensRenderTest {
         compose.onNodeWithTag("resume-setup").performClick()
         compose.runOnIdle { assertEquals(1, setupRequests) }
         compose.onNodeWithText("마지막 준비를 도와드릴게요").assertIsDisplayed()
+    }
+
+    @Test
+    fun connectionsShowAppsOnlyWhenTheSameServiceAlsoHasAWebsite() {
+        render {
+            ConnectionsScreen(
+                settings = ProbeSettings(
+                    consent = true,
+                    childName = "QA",
+                    schoolName = "성남정자초등학교",
+                    schoolGrade = 2,
+                    onboardingDone = true,
+                ),
+                installedApps = listOf(
+                    SourceApp("com.ewut.allealimi", "e알리미", "학교 소식", "e"),
+                    SourceApp("com.iscreammedia.app.hiclass.android", "하이클래스", "학교 소식", "Hi"),
+                ),
+                missingApps = emptyList(),
+                verifiedAppPackages = emptySet(),
+                connectorState = ConnectorState(),
+                busy = false,
+                onBack = {},
+                onToggleApp = { _, _ -> },
+                onConnectNeis = {},
+                onDisconnectNeis = {},
+                onRecommendApp = {},
+            )
+        }
+
+        compose.onNodeWithText("e알리미").assertIsDisplayed()
+        compose.onNodeWithText("하이클래스").assertIsDisplayed()
+        compose.onAllNodesWithText("e알리미 웹").assertCountEquals(0)
+        compose.onAllNodesWithText("하이클래스 웹").assertCountEquals(0)
+        compose.onAllNodesWithText("e알리미 사이트 열기").assertCountEquals(0)
+        compose.onAllNodesWithText("하이클래스 사이트 열기").assertCountEquals(0)
+        screenshot("connections-apps-only")
     }
 
     @Test

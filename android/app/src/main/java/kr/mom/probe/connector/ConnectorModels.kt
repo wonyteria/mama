@@ -38,6 +38,11 @@ data class SiteDefinition(
 )
 
 object ConnectorCatalog {
+    private val appPreferredWebsites = mapOf(
+        "ealimi-web" to "com.ewut.allealimi",
+        "hiclass-web" to "com.iscreammedia.app.hiclass.android",
+    )
+
     val sites = listOf(
         SiteDefinition(
             id = "neis-public",
@@ -78,6 +83,11 @@ object ConnectorCatalog {
     )
 
     fun site(id: String): SiteDefinition? = sites.firstOrNull { it.id == id }
+
+    /** A service with an Android app is represented by the app only in product UI and sync. */
+    fun preferredAppPackage(siteId: String): String? = appPreferredWebsites[siteId]
+
+    fun shouldShowWebsite(siteId: String): Boolean = preferredAppPackage(siteId) == null
 
     fun isAllowedHttps(definition: SiteDefinition, rawUrl: String): Boolean {
         val uri = runCatching { URI(rawUrl) }.getOrNull() ?: return false

@@ -17,6 +17,7 @@ import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kr.mom.probe.connector.ConnectionStatus
+import kr.mom.probe.connector.ConnectorCatalog
 import kr.mom.probe.connector.ConnectorRepository
 import kr.mom.probe.data.NoticeDecisionEngine
 import kr.mom.probe.data.ProbeRepository
@@ -51,7 +52,9 @@ object SourceSyncScheduler {
 
     fun schedulePeriodic(context: Context) {
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-        SourceConfigs.all.filter { it.available || it.sourceId == SourceIds.EALIMI_WEB }.forEach { config ->
+        ConnectorCatalog.sites.filterNot { ConnectorCatalog.shouldShowWebsite(it.id) }
+            .forEach { cancel(context, it.id) }
+        SourceConfigs.all.filter { it.available && ConnectorCatalog.shouldShowWebsite(it.sourceId) }.forEach { config ->
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 "source-sync-periodic-${config.sourceId}",
                 ExistingPeriodicWorkPolicy.KEEP,
@@ -101,6 +104,10 @@ object SourceSyncScheduler {
     }
 
     fun enqueue(context: Context, sourceId: String, trigger: SourceRunTrigger = SourceRunTrigger.MANUAL) {
+        if (!ConnectorCatalog.shouldShowWebsite(sourceId)) {
+            cancel(context, sourceId)
+            return
+        }
         schedulePeriodic(context)
         WorkManager.getInstance(context).enqueueUniqueWork(
             "source-sync-now-$sourceId",
@@ -192,7 +199,11 @@ object SourceScopeFactory {
                 null
             }
             SourceIds.NEIS_PUBLIC -> neisScope(app, child, consentEpoch, authorizationToken, trigger, base)
-            SourceIds.EALIMI_WEB -> privateScope(app, child, consentEpoch, authorizationToken, trigger, base)
+            SourceIds.EALIMI_WEB -> if (ConnectorCatalog.shouldShowWebsite(SourceIds.EALIMI_WEB)) {
+                privateScope(app, child, consentEpoch, authorizationToken, trigger, base)
+            } else {
+                null
+            }
             else -> null
         }
     }
@@ -202,7 +213,9 @@ object SourceScopeFactory {
         val ids = mutableSetOf<String>()
         if (isSeongnamJeongjaElementaryFromSettings(context)) ids += SourceIds.SCHOOL_WEBSITE
         if (connectors[SourceIds.NEIS_PUBLIC]?.status == ConnectionStatus.CONNECTED) ids += SourceIds.NEIS_PUBLIC
-        if (connectors[SourceIds.EALIMI_WEB]?.status in setOf(ConnectionStatus.SESSION_READY, ConnectionStatus.CONNECTED)) ids += SourceIds.EALIMI_WEB
+        if (ConnectorCatalog.shouldShowWebsite(SourceIds.EALIMI_WEB) &&
+            connectors[SourceIds.EALIMI_WEB]?.status in setOf(ConnectionStatus.SESSION_READY, ConnectionStatus.CONNECTED)
+        ) ids += SourceIds.EALIMI_WEB
         return ids
     }
 

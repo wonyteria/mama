@@ -100,7 +100,6 @@ fun ConnectionsScreen(
     onDisconnectNeis: () -> Unit,
     sourceSnapshots: Map<String, SourceSyncSnapshot> = emptyMap(),
     onRefreshSource: (String) -> Unit = {},
-    onToggleWebsite: (String, Boolean) -> Unit,
     onRecommendApp: (SourceApp) -> Unit,
     onSkip: () -> Unit = {},
     listenerAccess: Boolean = true,
@@ -187,39 +186,10 @@ fun ConnectionsScreen(
             HorizontalDivider(color = Color.White.copy(alpha = .8f))
             ConnectionSwitchRow("N+", "나이스 학부모서비스", "개인 공지 조회 연동 미지원", false, false) { }
             HorizontalDivider(color = Color.White.copy(alpha = .8f))
-            val ealimi = connectorState.sites["ealimi-web"]
-            ConnectionSwitchRow("e", "e알리미 웹", websiteStatus(ealimi, sourceSnapshots[SourceIds.EALIMI_WEB]), ealimi?.status in setOf(ConnectionStatus.SESSION_READY, ConnectionStatus.CONNECTED), !busy) {
-                onToggleWebsite("ealimi-web", it)
-            }
-            TextButton(onClick = { onOpenWebsite("ealimi-web") }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                Text("e알리미 사이트 열기")
-            }
-            if (ealimi?.status in setOf(ConnectionStatus.SESSION_READY, ConnectionStatus.CONNECTED)) {
-                TextButton(onClick = { onRefreshSource(SourceIds.EALIMI_WEB) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                    Text("e알리미 지금 확인")
-                }
-            }
-            HorizontalDivider(color = Color.White.copy(alpha = .8f))
-            val hiclass = connectorState.sites["hiclass-web"]
-            ConnectionSwitchRow("Hi", "하이클래스 웹", websiteStatus(hiclass), hiclass?.status in setOf(ConnectionStatus.SESSION_READY, ConnectionStatus.CONNECTED), !busy) {
-                onToggleWebsite("hiclass-web", it)
-            }
-            TextButton(onClick = { onOpenWebsite("hiclass-web") }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                Text("하이클래스 사이트 열기")
-            }
         }
-        Text("AI 분석 미연결 · 이 기기에서 기본 정리. 웹 로그인은 시험 연결이며 개인 공지 자동 조회·로그인 갱신은 아직 지원하지 않아요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text("앱과 웹이 같은 서비스이면 앱만 표시해요. 학교 공식 홈페이지와 나이스처럼 앱과 역할이 다른 사이트만 따로 보여줘요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
         if (!settings.onboardingDone) TextButton(onClick = onSkip, enabled = !busy) { Text("연결은 나중에 · 비서 만나기") }
     }
-}
-
-private fun websiteStatus(connection: SiteConnection?, snapshot: SourceSyncSnapshot? = null): String = when (connection?.status) {
-    ConnectionStatus.CONNECTING -> "로그인 중"
-    ConnectionStatus.SESSION_READY -> snapshot?.let(::sourceStatusText) ?: "사용자가 완료로 표시 · 인증 미확인"
-    ConnectionStatus.CONNECTED -> snapshot?.let(::sourceStatusText) ?: "정보 확인됨"
-    ConnectionStatus.REAUTH_REQUIRED -> "다시 로그인 필요"
-    ConnectionStatus.ERROR -> "연결 확인 필요"
-    else -> "로그인 연결"
 }
 
 private fun sourceStatusText(snapshot: SourceSyncSnapshot?): String = when (snapshot?.status) {
