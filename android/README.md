@@ -67,7 +67,7 @@ Warm Agentic Clay와 Bento 구조를 적용한 Android 설치형 **엄마 로컬
 Windows PowerShell에서:
 
 ```powershell
-cd D:\Codex\mom-agent\android
+cd D:\플랫폼\mama\project\android
 .\scripts\bootstrap.ps1
 .\scripts\build.ps1
 ```
