@@ -147,7 +147,17 @@ class ProbeRepository private constructor(context: Context) {
 
     suspend fun saveSourceSelection(packages: Set<String>) = action {
         require(packages.size <= 10 && packages.all { it.isNotBlank() && it != app.packageName }) { "챙길 앱을 최대 10개 선택해 주세요." }
-        saveLocked(settings.value.copy(selectedPackages = packages.toSet()))
+        saveLocked(settings.value.copy(
+            selectedPackages = packages.toSet(),
+            hiddenSourcePackages = settings.value.hiddenSourcePackages.intersect(packages),
+        ))
+    }
+
+    suspend fun saveHiddenSourcePackage(packageName: String, hidden: Boolean) = action {
+        val current = settings.value
+        val updated = (if (hidden) current.hiddenSourcePackages + packageName
+            else current.hiddenSourcePackages - packageName).intersect(current.selectedPackages)
+        saveLocked(current.copy(hiddenSourcePackages = updated))
     }
 
     suspend fun saveChild(name: String, schoolName: String = "", schoolGrade: Int? = null, schoolLevel: SchoolLevel? = null) = action {
@@ -288,6 +298,29 @@ class ProbeRepository private constructor(context: Context) {
             kr.mom.probe.task.AutoActionCoordinator.handle(app, record, settings.value)
             kr.mom.probe.reminder.AssistantAlertNotifier.notify(app, record)
         }
+    }
+
+    /**
+     * Whether the listener may cancel this source notification now that its
+     * unified alert is posted. Reads extras again rather than trusting the
+     * stored record so the safety check always inspects the live notification.
+     */
+    fun shouldHideOriginal(notification: StatusBarNotification): Boolean {
+        val extras = notification.notification.extras
+        val identity = ProbeRules.notificationIdentity(notification.packageName, notification.key)
+        return ProbeRules.canHideOriginal(
+            settings = settings.value,
+            packageName = notification.packageName,
+            ownPackage = app.packageName,
+            category = notification.notification.category,
+            ongoing = notification.isOngoing,
+            groupSummary = notification.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0,
+            clearable = notification.isClearable,
+            title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
+            text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty(),
+            unifiedAlertPosted = kr.mom.probe.reminder.AssistantAlertNotifier.isAlertPosted(app, identity),
+            hasAccess = hasNotificationAccess(),
+        )
     }
 
     private suspend fun ingestSourceLocked(scope: SourceScope, result: SourceFetchResult): IngestReceipt {
@@ -499,21 +532,24 @@ private fun sourceLabel(kind: kr.mom.probe.sync.SourceKind, sourceId: String): S
         kr.mom.probe.sync.SourceKind.ANDROID_NOTIFICATION -> "앱 알림"
     }
 
-private fun encodeSettings(value: ProbeSettings) = JSONObject().put("consent", value.consent)
+internal fun encodeSettings(value: ProbeSettings) = JSONObject().put("consent", value.consent)
     .put("childName", value.childName).put("selectedPackages", JSONArray(value.selectedPackages.toList()))
+    .put("hiddenSourcePackages", JSONArray(value.hiddenSourcePackages.toList()))
     .put("schoolName", value.schoolName).put("schoolGrade", value.schoolGrade ?: JSONObject.NULL)
     .put("schoolLevel", value.schoolLevel?.name ?: JSONObject.NULL)
     .put("collectionEnabled", value.collectionEnabled).put("onboardingDone", value.onboardingDone)
     .put("consentAt", value.consentAt).put("consentVersion", value.consentVersion).toString()
 
-private fun decodeSettings(raw: String): ProbeSettings {
+internal fun decodeSettings(raw: String): ProbeSettings {
     val json = JSONObject(raw)
     val packages = json.optJSONArray("selectedPackages") ?: JSONArray()
+    val hidden = json.optJSONArray("hiddenSourcePackages") ?: JSONArray()
     return ProbeSettings(
         consent = json.optBoolean("consent"), childName = json.optString("childName"),
         schoolName = json.optString("schoolName"), schoolGrade = if (json.isNull("schoolGrade")) null else json.optInt("schoolGrade"),
         schoolLevel = json.nullableString("schoolLevel")?.let { runCatching { SchoolLevel.valueOf(it) }.getOrNull() },
         selectedPackages = (0 until packages.length()).map { packages.getString(it) }.toSet(),
+        hiddenSourcePackages = (0 until hidden.length()).map { hidden.getString(it) }.toSet(),
         collectionEnabled = json.optBoolean("collectionEnabled"), onboardingDone = json.optBoolean("onboardingDone"),
         consentAt = if (json.has("consentAt")) json.getLong("consentAt") else null,
         consentVersion = json.nullableString("consentVersion"),

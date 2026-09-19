@@ -609,6 +609,10 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             kr.mom.probe.sync.PostingTimeStore.describeLearnedWindow(context, sourceId)?.let { put(sourceId, it) }
                         }
                     },
+                    hiddenPackages = settings.hiddenSourcePackages,
+                    onToggleHideOriginal = { packageName, hidden ->
+                        command({ repository.saveHiddenSourcePackage(packageName, hidden) })
+                    },
                 )
                 "child" -> ChildProfileScreen(settings, busy, { name, school, grade, level ->
                     command({

@@ -13,8 +13,8 @@ android {
         applicationId = "kr.mom.probe"
         minSdk = 33
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.0.1"
+        versionCode = 13
+        versionName = "1.0.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         val neisKey = (providers.gradleProperty("NEIS_API_KEY").orNull ?: System.getenv("NEIS_API_KEY") ?: "")
             .replace("\\", "\\\\").replace("\"", "\\\"")

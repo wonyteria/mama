@@ -107,6 +107,8 @@ fun ConnectionsScreen(
     onOpenAppNotifications: (String) -> Unit = {},
     onOpenWebsite: (String) -> Unit = {},
     postingHints: Map<String, String> = emptyMap(),
+    hiddenPackages: Set<String> = emptySet(),
+    onToggleHideOriginal: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val publicConnection = connectorState.sites[SourceIds.NEIS_PUBLIC]
     val schoolLevel = settings.schoolLevel ?: NoticeDecisionEngine.inferLevel(settings.schoolName)
@@ -142,6 +144,11 @@ fun ConnectionsScreen(
                         Text("${app.name} 알림 설정 열기")
                     }
                 }
+                if (enabled) HideOriginalRow(
+                    hidden = app.packageName in hiddenPackages,
+                    enabled = !busy,
+                    onToggle = { onToggleHideOriginal(app.packageName, it) },
+                )
             }
         }
 
@@ -222,6 +229,20 @@ private fun ConnectionSwitchRow(mark: String, name: String, status: String, chec
             Text(status, style = MaterialTheme.typography.bodySmall, color = if (checked) Clay.Green else Clay.Muted)
         }
         Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+    }
+}
+
+@Composable
+private fun HideOriginalRow(hidden: Boolean, enabled: Boolean, onToggle: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth()
+        .toggleable(value = hidden, enabled = enabled, role = Role.Switch, onValueChange = onToggle)
+        .padding(start = 62.dp, end = 8.dp, top = 2.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("정리되면 원본 알림 숨기기", style = MaterialTheme.typography.bodyMedium)
+            Text("꺼두면 원본과 모모 알림이 함께 보여요", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+        }
+        Switch(checked = hidden, onCheckedChange = null, enabled = enabled)
     }
 }
 
