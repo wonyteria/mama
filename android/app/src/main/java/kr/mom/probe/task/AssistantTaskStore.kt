@@ -14,6 +14,26 @@ import org.json.JSONObject
 
 enum class AssistantTaskSource { USER_LOCAL, USER_CONFIRMED_NOTICE, AUTO_NOTICE, LEGACY }
 
+enum class TaskActionKind(val label: String) {
+    SUBMIT("제출·신청"),
+    PREPARE("준비물 챙기기"),
+}
+
+data class TaskChecklistItem(
+    val id: String,
+    val text: String,
+    val done: Boolean = false,
+)
+
+/** One deduplicated action plan produced from a single notice revision. */
+data class AutoTaskPlan(
+    val actionKind: String,
+    val text: String,
+    val checklist: List<String> = emptyList(),
+    val dueAt: Long? = null,
+    val remindAt: Long? = null,
+)
+
 data class AssistantTask(
     val id: String,
     val text: String,
@@ -33,6 +53,12 @@ data class AssistantTask(
     val activeAlarmNotificationId: Int? = null,
     val snoozeCount: Int = 0,
     val snoozeMinutes: Int = 0,
+    val checklist: List<TaskChecklistItem> = emptyList(),
+    val actionKind: String? = null,
+    val excluded: Boolean = false,
+    val completedAt: Long? = null,
+    val checklistBeforeCompletion: List<TaskChecklistItem>? = null,
+    val userEdited: Boolean = false,
 )
 
 sealed class TaskAlarmSnoozeResult {
@@ -88,6 +114,13 @@ class AssistantTaskStore private constructor(context: Context) {
                     item.optionalInt("activeAlarmNotificationId"),
                     item.optInt("snoozeCount", 0).coerceIn(0, MAX_SNOOZES),
                     item.optInt("snoozeMinutes", 0).coerceIn(0, MAX_SNOOZE_MINUTES),
+                    decodeChecklist(item.optJSONArray("checklist")),
+                    item.optionalId("actionKind"),
+                    item.optBoolean("excluded", false),
+                    item.optionalLong("completedAt"),
+                    if (item.has("checklistBeforeCompletion") && !item.isNull("checklistBeforeCompletion"))
+                        decodeChecklist(item.optJSONArray("checklistBeforeCompletion")) else null,
+                    item.optBoolean("userEdited", false),
                 )
             }
         }
@@ -109,14 +142,18 @@ class AssistantTaskStore private constructor(context: Context) {
         remindAt: Long? = null,
         sourceRevisionId: String? = null,
         sourceKind: AssistantTaskSource = if (sourceNotificationId == null) AssistantTaskSource.USER_LOCAL else AssistantTaskSource.USER_CONFIRMED_NOTICE,
+        checklist: List<String> = emptyList(),
+        actionKind: String? = null,
     ): AssistantTask? {
         val normalized = text.trim()
-        require(normalized.isNotEmpty() && normalized.length <= MAX_TEXT) { "부탁을 1~300자로 적어주세요." }
+        require(normalized.isNotEmpty() && normalized.length <= MAX_TEXT) { "할 일을 1~300자로 적어주세요." }
         require(dueAt == null || dueAt > 0L) { "기한을 다시 확인해주세요." }
         require(remindAt == null || remindAt > 0L) { "알림 시간을 다시 확인해주세요." }
         val current = mutableTasks.value
         if (sourceNotificationId != null) {
-            val sameSource = current.filter { it.sourceNotificationId == sourceNotificationId }
+            val sameSource = current.filter {
+                it.sourceNotificationId == sourceNotificationId && it.actionKind == actionKind
+            }
             if (sameSource.any { it.sourceKind != AssistantTaskSource.AUTO_NOTICE || sourceKind != AssistantTaskSource.AUTO_NOTICE }) return null
             val existing = sameSource.firstOrNull { !it.completed && !it.suspended } ?: sameSource.firstOrNull { !it.suspended }
             if (existing != null) {
@@ -128,7 +165,7 @@ class AssistantTaskStore private constructor(context: Context) {
                     return null
                 }
                 val updated = existing.copy(
-                    text = normalized,
+                    text = if (existing.userEdited) existing.text else normalized,
                     sourceRevisionId = sourceRevisionId ?: existing.sourceRevisionId,
                     dueAt = dueAt,
                     remindAt = remindAt,
@@ -141,13 +178,14 @@ class AssistantTaskStore private constructor(context: Context) {
                     snoozeCount = 0,
                     snoozeMinutes = 0,
                     suspended = false,
+                    checklist = mergeChecklist(existing.checklist, checklist),
                 )
                 if (updated == existing) return null
                 save(listOf(updated) + current.filterNot { it.id == existing.id })
                 return updated
             }
         }
-        check(current.size < MAX_TASKS) { "부탁이 200개 모였어요. 끝난 부탁을 삭제해주세요." }
+        check(current.size < MAX_TASKS) { "할 일이 200개 모였어요. 끝낸 일은 완료 또는 제외해주세요." }
         val occurrenceId = remindAt?.let { newOccurrenceId() }
         val task = AssistantTask(
             UUID.randomUUID().toString(),
@@ -163,6 +201,8 @@ class AssistantTaskStore private constructor(context: Context) {
             false,
             occurrenceId,
             remindAt,
+            checklist = checklist.map { TaskChecklistItem(newOccurrenceId(), it.trim().take(MAX_ITEM_TEXT)) }.filter { it.text.isNotEmpty() },
+            actionKind = actionKind,
         )
         save(listOf(task) + current)
         return task
@@ -175,6 +215,9 @@ class AssistantTaskStore private constructor(context: Context) {
             if (it.id == id && completed) {
                 it.copy(
                     completed = true,
+                    completedAt = System.currentTimeMillis(),
+                    checklistBeforeCompletion = it.checklist.ifEmpty { null } ?: it.checklist,
+                    checklist = it.checklist.map { item -> item.copy(done = true) },
                     remindAt = null,
                     reminderOccurrenceId = null,
                     reminderOccurrenceAt = null,
@@ -183,7 +226,12 @@ class AssistantTaskStore private constructor(context: Context) {
                     activeAlarmNotificationId = null,
                 )
             } else if (it.id == id) {
-                it.copy(completed = false)
+                it.copy(
+                    completed = false,
+                    completedAt = null,
+                    checklist = it.checklistBeforeCompletion ?: it.checklist,
+                    checklistBeforeCompletion = null,
+                )
             } else {
                 it
             }
@@ -191,6 +239,204 @@ class AssistantTaskStore private constructor(context: Context) {
         if (completed) {
             if (before != null) TaskReminderScheduler.cancel(app, before) else TaskReminderScheduler.cancel(app, id)
         }
+    }
+
+    /** Checking the final checklist item completes the parent; unchecking an item leaves the parent open. */
+    @Synchronized
+    fun setChecklistItem(id: String, itemId: String, done: Boolean) {
+        val before = mutableTasks.value.firstOrNull { it.id == id } ?: return
+        if (before.completed || before.suspended || before.excluded) return
+        val updatedChecklist = before.checklist.map { if (it.id == itemId) it.copy(done = done) else it }
+        if (updatedChecklist == before.checklist) return
+        val allDone = updatedChecklist.isNotEmpty() && updatedChecklist.all { it.done }
+        val updated = if (allDone) {
+            before.copy(
+                completed = true,
+                completedAt = System.currentTimeMillis(),
+                checklistBeforeCompletion = before.checklist,
+                checklist = updatedChecklist,
+                remindAt = null,
+                reminderOccurrenceId = null,
+                reminderOccurrenceAt = null,
+                activeAlarmOccurrenceId = null,
+                activeAlarmScheduledAt = null,
+                activeAlarmNotificationId = null,
+            )
+        } else {
+            before.copy(checklist = updatedChecklist)
+        }
+        save(mutableTasks.value.map { if (it.id == id) updated else it })
+        if (allDone) TaskReminderScheduler.cancel(app, before)
+    }
+
+    /** Excluded tasks stay out of every list and count; restoring keeps the original reminder slot. */
+    @Synchronized
+    fun setExcluded(id: String, excluded: Boolean) {
+        val before = mutableTasks.value.firstOrNull { it.id == id } ?: return
+        if (before.excluded == excluded) return
+        save(mutableTasks.value.map {
+            if (it.id == id) {
+                it.copy(
+                    excluded = excluded,
+                    activeAlarmOccurrenceId = null,
+                    activeAlarmScheduledAt = null,
+                    activeAlarmNotificationId = null,
+                )
+            } else {
+                it
+            }
+        })
+        if (excluded) TaskReminderScheduler.cancel(app, before)
+    }
+
+    @Synchronized
+    fun editTask(id: String, text: String, dueAt: Long?) {
+        val normalized = text.trim()
+        require(normalized.isNotEmpty() && normalized.length <= MAX_TEXT) { "할 일을 1~300자로 적어주세요." }
+        require(dueAt == null || dueAt > 0L) { "기한을 다시 확인해주세요." }
+        save(mutableTasks.value.map {
+            if (it.id == id && !it.completed) it.copy(text = normalized, dueAt = dueAt, userEdited = true) else it
+        })
+    }
+
+    /** User-driven snooze: parks the task until the chosen time without touching retry counters. */
+    @Synchronized
+    fun snoozeTask(id: String, remindAt: Long) {
+        require(remindAt > System.currentTimeMillis()) { "알림 시간을 다시 확인해주세요." }
+        val occurrenceId = newOccurrenceId()
+        save(mutableTasks.value.map {
+            if (it.id == id && !it.completed && !it.suspended) {
+                it.copy(
+                    remindAt = remindAt,
+                    reminderOccurrenceId = occurrenceId,
+                    reminderOccurrenceAt = remindAt,
+                    activeAlarmOccurrenceId = null,
+                    activeAlarmScheduledAt = null,
+                    activeAlarmNotificationId = null,
+                    reminderAttempts = 0,
+                )
+            } else {
+                it
+            }
+        })
+    }
+
+    /**
+     * Dismisses the currently ringing alarm without completing the task. When the task
+     * still has a later reminder slot (e.g. morning-of for a due date), it is re-armed
+     * so unfinished work keeps surfacing until it is checked off.
+     */
+    @Synchronized
+    fun dismissAlarmOccurrence(id: String, occurrenceId: String, nextRemindAt: Long? = null): Boolean {
+        val task = mutableTasks.value.firstOrNull { it.id == id } ?: return false
+        if (task.completed || task.suspended || task.excluded || task.activeAlarmOccurrenceId != occurrenceId) return false
+        val nextOccurrenceId = nextRemindAt?.let { newOccurrenceId() }
+        save(mutableTasks.value.map {
+            if (it.id == id) {
+                it.copy(
+                    remindAt = nextRemindAt,
+                    reminderOccurrenceId = nextOccurrenceId,
+                    reminderOccurrenceAt = nextRemindAt,
+                    activeAlarmOccurrenceId = null,
+                    activeAlarmScheduledAt = null,
+                    activeAlarmNotificationId = null,
+                    reminderAttempts = 0,
+                )
+            } else {
+                it
+            }
+        })
+        return true
+    }
+
+    /**
+     * Applies the current revision's action plans to the automatic tasks of one notice.
+     * Each action kind is reconciled in place so a deadline change cancels the old
+     * schedule and arms the new one, while completed tasks keep their completion.
+     */
+    @Synchronized
+    fun applyAutomaticPlans(sourceNotificationId: String, sourceRevisionId: String, plans: List<AutoTaskPlan>): Boolean {
+        if (!loaded) load()
+        val current = mutableTasks.value
+        var changed = false
+        val next = current.toMutableList()
+        val reconciledIds = mutableSetOf<String>()
+        plans.forEach { plan ->
+            val normalized = plan.text.trim().take(MAX_TEXT)
+            if (normalized.isEmpty()) return@forEach
+            val existing = next.firstOrNull {
+                it.sourceNotificationId == sourceNotificationId && it.actionKind == plan.actionKind &&
+                    it.sourceKind == AssistantTaskSource.AUTO_NOTICE && !it.suspended
+            } ?: next.firstOrNull {
+                it.sourceNotificationId == sourceNotificationId && it.actionKind == plan.actionKind &&
+                    it.sourceKind == AssistantTaskSource.AUTO_NOTICE
+            } ?: return@forEach run {
+                val occurrenceId = plan.remindAt?.let { newOccurrenceId() }
+                val created = AssistantTask(
+                    UUID.randomUUID().toString(),
+                    normalized,
+                    false,
+                    System.currentTimeMillis(),
+                    sourceNotificationId,
+                    sourceRevisionId,
+                    AssistantTaskSource.AUTO_NOTICE,
+                    plan.dueAt,
+                    plan.remindAt,
+                    reminderOccurrenceId = occurrenceId,
+                    reminderOccurrenceAt = plan.remindAt,
+                    checklist = plan.checklist.map { TaskChecklistItem(newOccurrenceId(), it.trim().take(MAX_ITEM_TEXT)) }
+                        .filter { it.text.isNotEmpty() },
+                    actionKind = plan.actionKind,
+                )
+                next.add(0, created)
+                changed = true
+            }
+            reconciledIds += existing.id
+            val updated = if (existing.completed) {
+                existing.copy(sourceRevisionId = sourceRevisionId, suspended = false)
+            } else {
+                val reminderChanged = existing.remindAt != plan.remindAt
+                existing.copy(
+                    text = if (existing.userEdited) existing.text else normalized,
+                    sourceRevisionId = sourceRevisionId,
+                    dueAt = plan.dueAt,
+                    remindAt = plan.remindAt,
+                    reminderOccurrenceId = if (reminderChanged) plan.remindAt?.let { newOccurrenceId() } else existing.reminderOccurrenceId,
+                    reminderOccurrenceAt = if (reminderChanged) plan.remindAt else existing.reminderOccurrenceAt,
+                    activeAlarmOccurrenceId = null,
+                    activeAlarmScheduledAt = null,
+                    activeAlarmNotificationId = null,
+                    reminderAttempts = 0,
+                    suspended = false,
+                    checklist = mergeChecklist(existing.checklist, plan.checklist),
+                )
+            }
+            if (updated != existing) {
+                next[next.indexOfFirst { it.id == existing.id }] = updated
+                changed = true
+            }
+        }
+        // Suspend automatic tasks whose action kind disappeared from the new revision.
+        val final = next.map {
+            if (it.sourceNotificationId == sourceNotificationId && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
+                !it.completed && it.id !in reconciledIds && !it.suspended) {
+                changed = true
+                it.copy(
+                    suspended = true,
+                    remindAt = null,
+                    reminderOccurrenceId = null,
+                    reminderOccurrenceAt = null,
+                    activeAlarmOccurrenceId = null,
+                    activeAlarmScheduledAt = null,
+                    activeAlarmNotificationId = null,
+                )
+            } else {
+                it
+            }
+        }
+        if (!changed) return false
+        save(final)
+        return true
     }
 
     @Synchronized
@@ -313,7 +559,13 @@ class AssistantTaskStore private constructor(context: Context) {
             .put("activeAlarmOccurrenceId", task.activeAlarmOccurrenceId ?: JSONObject.NULL)
             .put("activeAlarmScheduledAt", task.activeAlarmScheduledAt ?: JSONObject.NULL)
             .put("activeAlarmNotificationId", task.activeAlarmNotificationId ?: JSONObject.NULL)
-            .put("snoozeCount", task.snoozeCount).put("snoozeMinutes", task.snoozeMinutes)) } }
+            .put("snoozeCount", task.snoozeCount).put("snoozeMinutes", task.snoozeMinutes)
+            .put("checklist", encodeChecklist(task.checklist))
+            .put("actionKind", task.actionKind ?: JSONObject.NULL)
+            .put("excluded", task.excluded)
+            .put("completedAt", task.completedAt ?: JSONObject.NULL)
+            .put("checklistBeforeCompletion", task.checklistBeforeCompletion?.let { encodeChecklist(it) } ?: JSONObject.NULL)
+            .put("userEdited", task.userEdited)) } }
         val ciphertext = Base64.encodeToString(ProbeCrypto().encrypt(array.toString(), "assistant_tasks"), Base64.NO_WRAP)
         if (!preferences.edit().putString("encrypted", ciphertext).commit()) throw IOException("부탁을 저장하지 못했어요. 다시 시도해주세요.")
         mutableTasks.value = next
@@ -331,9 +583,42 @@ class AssistantTaskStore private constructor(context: Context) {
 
     companion object {
         const val MAX_TEXT = 300
+        const val MAX_ITEM_TEXT = 80
         private const val MAX_TASKS = 200
         internal const val MAX_SNOOZES = 3
         internal const val MAX_SNOOZE_MINUTES = 60
+
+        /** Keeps done state of items that survive a revision; matches by normalized text. */
+        internal fun mergeChecklist(existing: List<TaskChecklistItem>, revised: List<String>): List<TaskChecklistItem> {
+            if (revised.isEmpty()) return existing
+            val remaining = existing.toMutableList()
+            return revised.map { text ->
+                val normalized = text.trim().take(MAX_ITEM_TEXT)
+                if (normalized.isEmpty()) return@map null
+                val match = remaining.indexOfFirst { it.text.equals(normalized, ignoreCase = true) }
+                if (match >= 0) remaining.removeAt(match) else TaskChecklistItem(newOccurrenceId(), normalized)
+            }.filterNotNull()
+        }
+
+        internal fun decodeChecklist(array: JSONArray?): List<TaskChecklistItem> {
+            if (array == null) return emptyList()
+            return List(array.length()) { index ->
+                val item = array.optJSONObject(index) ?: return@List null
+                val text = item.optString("text").trim().take(MAX_ITEM_TEXT)
+                if (text.isEmpty()) return@List null
+                TaskChecklistItem(
+                    item.optString("id").ifBlank { newOccurrenceId() },
+                    text,
+                    item.optBoolean("done", false),
+                )
+            }.filterNotNull()
+        }
+
+        private fun encodeChecklist(items: List<TaskChecklistItem>): JSONArray = JSONArray().apply {
+            items.forEach { item ->
+                put(JSONObject().put("id", item.id).put("text", item.text).put("done", item.done))
+            }
+        }
         internal fun newOccurrenceId(): String = UUID.randomUUID().toString()
         internal fun expectedOccurrenceId(task: AssistantTask): String? =
             task.reminderOccurrenceId ?: task.remindAt?.let { "legacy:${task.id}:$it" }
@@ -344,7 +629,7 @@ class AssistantTaskStore private constructor(context: Context) {
             occurrenceId: String? = null,
             notificationId: Int? = null,
         ): Pair<List<AssistantTask>, AssistantTask?> {
-            val fired = tasks.firstOrNull { it.id == id && !it.completed && !it.suspended && it.remindAt != null } ?: return tasks to null
+            val fired = tasks.firstOrNull { it.id == id && !it.completed && !it.suspended && !it.excluded && it.remindAt != null } ?: return tasks to null
             val expected = expectedOccurrenceId(fired)
             if (occurrenceId != null && occurrenceId != expected) return tasks to null
             if (occurrenceId == null && notificationId == null) {
@@ -371,7 +656,7 @@ class AssistantTaskStore private constructor(context: Context) {
             nextOccurrenceId: String,
         ): Pair<List<AssistantTask>, TaskAlarmSnoozeResult> {
             val task = tasks.firstOrNull {
-                it.id == id && !it.completed && !it.suspended && it.activeAlarmOccurrenceId == occurrenceId
+                it.id == id && !it.completed && !it.suspended && !it.excluded && it.activeAlarmOccurrenceId == occurrenceId
             } ?: return tasks to TaskAlarmSnoozeResult.Stale
             if (task.snoozeCount >= MAX_SNOOZES || task.snoozeMinutes + minutes > MAX_SNOOZE_MINUTES) {
                 return tasks to TaskAlarmSnoozeResult.LimitReached
@@ -392,10 +677,13 @@ class AssistantTaskStore private constructor(context: Context) {
 
         internal fun completeAlarmOccurrenceFrom(tasks: List<AssistantTask>, id: String, occurrenceId: String): Pair<List<AssistantTask>, Boolean> {
             val task = tasks.firstOrNull {
-                it.id == id && !it.completed && !it.suspended && it.activeAlarmOccurrenceId == occurrenceId
+                it.id == id && !it.completed && !it.suspended && !it.excluded && it.activeAlarmOccurrenceId == occurrenceId
             } ?: return tasks to false
             val completed = task.copy(
                 completed = true,
+                completedAt = System.currentTimeMillis(),
+                checklistBeforeCompletion = task.checklist.ifEmpty { null } ?: task.checklist,
+                checklist = task.checklist.map { it.copy(done = true) },
                 remindAt = null,
                 reminderOccurrenceId = null,
                 reminderOccurrenceAt = null,

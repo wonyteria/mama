@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
         // Production research builds protect raw notifications in recents/screenshots.
         if (!BuildConfig.DEBUG) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val session = ViewModelProvider(this)[ProbeSession::class.java]
-        val openAssistant = intent.getBooleanExtra(kr.mom.probe.widget.AssistantWidgetProvider.EXTRA_OPEN_ASSISTANT, false)
+        val openAssistant = intent.getBooleanExtra(kr.mom.probe.widget.AssistantWidgetProvider.EXTRA_OPEN_TODO, false)
         val initialRecordId = intent.getStringExtra(EXTRA_RECORD_ID)
         setContent { MomTheme { ProbeApp(session, openAssistant, initialRecordId) } }
     }
@@ -111,6 +111,8 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     var pendingNotificationTest by rememberSaveable { mutableStateOf(false) }
     var pendingAssistantAlertEnable by rememberSaveable { mutableStateOf(false) }
     var pendingTaskSave by remember { mutableStateOf<PendingTaskSave?>(null) }
+    var readIds by remember { mutableStateOf(kr.mom.probe.data.NoticeReadStore.readIds(context)) }
+    var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var pendingAccessReturn by rememberSaveable { mutableStateOf(false) }
     var accessRequestRefresh by rememberSaveable { mutableIntStateOf(-1) }
     var pendingAppPackage by rememberSaveable { mutableStateOf<String?>(null) }
@@ -128,6 +130,30 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
         // SourceSyncStateStore exposes a StateFlow; this hook remains for existing command callbacks.
     }
 
+
+    fun taskOperation(action: () -> Unit) {
+        if (busy) return
+        scope.launch {
+            busy = true
+            try {
+                withContext(Dispatchers.IO) { action() }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                message = error.message ?: "할 일을 저장하지 못했어요. 다시 시도해주세요."
+            } finally { busy = false }
+        }
+    }
+
+    fun openRecord(record: kr.mom.probe.data.ProbeRecord) {
+        selectedId = record.id
+        previous = if (screen == "todo") "todo" else if (screen == "news") "news" else "home"
+        screen = "detail"
+        scope.launch(Dispatchers.IO) {
+            if (kr.mom.probe.data.NoticeReadStore.markRead(context, record.id)) {
+                readIds = kr.mom.probe.data.NoticeReadStore.readIds(context)
+            }
+        }
+    }
 
     suspend fun suspendAutomaticTasksForSources(sourceIds: Set<String>) {
         val identities = records.mapNotNull { record ->
@@ -342,7 +368,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
         if (ready && !started) {
             screen = when {
                 !validConsent -> "welcome"
-                settings.onboardingDone -> if (openAssistant) "inbox" else "home"
+                settings.onboardingDone -> if (openAssistant) "todo" else "home"
                 settings.childName.isBlank() -> "child"
                 else -> "connections"
             }
@@ -350,7 +376,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
         }
         if (ready && started && !validConsent) screen = "welcome"
         if (ready && screen == "export" && session.exportSnapshot.isEmpty()) {
-            screen = "inbox"
+            screen = "news"
             message = "앱이 다시 시작되어 자료 검토를 다시 열어주세요."
         }
     }
@@ -448,9 +474,9 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
         }
         if (leavingExport) session.clearExport()
     }
-    BackHandler(screen !in setOf("home", "inbox", "settings", "welcome")) { if (!busy) back() }
+    BackHandler(screen !in setOf("home", "todo", "news", "welcome")) { if (!busy) back() }
 
-    val rootTab = screen in setOf("home", "inbox", "settings")
+    val rootTab = screen in setOf("home", "todo", "news")
     Scaffold(
         containerColor = Clay.Background,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -610,52 +636,81 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     }
                 }, ::back)
                 "home" -> {
+                    LaunchedEffect(screen) { nowTick = System.currentTimeMillis() }
                     val activeSourceScopes = SourceScopeFactory.activeScopes(context, SourceRunTrigger.MANUAL)
                     val homeRecords = SourceRecordSelectors.activeRecords(records, activeSourceScopes)
-                    val sourceStatusMessage = SourceStatusPresentation.message(sourceSnapshots.values)
-                    HomeScreen(settings, homeRecords, access, connected, ::proceedSetup, { screen = "inbox" }, {
-                    selectedId = it.id; previous = "home"; screen = "detail"
-                }, connectedSiteCount = connectorState.sites.values.count {
-                    it.status == ConnectionStatus.CONNECTED && ConnectorCatalog.shouldShowWebsite(it.id)
-                } + activeSourceScopes
-                    .count { it.sourceId == SourceIds.SCHOOL_WEBSITE },
-                    schoolEvents = emptyList(),
-                    sourceAgenda = SourceRecordSelectors.agenda(
-                        records,
-                        kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings),
-                        activeSourceScopes,
-                    ),
-                    sourceStatusMessage = sourceStatusMessage,
-                    onAgenda = { screen = "inbox" },
-                    schoolEventsLimited = sourceStatusMessage != null ||
-                        (neisClient.isSampleMode && connectorState.sites["neis-public"]?.status == ConnectionStatus.CONNECTED),
-                    pendingTaskCount = kr.mom.probe.reminder.BriefingReminders.briefingTasks(assistantTasks).size,
-                    briefingReady = notificationsAllowed && kr.mom.probe.reminder.BriefingReminders.hasEnabledBriefing(context),
-                    rememberedNotificationIds = assistantTasks.mapNotNull { it.sourceNotificationId }.toSet(),
-                    onEnableBriefings = {
-                        if (notificationsAllowed) {
-                            assistantAlertsEnabled = kr.mom.probe.reminder.AssistantAlertNotifier.setEnabled(context, true)
-                            val briefingsEnabled = kr.mom.probe.reminder.BriefingReminders.enableDefaults(context)
-                            message = if (assistantAlertsEnabled && briefingsEnabled) "아침·저녁 브리핑과 긴급 알림을 켰어요." else "비서 알림 설정을 저장하지 못했어요."
-                        } else {
-                            pendingNotificationTest = false
-                            pendingAssistantAlertEnable = true
-                            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                    },
-                    onAssistant = {
-                    context.startActivity(Intent(context, kr.mom.probe.agent.AgentActivity::class.java))
-                })
+                    TodayScreen(
+                        settings = settings,
+                        tasks = assistantTasks,
+                        records = homeRecords,
+                        unreadCount = homeRecords.count { it.id !in readIds },
+                        configured = settings.onboardingDone,
+                        notificationsAllowed = notificationsAllowed,
+                        sourceAgenda = SourceRecordSelectors.agenda(
+                            records,
+                            kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings),
+                            activeSourceScopes,
+                        ),
+                        sourceStatusMessage = SourceStatusPresentation.message(sourceSnapshots.values),
+                        busy = busy,
+                        now = nowTick,
+                        onSetup = ::proceedSetup,
+                        onToggle = { task -> taskOperation { assistantStore.setCompleted(task.id, !task.completed) } },
+                        onToggleItem = { task, itemId ->
+                            taskOperation {
+                                assistantStore.setChecklistItem(
+                                    task.id, itemId,
+                                    !(task.checklist.firstOrNull { it.id == itemId }?.done ?: false),
+                                )
+                            }
+                        },
+                        onSnooze = { task, at -> taskOperation { assistantStore.snoozeTask(task.id, at) } },
+                        onEdit = { task, text, due -> taskOperation { assistantStore.editTask(task.id, text, due) } },
+                        onExclude = { task -> taskOperation { assistantStore.setExcluded(task.id, !task.excluded) } },
+                        onOpenTodo = { screen = "todo" },
+                        onOpenNews = { screen = "news" },
+                        onOpenSettings = { previous = "home"; screen = "settings" },
+                        onRecord = ::openRecord,
+                        onEnableNotifications = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                    )
                 }
-                "inbox" -> InboxScreen(records, { selectedId = it.id; previous = "inbox"; screen = "detail" }, {
-                    session.exportSnapshot = records; previous = "inbox"; screen = "export"
+                "todo" -> {
+                    LaunchedEffect(screen) { nowTick = System.currentTimeMillis() }
+                    TodoScreen(
+                        tasks = assistantTasks,
+                        busy = busy,
+                        now = nowTick,
+                        onToggle = { task -> taskOperation { assistantStore.setCompleted(task.id, !task.completed) } },
+                        onToggleItem = { task, itemId ->
+                            taskOperation {
+                                assistantStore.setChecklistItem(
+                                    task.id, itemId,
+                                    !(task.checklist.firstOrNull { it.id == itemId }?.done ?: false),
+                                )
+                            }
+                        },
+                        onSnooze = { task, at -> taskOperation { assistantStore.snoozeTask(task.id, at) } },
+                        onEdit = { task, text, due -> taskOperation { assistantStore.editTask(task.id, text, due) } },
+                        onExclude = { task -> taskOperation { assistantStore.setExcluded(task.id, !task.excluded) } },
+                        onAddTask = { text, due ->
+                            taskOperation {
+                                if (!assistantStore.add(text, dueAt = due)) message = "할 일을 저장하지 못했어요."
+                            }
+                        },
+                    )
+                }
+                "news" -> NewsScreen(records, readIds, ::openRecord, {
+                    session.exportSnapshot = records; previous = "news"; screen = "export"
                 })
                 "detail" -> {
                     val record = records.find { it.id == selectedId }
                     if (record == null) Page { BackHeading("받은 알림", ::back); EmptyCard("삭제되었거나 보관 기간이 끝났어요", "현재 남아 있는 알림을 확인해주세요.") }
                     else {
                         val sourceNotificationId = kr.mom.probe.data.ProbeRules.recordIdentity(record)
-                        DetailScreen(record, assistantTasks.any { it.sourceNotificationId == sourceNotificationId }, kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings), ::back, { deleteTarget = record.id }, {
+                        DetailScreen(record, assistantTasks.any { it.sourceNotificationId == sourceNotificationId }, kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings), ::back, { deleteTarget = record.id },
+                            linkedTasks = kr.mom.probe.task.TodoSelectors.linkedTo(assistantTasks, sourceNotificationId),
+                            onOpenTodo = { screen = "todo" },
+                            onSource = {
                         val intent = context.packageManager.getLaunchIntentForPackage(record.packageName)
                         if (intent == null) message = "원래 앱을 찾지 못했어요. 휴대폰에서 직접 확인해주세요."
                         else try { context.startActivity(intent) } catch (_: Exception) { message = "원래 앱을 열지 못했어요. 직접 확인해주세요." }
@@ -774,6 +829,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     // deleteAll closes the in-memory capture gate before its first fallible disk operation.
                     runCatching { repository.deleteAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
                     runCatching { kr.mom.probe.reminder.BriefingReminders.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+                    runCatching { kr.mom.probe.data.NoticeReadStore.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
                     runCatching { kr.mom.probe.reminder.AssistantAlertNotifier.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
                     runCatching { kr.mom.probe.calendar.CalendarPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
                     runCatching { kr.mom.probe.calendar.CalendarAppPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }

@@ -55,7 +55,7 @@ sealed interface NeisResult<out T> {
     data class Failure(val message: String) : NeisResult<Nothing>
 }
 
-private data class NeisJsonResponse(
+data class NeisJsonResponse(
     val json: JSONObject,
     val byteCount: Int,
 )
@@ -72,7 +72,10 @@ private val neisGradeFlags = mapOf(
 class NeisPublicClient(
     private val apiKey: String = BuildConfig.NEIS_API_KEY,
     private val nowProvider: () -> Long = { System.currentTimeMillis() },
+    transport: ((String) -> NeisResult<NeisJsonResponse>)? = null,
 ) : SourceFetcher {
+    private val transport: (String) -> NeisResult<NeisJsonResponse> = transport ?: ::getJsonResponse
+
     val isSampleMode: Boolean get() = apiKey.isBlank()
 
     private fun authQuery(): String = if (apiKey.isBlank()) "" else "&KEY=${URLEncoder.encode(apiKey, StandardCharsets.UTF_8)}"
@@ -163,26 +166,18 @@ class NeisPublicClient(
         if (invalid != null) {
             return@withContext SourceFetchResult(scope.sourceId, SourceSyncStatus.ERROR, fetchedAt, coverage = coverage, issues = listOf(invalid))
         }
-        if (apiKey.isBlank()) {
-            return@withContext SourceFetchResult(
-                sourceId = scope.sourceId,
-                status = SourceSyncStatus.PARTIAL,
-                fetchedAt = fetchedAt,
-                coverage = coverage.copy(complete = false),
-                checkpoint = SourceCheckpoint(coverageWindow = coverage.copy(complete = false), lastFetchedAt = fetchedAt, sourceGeneration = scope.connectionGeneration),
-                evidence = listOf(SourceEvidence("mode", "NEIS_API_KEY is empty")),
-                issues = listOf(
-                    SourceIssue(SourceIssueCode.MISSING_API_KEY, "나이스 전체 조회용 API 키가 설정되지 않았어요."),
-                    SourceIssue(SourceIssueCode.SAMPLE_LIMITED, "키 없는 sample 조회를 전체 학교 일정으로 저장하지 않아요."),
-                ),
-            )
-        }
-
         val formatter = DateTimeFormatter.BASIC_ISO_DATE
         val from = coverage.fromDateIso?.let(LocalDate::parse) ?: LocalDate.now(ZoneId.of("Asia/Seoul"))
         val to = coverage.toDateIso?.let(LocalDate::parse) ?: from.plusDays(30)
         val pageSize = 100
         val issues = mutableListOf<SourceIssue>()
+        if (apiKey.isBlank()) {
+            issues += SourceIssue(
+                SourceIssueCode.MISSING_API_KEY,
+                "나이스 API 키가 없어 제한된 조회로 저장했어요. 키를 연결하면 전체 범위를 확인해요.",
+                recoverable = true,
+            )
+        }
         val items = mutableListOf<FetchedNotice>()
         val revisions = checkpoint?.itemRevisionHashes.orEmpty().toMutableMap()
         var page = 1
@@ -194,7 +189,7 @@ class NeisPublicClient(
             val url = "https://open.neis.go.kr/hub/SchoolSchedule?Type=json&pIndex=$page&pSize=$pageSize" +
                 "&ATPT_OFCDC_SC_CODE=${encode(scope.school.officeCode.orEmpty())}&SD_SCHUL_CODE=${encode(scope.school.schoolCode.orEmpty())}" +
                 "&AA_FROM_YMD=${from.format(formatter)}&AA_TO_YMD=${to.format(formatter)}${authQuery()}"
-            val jsonResponse = when (val fetched = getJsonResponse(url)) {
+            val jsonResponse = when (val fetched = transport(url)) {
                 is NeisResult.Success -> fetched.value
                 is NeisResult.Failure -> {
                     issues += SourceIssue(SourceIssueCode.HTTP_ERROR, fetched.message, recoverable = true)
@@ -283,7 +278,7 @@ class NeisPublicClient(
         neisResult(scope, fetchedAt, items, issues, coverage, minOf(page, SourceSyncLimits.NEIS_PAGE_LIMIT), totalCount, revisions)
     }
 
-    private fun getJson(rawUrl: String): NeisResult<JSONObject> = when (val response = getJsonResponse(rawUrl)) {
+    private fun getJson(rawUrl: String): NeisResult<JSONObject> = when (val response = transport(rawUrl)) {
         is NeisResult.Success -> NeisResult.Success(response.value.json)
         is NeisResult.Failure -> response
     }

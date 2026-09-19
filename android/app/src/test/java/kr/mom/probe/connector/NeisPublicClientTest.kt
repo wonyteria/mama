@@ -17,13 +17,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NeisPublicClientTest {
-    @Test fun missingApiKeyIsPartialAndDoesNotClaimEmptySuccess() = runBlocking {
-        val result = NeisPublicClient(apiKey = "", nowProvider = { 1_779_900_000_000L }).fetch(scope(), null)
+    @Test fun missingApiKeyStoresRowsAsLimitedPartial() = runBlocking {
+        val schedule = JSONObject("""
+            {"SchoolSchedule":[
+                {"head":[{"list_total_count":1},{"RESULT":{"CODE":"INFO-000"}}]},
+                {"row":[{"ATPT_OFCDC_SC_CODE":"J10","SD_SCHUL_CODE":"7530167","AA_YMD":"20260924","EVENT_NM":"추석연휴","TW_GRADE_EVENT_YN":"Y"}]}
+            ]}
+        """)
+        val result = NeisPublicClient(
+            apiKey = "",
+            nowProvider = { 1_779_900_000_000L },
+            transport = { NeisResult.Success(NeisJsonResponse(schedule, 1024)) },
+        ).fetch(scope(), null)
 
         assertEquals(SourceSyncStatus.PARTIAL, result.status)
-        assertTrue(result.items.isEmpty())
+        assertEquals(1, result.items.size)
         assertTrue(result.issues.any { it.code == SourceIssueCode.MISSING_API_KEY })
-        assertTrue(result.issues.any { it.code == SourceIssueCode.SAMPLE_LIMITED })
         assertEquals(false, result.coverage.complete)
     }
 

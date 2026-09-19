@@ -137,7 +137,7 @@ class BriefingRemindersTest {
         assertEquals(BriefingSnoozeResult.LimitReached, BriefingReminders.snoozeActive(context, 0, "minutes", BriefingReminders.generation(context), 30))
     }
 
-    @Test fun briefingTaskProjectionExcludesSuspendedExpiredAndDistantTasks() {
+    @Test fun briefingTaskProjectionMatchesOpenTodoScope() {
         val now = 1_000L
         val visible = kr.mom.probe.task.AssistantTask("visible", "내일 제출", false, 10L, dueAt = now + 86_400_000L)
         val localNoDue = kr.mom.probe.task.AssistantTask("local", "물통", false, 11L)
@@ -145,11 +145,12 @@ class BriefingRemindersTest {
         val expired = kr.mom.probe.task.AssistantTask("expired", "어제", false, 13L, dueAt = now - 1L)
         val distant = kr.mom.probe.task.AssistantTask("distant", "한참 뒤", false, 14L, dueAt = now + 9 * 86_400_000L)
         val completed = kr.mom.probe.task.AssistantTask("done", "완료", true, 15L)
+        val excluded = kr.mom.probe.task.AssistantTask("excluded", "제외", false, 16L, excluded = true)
 
-        val projected = BriefingReminders.briefingTasks(listOf(suspended, expired, distant, completed, localNoDue, visible), now)
+        val projected = BriefingReminders.briefingTasks(listOf(suspended, expired, distant, completed, localNoDue, visible, excluded), now)
 
-        assertEquals(listOf("visible", "local"), projected.map { it.id })
-        assertFalse(projected.any { it.suspended || it.completed })
+        assertEquals(listOf("expired", "visible", "distant", "local"), projected.map { it.id })
+        assertFalse(projected.any { it.suspended || it.completed || it.excluded })
     }
 
     private fun record(id: String, receivedAt: Long) = kr.mom.probe.data.ProbeRecord(

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -11,19 +13,31 @@ android {
         applicationId = "kr.mom.probe"
         minSdk = 33
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.9.0-agent"
+        versionCode = 12
+        versionName = "1.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         val neisKey = (providers.gradleProperty("NEIS_API_KEY").orNull ?: System.getenv("NEIS_API_KEY") ?: "")
             .replace("\\", "\\\\").replace("\"", "\\\"")
         buildConfigField("String", "NEIS_API_KEY", "\"$neisKey\"")
     }
+    val keystoreProps = Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    signingConfigs {
+        create("play") {
+            storeFile = keystoreProps.getProperty("storeFile")?.let { rootProject.file(it) }
+            storePassword = keystoreProps.getProperty("storePassword")
+            keyAlias = keystoreProps.getProperty("keyAlias")
+            keyPassword = keystoreProps.getProperty("keyPassword")
+        }
+    }
     buildTypes {
         debug { applicationIdSuffix = ".qa"; versionNameSuffix = "-qa" }
         release {
-            // Local family trial: retain upgrade compatibility with the installed prototype.
-            // This is not a Play production signing key.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystoreProps.getProperty("storeFile") != null)
+                signingConfigs.getByName("play")
+            else signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

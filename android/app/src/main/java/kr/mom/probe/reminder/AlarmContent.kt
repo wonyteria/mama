@@ -231,9 +231,9 @@ fun AlarmContent(
                 TextButton(
                     onClick = onAskMomo,
                     modifier = Modifier
-                        .semantics { contentDescription = "모모에게 부탁" }
+                        .semantics { contentDescription = "할 일 열기" }
                         .testTag("alarm-ask-momo"),
-                ) { Text("모모에게 부탁") }
+                ) { Text("할 일 열기") }
             }
             }
         }

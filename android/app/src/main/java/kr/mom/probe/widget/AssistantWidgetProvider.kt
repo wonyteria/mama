@@ -8,7 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.RemoteViews
-import kr.mom.probe.agent.AgentActivity
+import kr.mom.probe.MainActivity
 import kr.mom.probe.R
 
 /** A private, static entry point: no family or notification content is exposed on the launcher. */
@@ -27,7 +27,7 @@ class AssistantWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        const val EXTRA_OPEN_ASSISTANT = "kr.mom.probe.widget.OPEN_ASSISTANT"
+        const val EXTRA_OPEN_TODO = "kr.mom.probe.widget.OPEN_TODO"
 
         /** True means the launcher accepted the request, not that the user placed the widget. */
         fun requestPin(context: Context): Boolean {
@@ -39,8 +39,8 @@ class AssistantWidgetProvider : AppWidgetProvider() {
         }
 
         private fun update(context: Context, manager: AppWidgetManager, id: Int) {
-            val intent = Intent(context, AgentActivity::class.java)
-                .putExtra(EXTRA_OPEN_ASSISTANT, true)
+            val intent = Intent(context, MainActivity::class.java)
+                .putExtra(EXTRA_OPEN_TODO, true)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             val open = PendingIntent.getActivity(
                 context, 4200, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
