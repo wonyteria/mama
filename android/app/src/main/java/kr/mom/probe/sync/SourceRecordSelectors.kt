@@ -20,10 +20,6 @@ data class SourceAgendaItem(
 object SourceRecordSelectors {
     private val seoul: ZoneId = ZoneId.of("Asia/Seoul")
 
-    fun identity(record: ProbeRecord): String = record.sourceMetadata?.let {
-        kr.mom.probe.data.ProbeRules.sourceItemIdentity(it.sourceId, it.itemId)
-    } ?: kr.mom.probe.data.ProbeRules.notificationIdentity(record.packageName, record.notificationKey)
-
     fun activeRecords(
         records: List<ProbeRecord>,
         scopes: List<SourceScope>,
@@ -41,7 +37,8 @@ object SourceRecordSelectors {
         child: ChildNoticeProfile,
         now: Long = System.currentTimeMillis(),
         daysAhead: Long = 30,
-    ): List<SourceAgendaItem> = agendaUnchecked(records, child, now, daysAhead)
+        institution: String = "",
+    ): List<SourceAgendaItem> = agendaUnchecked(records, child, now, daysAhead, institution)
 
     fun agenda(
         records: List<ProbeRecord>,
@@ -50,13 +47,15 @@ object SourceRecordSelectors {
         policy: RecordSourcePolicy = DefaultRecordSourcePolicy,
         now: Long = System.currentTimeMillis(),
         daysAhead: Long = 30,
-    ): List<SourceAgendaItem> = agendaUnchecked(activeRecords(records, scopes, policy, now), child, now, daysAhead)
+        institution: String = "",
+    ): List<SourceAgendaItem> = agendaUnchecked(activeRecords(records, scopes, policy, now), child, now, daysAhead, institution)
 
     private fun agendaUnchecked(
         records: List<ProbeRecord>,
         child: ChildNoticeProfile,
         now: Long,
         daysAhead: Long,
+        institution: String = "",
     ): List<SourceAgendaItem> {
         val today = Instant.ofEpochMilli(now).atZone(seoul).toLocalDate()
         val end = today.plusDays(daysAhead)
@@ -79,7 +78,7 @@ object SourceRecordSelectors {
                         sourceLabel = SourceConfigs.get(metadata.sourceId)?.label ?: record.appLabel,
                     )
                 }
-        }.distinctBy { identity(it.record) to it.dateIso }
+        }.distinctBy { kr.mom.probe.data.NoticeGrouping.groupId(it.record, institution) to it.dateIso }
             .sortedWith(compareBy<SourceAgendaItem> { it.dateIso }.thenByDescending { it.record.receivedAt })
     }
 

@@ -8,7 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.RemoteViews
-import kr.mom.probe.agent.AgentActivity
+import kr.mom.probe.MainActivity
 import kr.mom.probe.R
 
 /** A private, static entry point: no family or notification content is exposed on the launcher. */
@@ -39,7 +39,7 @@ class AssistantWidgetProvider : AppWidgetProvider() {
         }
 
         private fun update(context: Context, manager: AppWidgetManager, id: Int) {
-            val intent = Intent(context, AgentActivity::class.java)
+            val intent = Intent(context, MainActivity::class.java)
                 .putExtra(EXTRA_OPEN_ASSISTANT, true)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             val open = PendingIntent.getActivity(

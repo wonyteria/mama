@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.Density
 import java.io.File
 import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.data.ProbeRecord
-import kr.mom.probe.data.ProbeRules
+import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.NotificationCandidateParser
 import kr.mom.probe.connector.NeisEvent
 import kr.mom.probe.sync.SourceAgendaItem
@@ -261,7 +261,7 @@ class ProbeScreensRenderTest {
                 ),
                 records = listOf(record), access = true, connected = true,
                 onSetup = {}, onInbox = {}, onRecord = {}, pendingTaskCount = 1,
-                rememberedNotificationIds = setOf(ProbeRules.notificationIdentity(record.packageName, record.notificationKey)), onAssistant = {},
+                rememberedGroupKeys = setOf(NoticeGrouping.keys(record, NoticeGrouping.institution(ProbeSettings()))), onAssistant = {},
             )
         }
         compose.onNodeWithText("곧 챙길 일 1개").assertIsDisplayed()

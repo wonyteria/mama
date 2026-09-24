@@ -19,7 +19,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kr.mom.probe.BuildConfig
-import kr.mom.probe.agent.AgentActivity
 import kr.mom.probe.data.ProbeRepository
 import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.task.AssistantTask
@@ -172,7 +171,6 @@ class TaskAlarmActivity : ComponentActivity() {
                                         snoozedUntil = result.nextAt
                                         status = "${displayTime(result.nextAt)} 무렵 다시 알려드릴게요."
                                     }
-                                    TaskAlarmSnoozeResult.LimitReached -> status = "이 알림은 다시 알림 한도에 닿았어요."
                                     TaskAlarmSnoozeResult.Stale, TaskAlarmSnoozeResult.Failed, null -> status = "다시 알리지 못했어요. 앱에서 부탁을 확인해주세요."
                                 }
                                 busy = false
@@ -272,7 +270,7 @@ class TaskAlarmActivity : ComponentActivity() {
         }
         pendingAskMomo.cancel()
         stopOwnNotification()
-        startActivity(Intent(this, AgentActivity::class.java))
+        startActivity(Intent(this, AssistantTasksActivity::class.java))
         finish()
     }
 
@@ -280,7 +278,7 @@ class TaskAlarmActivity : ComponentActivity() {
         if (isFinishing || isDestroyed || !resumed || !hasWindowFocus) return
         pendingAskMomo.runIfUnlocked(::isUnlockedNow) {
             stopOwnNotification()
-            startActivity(Intent(this, AgentActivity::class.java))
+            startActivity(Intent(this, AssistantTasksActivity::class.java))
             finish()
         }
     }
@@ -362,7 +360,7 @@ internal fun taskAlarmState(
             detailLines = listOfNotNull(
                 "부탁: ${task.text}",
                 task.dueAt?.let { "기한: ${displayTime(it)}" },
-                "다시 알림: ${task.snoozeCount}/3회, ${task.snoozeMinutes}/60분",
+                "다시 알림: ${task.snoozeCount}회",
             ),
             completeEnabled = true,
             showComplete = true,

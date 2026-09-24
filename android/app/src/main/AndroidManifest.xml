@@ -42,7 +42,6 @@
         <activity android:name=".reminder.BriefingActivity" android:exported="false" />
         <activity android:name=".reminder.TaskAlarmActivity" android:exported="false" />
         <activity android:name=".task.AssistantTasksActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".agent.AgentActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <receiver android:name=".reminder.BriefingReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

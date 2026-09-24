@@ -8,24 +8,30 @@ import kr.mom.probe.data.ChildNoticeProfile
 import kr.mom.probe.data.NoticeApplicability
 import kr.mom.probe.data.NoticeContentState
 import kr.mom.probe.data.NoticeDecisionEngine
+import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.NoticeObligation
 import kr.mom.probe.data.ProbeRecord
-import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.data.ProbeSettings
 
 data class CandidateActionPlan(
     val text: String,
     val sourceNotificationId: String,
-    val dueAt: Long,
+    val dueAt: Long?,
     val remindAt: Long?,
+    val noticeGroupKeys: Set<String> = emptySet(),
 )
 
-/** Automates only explicit, dated actions; ambiguous notices remain review-only. */
+/** Automates only explicit, sufficiently-evidenced actions; ambiguous notices remain review-only. */
 object CandidateActionPlanner {
-    fun plan(record: ProbeRecord, now: Long = System.currentTimeMillis(), child: ChildNoticeProfile = ChildNoticeProfile()): CandidateActionPlan? {
+    fun plan(
+        record: ProbeRecord,
+        now: Long = System.currentTimeMillis(),
+        child: ChildNoticeProfile = ChildNoticeProfile(),
+        institution: String = "",
+    ): CandidateActionPlan? {
         val candidate = NotificationCandidateParser.parse(record, child) ?: return null
-        val dueAt = candidate.dueAt ?: return null
-        if (dueAt <= now + 5 * 60_000L) return null
+        val dueAt = candidate.dueAt
+        if (dueAt != null && dueAt <= now + 5 * 60_000L) return null
         val explicitEnough = when (candidate.kind) {
             NotificationCandidate.Kind.PREPARE -> candidate.items.isNotEmpty()
             NotificationCandidate.Kind.SUBMIT, NotificationCandidate.Kind.DEADLINE -> record.title.isNotBlank()
@@ -33,9 +39,10 @@ object CandidateActionPlanner {
         if (!explicitEnough) return null
         return CandidateActionPlan(
             text = taskText(record, candidate),
-            sourceNotificationId = ProbeRules.recordIdentity(record),
+            sourceNotificationId = NoticeGrouping.groupId(record, institution),
             dueAt = dueAt,
             remindAt = null,
+            noticeGroupKeys = NoticeGrouping.keys(record, institution),
         )
     }
 
@@ -68,25 +75,27 @@ object AutoActionCoordinator {
     fun handle(context: android.content.Context, record: ProbeRecord, settings: ProbeSettings) {
         val child = NoticeDecisionEngine.childProfile(settings)
         val decision = NoticeDecisionEngine.decide(record, child)
-        val sourceNotificationId = ProbeRules.recordIdentity(record)
+        val institution = NoticeGrouping.institution(settings)
+        val groupKeys = NoticeGrouping.keys(record, institution)
+        val sourceNotificationId = NoticeGrouping.groupId(record, institution)
         runCatching {
             val store = AssistantTaskStore.get(context)
             store.load()
             if (decision.contentState !in setOf(NoticeContentState.NOTIFICATION_ONLY, NoticeContentState.VERIFIED)) {
                 kr.mom.probe.reminder.AssistantAlertNotifier.cancel(context, record)
-                store.suspendAutomaticSource(sourceNotificationId, record.id)
+                store.suspendAutomaticSource(sourceNotificationId, record.id, groupKeys)
                 return
             }
             if (decision.applicability == NoticeApplicability.INELIGIBLE ||
                 decision.obligation in setOf(NoticeObligation.INFORMATIONAL, NoticeObligation.OPTIONAL_OPPORTUNITY)
             ) {
                 kr.mom.probe.reminder.AssistantAlertNotifier.cancel(context, record)
-                store.suspendAutomaticSource(sourceNotificationId, record.id)
+                store.suspendAutomaticSource(sourceNotificationId, record.id, groupKeys)
                 return
             }
-            val plan = CandidateActionPlanner.plan(record, child = child) ?: run {
+            val plan = CandidateActionPlanner.plan(record, child = child, institution = institution) ?: run {
                 kr.mom.probe.reminder.AssistantAlertNotifier.cancel(context, record)
-                store.suspendAutomaticSource(sourceNotificationId, record.id)
+                store.suspendAutomaticSource(sourceNotificationId, record.id, groupKeys)
                 return
             }
             val reminder = plan.remindAt?.takeIf { TaskReminderScheduler.canDeliver(context) }
@@ -97,6 +106,7 @@ object AutoActionCoordinator {
                 reminder,
                 sourceRevisionId = record.id,
                 sourceKind = AssistantTaskSource.AUTO_NOTICE,
+                noticeGroupKeys = plan.noticeGroupKeys,
             )
         }
     }

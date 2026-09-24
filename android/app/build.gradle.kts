@@ -14,16 +14,39 @@ android {
         versionCode = 10
         versionName = "0.9.0-agent"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        val neisKey = (providers.gradleProperty("NEIS_API_KEY").orNull ?: System.getenv("NEIS_API_KEY") ?: "")
-            .replace("\\", "\\\\").replace("\"", "\\\"")
-        buildConfigField("String", "NEIS_API_KEY", "\"$neisKey\"")
+        // No production secret is compiled into the APK. Debug builds may read a local
+        // developer key for QA; release always ships an empty key so the NEIS lane
+        // reports sample mode honestly until a server-side proxy exists.
+        buildConfigField("String", "NEIS_API_KEY", "\"\"")
+    }
+    signingConfigs {
+        maybeCreate("release").apply {
+            val storePath = providers.gradleProperty("MAMA_RELEASE_STORE_FILE").orNull
+                ?: System.getenv("MAMA_RELEASE_STORE_FILE")
+            if (!storePath.isNullOrBlank()) {
+                storeFile = file(storePath)
+                storePassword = providers.gradleProperty("MAMA_RELEASE_STORE_PASSWORD").orNull
+                    ?: System.getenv("MAMA_RELEASE_STORE_PASSWORD")
+                keyAlias = providers.gradleProperty("MAMA_RELEASE_KEY_ALIAS").orNull
+                    ?: System.getenv("MAMA_RELEASE_KEY_ALIAS")
+                keyPassword = providers.gradleProperty("MAMA_RELEASE_KEY_PASSWORD").orNull
+                    ?: System.getenv("MAMA_RELEASE_KEY_PASSWORD")
+            }
+        }
     }
     buildTypes {
-        debug { applicationIdSuffix = ".qa"; versionNameSuffix = "-qa" }
+        debug {
+            applicationIdSuffix = ".qa"
+            versionNameSuffix = "-qa"
+            val neisKey = (providers.gradleProperty("NEIS_API_KEY").orNull ?: System.getenv("NEIS_API_KEY") ?: "")
+                .replace("\\", "\\\\").replace("\"", "\\\"")
+            buildConfigField("String", "NEIS_API_KEY", "\"$neisKey\"")
+        }
         release {
-            // Local family trial: retain upgrade compatibility with the installed prototype.
-            // This is not a Play production signing key.
-            signingConfig = signingConfigs.getByName("debug")
+            // Fail closed: release builds require real signing material. There is no
+            // debug-signing fallback; `verifyReleaseSigning` aborts the build clearly.
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) signingConfig = releaseSigning
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -47,6 +70,23 @@ android {
     lint { abortOnError = true; checkReleaseBuilds = true }
 }
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+
+val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
+    description = "Fails release assembly when signing credentials are absent."
+    group = "verification"
+    doLast {
+        val config = android.buildTypes.getByName("release").signingConfig
+        require(config != null && config.storeFile?.exists() == true) {
+            "Release signing is not configured. Set MAMA_RELEASE_STORE_FILE, " +
+                "MAMA_RELEASE_STORE_PASSWORD, MAMA_RELEASE_KEY_ALIAS and " +
+                "MAMA_RELEASE_KEY_PASSWORD (gradle properties or environment). " +
+                "Debug signing is never used for release builds."
+        }
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" || it.name == "assembleRelease" || it.name == "bundleRelease" }.configureEach {
+    dependsOn(verifyReleaseSigning)
+}
 dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.activity:activity-compose:1.10.1")

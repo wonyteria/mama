@@ -33,12 +33,12 @@ data class AssistantTask(
     val activeAlarmNotificationId: Int? = null,
     val snoozeCount: Int = 0,
     val snoozeMinutes: Int = 0,
+    val noticeGroupKeys: Set<String> = emptySet(),
 )
 
 sealed class TaskAlarmSnoozeResult {
     data class Scheduled(val task: AssistantTask, val nextAt: Long) : TaskAlarmSnoozeResult()
     object Stale : TaskAlarmSnoozeResult()
-    object LimitReached : TaskAlarmSnoozeResult()
     object Failed : TaskAlarmSnoozeResult()
 }
 
@@ -65,31 +65,7 @@ class AssistantTaskStore private constructor(context: Context) {
         val encoded = preferences.getString("encrypted", null)
         val result = if (encoded == null) emptyList() else {
             val array = JSONArray(ProbeCrypto().decrypt(Base64.decode(encoded, Base64.NO_WRAP), "assistant_tasks"))
-            List(array.length()) { index ->
-                val item = array.getJSONObject(index)
-                val sourceNotificationId = item.optionalId("sourceNotificationId") ?: item.optionalId("sourceRecordId")
-                AssistantTask(
-                    item.getString("id"),
-                    item.getString("text"),
-                    item.getBoolean("completed"),
-                    item.getLong("createdAt"),
-                    sourceNotificationId,
-                    item.optionalId("sourceRevisionId"),
-                    runCatching { AssistantTaskSource.valueOf(item.optString("sourceKind")) }
-                        .getOrDefault(if (sourceNotificationId != null) AssistantTaskSource.LEGACY else AssistantTaskSource.USER_LOCAL),
-                    item.optionalLong("dueAt"),
-                    item.optionalLong("remindAt"),
-                    item.optInt("reminderAttempts", 0).coerceIn(0, 2),
-                    item.optBoolean("suspended", false),
-                    item.optionalId("reminderOccurrenceId"),
-                    item.optionalLong("reminderOccurrenceAt"),
-                    item.optionalId("activeAlarmOccurrenceId"),
-                    item.optionalLong("activeAlarmScheduledAt"),
-                    item.optionalInt("activeAlarmNotificationId"),
-                    item.optInt("snoozeCount", 0).coerceIn(0, MAX_SNOOZES),
-                    item.optInt("snoozeMinutes", 0).coerceIn(0, MAX_SNOOZE_MINUTES),
-                )
-            }
+            List(array.length()) { index -> decodeTask(array.getJSONObject(index)) }
         }
         mutableTasks.value = result
         loaded = true
@@ -109,6 +85,7 @@ class AssistantTaskStore private constructor(context: Context) {
         remindAt: Long? = null,
         sourceRevisionId: String? = null,
         sourceKind: AssistantTaskSource = if (sourceNotificationId == null) AssistantTaskSource.USER_LOCAL else AssistantTaskSource.USER_CONFIRMED_NOTICE,
+        noticeGroupKeys: Set<String> = emptySet(),
     ): AssistantTask? {
         val normalized = text.trim()
         require(normalized.isNotEmpty() && normalized.length <= MAX_TEXT) { "부탁을 1~300자로 적어주세요." }
@@ -116,13 +93,16 @@ class AssistantTaskStore private constructor(context: Context) {
         require(remindAt == null || remindAt > 0L) { "알림 시간을 다시 확인해주세요." }
         val current = mutableTasks.value
         if (sourceNotificationId != null) {
-            val sameSource = current.filter { it.sourceNotificationId == sourceNotificationId }
+            val incomingKeys = noticeGroupKeys + sourceNotificationId
+            val sameSource = current.filter { taskMatchesGroup(it, sourceNotificationId, incomingKeys) }
             if (sameSource.any { it.sourceKind != AssistantTaskSource.AUTO_NOTICE || sourceKind != AssistantTaskSource.AUTO_NOTICE }) return null
             val existing = sameSource.firstOrNull { !it.completed && !it.suspended } ?: sameSource.firstOrNull { !it.suspended }
             if (existing != null) {
                 if (existing.completed) {
                     val updated = current.map {
-                        if (it.id == existing.id && sourceRevisionId != null) it.copy(sourceRevisionId = sourceRevisionId) else it
+                        if (it.id == existing.id && sourceRevisionId != null) {
+                            it.copy(sourceRevisionId = sourceRevisionId, noticeGroupKeys = it.noticeGroupKeys + incomingKeys)
+                        } else it
                     }
                     if (updated != current) save(updated)
                     return null
@@ -141,6 +121,7 @@ class AssistantTaskStore private constructor(context: Context) {
                     snoozeCount = 0,
                     snoozeMinutes = 0,
                     suspended = false,
+                    noticeGroupKeys = existing.noticeGroupKeys + incomingKeys,
                 )
                 if (updated == existing) return null
                 save(listOf(updated) + current.filterNot { it.id == existing.id })
@@ -163,6 +144,7 @@ class AssistantTaskStore private constructor(context: Context) {
             false,
             occurrenceId,
             remindAt,
+            noticeGroupKeys = noticeGroupKeys + listOfNotNull(sourceNotificationId),
         )
         save(listOf(task) + current)
         return task
@@ -217,11 +199,17 @@ class AssistantTaskStore private constructor(context: Context) {
     }
 
     @Synchronized
-    fun suspendAutomaticSource(sourceNotificationId: String, sourceRevisionId: String): Boolean {
-        val next = reconcileAutomaticRevision(mutableTasks.value, sourceNotificationId, sourceRevisionId)
+    fun suspendAutomaticSource(
+        sourceNotificationId: String,
+        sourceRevisionId: String,
+        noticeGroupKeys: Set<String> = emptySet(),
+    ): Boolean {
+        val incomingKeys = noticeGroupKeys + sourceNotificationId
+        val next = reconcileAutomaticRevision(mutableTasks.value, sourceNotificationId, sourceRevisionId, incomingKeys)
         if (next == mutableTasks.value) return false
         mutableTasks.value.filter { before ->
-            before.sourceNotificationId == sourceNotificationId && before.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
+            before.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
+                taskMatchesGroup(before, sourceNotificationId, incomingKeys) &&
                 next.firstOrNull { it.id == before.id }?.remindAt == null
         }.forEach { TaskReminderScheduler.cancel(app, it) }
         save(next)
@@ -302,18 +290,7 @@ class AssistantTaskStore private constructor(context: Context) {
     private fun save(next: List<AssistantTask>, sync: Boolean = true) {
         requireConsent()
         check(loaded) { "저장된 부탁을 먼저 불러와주세요." }
-        val array = JSONArray().apply { next.forEach { task -> put(JSONObject()
-            .put("id", task.id).put("text", task.text).put("completed", task.completed).put("createdAt", task.createdAt)
-            .put("sourceNotificationId", task.sourceNotificationId ?: JSONObject.NULL)
-            .put("sourceRevisionId", task.sourceRevisionId ?: JSONObject.NULL).put("sourceKind", task.sourceKind.name)
-            .put("dueAt", task.dueAt ?: JSONObject.NULL).put("remindAt", task.remindAt ?: JSONObject.NULL)
-            .put("reminderAttempts", task.reminderAttempts).put("suspended", task.suspended)
-            .put("reminderOccurrenceId", task.reminderOccurrenceId ?: JSONObject.NULL)
-            .put("reminderOccurrenceAt", task.reminderOccurrenceAt ?: JSONObject.NULL)
-            .put("activeAlarmOccurrenceId", task.activeAlarmOccurrenceId ?: JSONObject.NULL)
-            .put("activeAlarmScheduledAt", task.activeAlarmScheduledAt ?: JSONObject.NULL)
-            .put("activeAlarmNotificationId", task.activeAlarmNotificationId ?: JSONObject.NULL)
-            .put("snoozeCount", task.snoozeCount).put("snoozeMinutes", task.snoozeMinutes)) } }
+        val array = JSONArray().apply { next.forEach { task -> put(encodeTask(task)) } }
         val ciphertext = Base64.encodeToString(ProbeCrypto().encrypt(array.toString(), "assistant_tasks"), Base64.NO_WRAP)
         if (!preferences.edit().putString("encrypted", ciphertext).commit()) throw IOException("부탁을 저장하지 못했어요. 다시 시도해주세요.")
         mutableTasks.value = next
@@ -332,8 +309,6 @@ class AssistantTaskStore private constructor(context: Context) {
     companion object {
         const val MAX_TEXT = 300
         private const val MAX_TASKS = 200
-        internal const val MAX_SNOOZES = 3
-        internal const val MAX_SNOOZE_MINUTES = 60
         internal fun newOccurrenceId(): String = UUID.randomUUID().toString()
         internal fun expectedOccurrenceId(task: AssistantTask): String? =
             task.reminderOccurrenceId ?: task.remindAt?.let { "legacy:${task.id}:$it" }
@@ -373,9 +348,6 @@ class AssistantTaskStore private constructor(context: Context) {
             val task = tasks.firstOrNull {
                 it.id == id && !it.completed && !it.suspended && it.activeAlarmOccurrenceId == occurrenceId
             } ?: return tasks to TaskAlarmSnoozeResult.Stale
-            if (task.snoozeCount >= MAX_SNOOZES || task.snoozeMinutes + minutes > MAX_SNOOZE_MINUTES) {
-                return tasks to TaskAlarmSnoozeResult.LimitReached
-            }
             val snoozed = task.copy(
                 remindAt = nextAt,
                 reminderOccurrenceId = nextOccurrenceId,
@@ -414,7 +386,21 @@ class AssistantTaskStore private constructor(context: Context) {
             tasks: List<AssistantTask>,
             sourceNotificationId: String,
             sourceRevisionId: String,
-        ): List<AssistantTask> = reconcileAutomaticRevision(tasks, sourceNotificationId, sourceRevisionId)
+            noticeGroupKeys: Set<String> = emptySet(),
+        ): List<AssistantTask> = reconcileAutomaticRevision(
+            tasks, sourceNotificationId, sourceRevisionId, noticeGroupKeys + sourceNotificationId,
+        )
+
+        /** Group-aware identity check: lane-local ids, or any shared group key. */
+        internal fun taskMatchesGroup(
+            task: AssistantTask,
+            sourceNotificationId: String,
+            incomingKeys: Set<String>,
+        ): Boolean {
+            if (task.sourceNotificationId == sourceNotificationId) return true
+            val storedKeys = task.noticeGroupKeys + listOfNotNull(task.sourceNotificationId)
+            return storedKeys.isNotEmpty() && kr.mom.probe.data.NoticeGrouping.matches(incomingKeys, storedKeys)
+        }
 
         internal fun suspendAutomaticSourcesForTest(
             tasks: List<AssistantTask>,
@@ -425,8 +411,9 @@ class AssistantTaskStore private constructor(context: Context) {
             tasks: List<AssistantTask>,
             sourceNotificationIds: Set<String>,
         ): List<AssistantTask> = tasks.map { task ->
-            if (task.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
-                task.sourceNotificationId in sourceNotificationIds &&
+            val linked = task.sourceNotificationId in sourceNotificationIds ||
+                task.noticeGroupKeys.any { it in sourceNotificationIds }
+            if (task.sourceKind == AssistantTaskSource.AUTO_NOTICE && linked &&
                 !task.completed && !task.suspended
             ) {
                 task.copy(
@@ -447,10 +434,12 @@ class AssistantTaskStore private constructor(context: Context) {
             tasks: List<AssistantTask>,
             sourceNotificationId: String,
             sourceRevisionId: String,
+            incomingKeys: Set<String>,
         ): List<AssistantTask> = tasks.map {
-            if (it.sourceNotificationId == sourceNotificationId && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
+            if (taskMatchesGroup(it, sourceNotificationId, incomingKeys) && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
                 !it.completed && (it.sourceRevisionId == null || it.sourceRevisionId != sourceRevisionId || !it.suspended)
             ) it.copy(
+                noticeGroupKeys = it.noticeGroupKeys + incomingKeys,
                 sourceRevisionId = sourceRevisionId,
                 remindAt = null,
                 reminderOccurrenceId = null,
@@ -463,6 +452,48 @@ class AssistantTaskStore private constructor(context: Context) {
             ) else it
         }
     }
+}
+
+internal fun encodeTask(task: AssistantTask): JSONObject = JSONObject()
+    .put("id", task.id).put("text", task.text).put("completed", task.completed).put("createdAt", task.createdAt)
+    .put("sourceNotificationId", task.sourceNotificationId ?: JSONObject.NULL)
+    .put("sourceRevisionId", task.sourceRevisionId ?: JSONObject.NULL).put("sourceKind", task.sourceKind.name)
+    .put("dueAt", task.dueAt ?: JSONObject.NULL).put("remindAt", task.remindAt ?: JSONObject.NULL)
+    .put("reminderAttempts", task.reminderAttempts).put("suspended", task.suspended)
+    .put("reminderOccurrenceId", task.reminderOccurrenceId ?: JSONObject.NULL)
+    .put("reminderOccurrenceAt", task.reminderOccurrenceAt ?: JSONObject.NULL)
+    .put("activeAlarmOccurrenceId", task.activeAlarmOccurrenceId ?: JSONObject.NULL)
+    .put("activeAlarmScheduledAt", task.activeAlarmScheduledAt ?: JSONObject.NULL)
+    .put("activeAlarmNotificationId", task.activeAlarmNotificationId ?: JSONObject.NULL)
+    .put("snoozeCount", task.snoozeCount).put("snoozeMinutes", task.snoozeMinutes)
+    .put("noticeGroupKeys", JSONArray(task.noticeGroupKeys))
+
+internal fun decodeTask(item: JSONObject): AssistantTask {
+    val sourceNotificationId = item.optionalId("sourceNotificationId") ?: item.optionalId("sourceRecordId")
+    return AssistantTask(
+        item.getString("id"),
+        item.getString("text"),
+        item.getBoolean("completed"),
+        item.getLong("createdAt"),
+        sourceNotificationId,
+        item.optionalId("sourceRevisionId"),
+        runCatching { AssistantTaskSource.valueOf(item.optString("sourceKind")) }
+            .getOrDefault(if (sourceNotificationId != null) AssistantTaskSource.LEGACY else AssistantTaskSource.USER_LOCAL),
+        item.optionalLong("dueAt"),
+        item.optionalLong("remindAt"),
+        item.optInt("reminderAttempts", 0).coerceIn(0, 2),
+        item.optBoolean("suspended", false),
+        item.optionalId("reminderOccurrenceId"),
+        item.optionalLong("reminderOccurrenceAt"),
+        item.optionalId("activeAlarmOccurrenceId"),
+        item.optionalLong("activeAlarmScheduledAt"),
+        item.optionalInt("activeAlarmNotificationId"),
+        item.optInt("snoozeCount", 0).coerceAtLeast(0),
+        item.optInt("snoozeMinutes", 0).coerceAtLeast(0),
+        item.optJSONArray("noticeGroupKeys")?.let { array ->
+            (0 until array.length()).mapNotNull { array.optString(it).takeUnless(String::isBlank) }.toSet()
+        } ?: listOfNotNull(sourceNotificationId).toSet(),
+    )
 }
 
 private fun JSONObject.optionalLong(name: String): Long? =

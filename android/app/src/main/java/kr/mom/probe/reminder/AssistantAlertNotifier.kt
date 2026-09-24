@@ -14,6 +14,7 @@ import kr.mom.probe.R
 import kr.mom.probe.data.NoticeContentState
 import kr.mom.probe.data.NoticeDecision
 import kr.mom.probe.data.NoticeDecisionEngine
+import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.ProbeRecord
 import kr.mom.probe.data.ProbeRules
 import java.time.ZoneId
@@ -35,16 +36,20 @@ object AssistantAlertNotifier {
     fun reset(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
 
     fun cancel(context: Context, record: ProbeRecord) {
-        val stableNotificationId = ProbeRules.recordIdentity(record).hashCode()
+        val institution = NoticeGrouping.institution(kr.mom.probe.data.ProbeRepository.get(context).settings.value)
+        val stableNotificationId = NoticeGrouping.groupId(record, institution).hashCode()
         context.getSystemService(NotificationManager::class.java).cancel(stableNotificationId)
     }
 
     fun notify(context: Context, record: ProbeRecord): Boolean {
         if (!isEnabled(context)) return false
         val repository = kr.mom.probe.data.ProbeRepository.get(context)
-        val sourceId = ProbeRules.recordIdentity(record)
-        val completedSource = kr.mom.probe.task.AssistantTaskStore.get(context).tasks.value.any {
-            it.sourceNotificationId == sourceId && it.completed
+        val institution = NoticeGrouping.institution(repository.settings.value)
+        val sourceId = NoticeGrouping.groupId(record, institution)
+        val recordKeys = NoticeGrouping.keys(record, institution)
+        val completedSource = kr.mom.probe.task.AssistantTaskStore.get(context).tasks.value.any { task ->
+            task.completed &&
+                NoticeGrouping.matches(recordKeys, task.noticeGroupKeys + listOfNotNull(task.sourceNotificationId))
         }
         if (completedSource) {
             cancel(context, record)
@@ -72,7 +77,7 @@ object AssistantAlertNotifier {
         })
         if (!manager.areNotificationsEnabled() || manager.getNotificationChannel(CHANNEL)?.importance == NotificationManager.IMPORTANCE_NONE) return false
 
-        val stableNotificationId = ProbeRules.recordIdentity(record).hashCode()
+        val stableNotificationId = sourceId.hashCode()
         val open = PendingIntent.getActivity(
             context,
             stableNotificationId,

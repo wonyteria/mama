@@ -446,8 +446,12 @@ object NoticeDecisionEngine {
             .removePrefix(":").trim().removePrefix("은 ").removePrefix("는 ").removePrefix("이 ").removePrefix("가 ").trim()
         if (tail.isBlank()) return emptyList()
         return tail.split(',', '·', '/', '•').map { it.trim(' ', ':', '-', '–') }
-            .filter { it.length in 1..40 }.take(8)
+            .filter { it.length in 1..40 }
+            .filterNot { requestEnding.containsMatchIn(it) }
+            .take(8)
     }
+
+    private val requestEnding = Regex("(주세요|주시기\\s*바랍니다|바랍니다|하세요|하십시오)$")
 
     private fun hasPublicationConflict(source: String): Boolean =
         source.contains("2026-09-17") && source.contains("20260914")

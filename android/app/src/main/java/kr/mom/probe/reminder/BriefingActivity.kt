@@ -11,7 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import java.util.Locale
 import kr.mom.probe.BuildConfig
-import kr.mom.probe.agent.AgentActivity
+import kr.mom.probe.task.AssistantTasksActivity
 import kr.mom.probe.task.AssistantTaskStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -230,7 +230,6 @@ class BriefingActivity : ComponentActivity() {
                                         status = "${displayTime(result.nextAt)} 무렵 다시 알려드릴게요."
                                     }
                                     BriefingSnoozeResult.Disabled -> status = "브리핑 시간이 꺼져 있어 다시 알리지 않았어요."
-                                    BriefingSnoozeResult.LimitReached -> status = "이 브리핑은 다시 알림 한도에 닿았어요."
                                     BriefingSnoozeResult.Stale -> status = "이미 지난 브리핑이에요. 앱에서 최신 내용을 확인해주세요."
                                     BriefingSnoozeResult.Failed -> status = "다시 알리지 못했어요. 소리 끄기를 눌러주세요."
                                 }
@@ -307,7 +306,7 @@ class BriefingActivity : ComponentActivity() {
         }
         pendingAskMomo.cancel()
         stopAlarm()
-        startActivity(Intent(this, AgentActivity::class.java))
+        startActivity(Intent(this, AssistantTasksActivity::class.java))
         finish()
     }
 
@@ -315,7 +314,7 @@ class BriefingActivity : ComponentActivity() {
         if (isFinishing || isDestroyed || !resumed || !hasWindowFocus) return
         pendingAskMomo.runIfUnlocked(::isUnlockedNow) {
             stopAlarm()
-            startActivity(Intent(this, AgentActivity::class.java))
+            startActivity(Intent(this, AssistantTasksActivity::class.java))
             finish()
         }
     }

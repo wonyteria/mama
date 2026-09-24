@@ -165,31 +165,73 @@ class AssistantTaskStoreTest {
         assertEquals(10, snoozed.snoozeMinutes)
     }
 
-    @Test fun snoozeStopsAtPerOccurrenceLimits() {
-        val countLimit = AssistantTask(
-            "count",
-            "세 번 미룸",
-            false,
-            10L,
-            activeAlarmOccurrenceId = "fire",
-            snoozeCount = 3,
-            snoozeMinutes = 30,
-        )
-        val minuteLimit = AssistantTask(
-            "minutes",
-            "한 시간 미룸",
-            false,
-            10L,
-            activeAlarmOccurrenceId = "fire",
-            snoozeCount = 2,
-            snoozeMinutes = 40,
+    @Test fun fourConsecutiveSnoozesStayScheduledAndSurviveReload() {
+        var tasks = listOf(
+            AssistantTask(
+                "task",
+                "물티슈 넣기",
+                false,
+                10L,
+                activeAlarmOccurrenceId = "fire-0",
+                activeAlarmScheduledAt = 1_000L,
+                activeAlarmNotificationId = 27_100,
+            ),
         )
 
-        val (_, byCount) = AssistantTaskStore.snoozeAlarmOccurrenceFrom(listOf(countLimit), "count", "fire", 20_000L, 10, "next")
-        val (_, byMinutes) = AssistantTaskStore.snoozeAlarmOccurrenceFrom(listOf(minuteLimit), "minutes", "fire", 20_000L, 30, "next")
+        var lastScheduled: TaskAlarmSnoozeResult.Scheduled? = null
+        repeat(4) { index ->
+            val (next, result) = AssistantTaskStore.snoozeAlarmOccurrenceFrom(
+                tasks,
+                id = "task",
+                occurrenceId = "fire-$index",
+                nextAt = 20_000L + index * 600_000L,
+                minutes = 10,
+                nextOccurrenceId = "fire-${index + 1}",
+            )
+            tasks = next
+            lastScheduled = result as? TaskAlarmSnoozeResult.Scheduled
+            // Simulate the reminder firing again before the next snooze.
+            if (index < 3) {
+                val (consumed, fired) = AssistantTaskStore.consumeReminderFrom(
+                    tasks, "task", "fire-${index + 1}", 27_100,
+                )
+                assertTrue(fired != null)
+                tasks = consumed
+            }
+        }
+        val snoozed = tasks.single()
 
-        assertEquals(TaskAlarmSnoozeResult.LimitReached, byCount)
-        assertEquals(TaskAlarmSnoozeResult.LimitReached, byMinutes)
+        assertTrue(lastScheduled is TaskAlarmSnoozeResult.Scheduled)
+        assertEquals(4, snoozed.snoozeCount)
+        assertEquals(40, snoozed.snoozeMinutes)
+        assertEquals(1_820_000L, snoozed.remindAt)
+        assertEquals("fire-4", snoozed.reminderOccurrenceId)
+
+        // Persist + reload (process restart): every field needed to resume the chain survives.
+        val restored = decodeTask(encodeTask(snoozed))
+        assertEquals(snoozed, restored)
+        assertEquals(4, restored.snoozeCount)
+        assertEquals(1_820_000L, restored.remindAt)
+    }
+
+    @Test fun taskGroupKeysRoundTripThroughStorage() {
+        val task = AssistantTask(
+            "task",
+            "서류 제출",
+            false,
+            10L,
+            sourceNotificationId = "group",
+            sourceRevisionId = "rev1",
+            sourceKind = AssistantTaskSource.AUTO_NOTICE,
+            dueAt = null,
+            noticeGroupKeys = setOf("nid-1", "ext:abc", "fp:def"),
+        )
+
+        val restored = decodeTask(encodeTask(task))
+
+        assertEquals(task, restored)
+        assertEquals(setOf("nid-1", "ext:abc", "fp:def"), restored.noticeGroupKeys)
+        assertNull(restored.dueAt)
     }
 
     @Test fun completingActiveOccurrenceFinishesOnlyThatTask() {

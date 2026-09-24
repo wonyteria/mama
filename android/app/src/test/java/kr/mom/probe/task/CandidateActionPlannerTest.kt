@@ -16,8 +16,18 @@ class CandidateActionPlannerTest {
 
         assertNotNull(plan)
         assertTrue(plan!!.text.contains("도시락, 물통"))
-        assertTrue(plan.dueAt > now)
+        assertTrue(plan.dueAt != null && plan.dueAt > now)
         assertNull(plan.remindAt)
+        assertTrue(plan.noticeGroupKeys.isNotEmpty())
+    }
+
+    @Test fun keepsRequiredUndatedActionAsUndatedPlan() {
+        val plan = CandidateActionPlanner.plan(record("회신 안내", "9월 16일까지 회신해 주세요."), now)
+
+        assertNotNull(plan)
+        assertNull(plan!!.dueAt)
+        assertNull(plan.remindAt)
+        assertTrue(plan.text.contains("9월 16일"))
     }
 
     @Test fun leavesAmbiguousUndatedNoticeForReview() {

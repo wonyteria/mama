@@ -1,0 +1,47 @@
+name: Android
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest
+
+      - name: Lint
+        run: ./gradlew :app:lintDebug
+
+      - name: Debug build
+        run: ./gradlew :app:assembleDebug
+
+      - name: Instrumentation test assembly
+        run: ./gradlew :app:assembleDebugAndroidTest
+
+      - name: Release assembly fails without signing credentials
+        run: |
+          if ./gradlew :app:assembleRelease; then
+            echo "::error::assembleRelease succeeded without MAMA_RELEASE_* credentials"
+            exit 1
+          fi
+
+      - name: Release BuildConfig embeds no NEIS key
+        run: |
+          ./gradlew :app:generateReleaseBuildConfig
+          config=app/build/generated/source/buildConfig/release/kr/mom/probe/BuildConfig.java
+          grep -q 'NEIS_API_KEY = ""' "$config"

@@ -35,6 +35,7 @@ class ProbeNotificationListener : NotificationListenerService() {
             if (!ProbeRules.canCapture(repository.settings.value, sbn.packageName, packageName,
                     true, sbn.isOngoing, sbn.notification.flags and android.app.Notification.FLAG_GROUP_SUMMARY != 0)) return@launch
             repository.capture(sbn, epoch)
+            if (NotificationHidingPolicy.mayHideOriginal()) cancelNotification(sbn.key)
         }
     }
 

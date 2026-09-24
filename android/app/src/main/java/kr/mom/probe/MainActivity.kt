@@ -75,6 +75,7 @@ private data class PendingTaskSave(
     val sourceRevisionId: String,
     val dueAt: Long?,
     val remindAt: Long?,
+    val noticeGroupKeys: Set<String> = emptySet(),
 )
 
 @Composable
@@ -245,6 +246,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         request.remindAt,
                         sourceRevisionId = request.sourceRevisionId,
                         sourceKind = kr.mom.probe.task.AssistantTaskSource.USER_CONFIRMED_NOTICE,
+                        noticeGroupKeys = request.noticeGroupKeys,
                     ) != null
                 }
                 message = if (added) "모모가 부탁과 알림을 기억해뒀어요." else "이미 모모가 기억하고 있어요."
@@ -477,6 +479,8 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     verifiedAppPackages = records.map { it.packageName }.toSet(),
                     connectorState = connectorState,
                     busy = busy,
+                    notificationAccess = access,
+                    neisSampleMode = neisClient.isSampleMode,
                     onBack = ::back,
                     onSkip = { command({ repository.deferSetup() }) {
                         SourceSyncScheduler.enqueueActive(context, SourceRunTrigger.CONNECTION_READY)
@@ -610,6 +614,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         records,
                         kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings),
                         activeSourceScopes,
+                        institution = kr.mom.probe.data.NoticeGrouping.institution(settings),
                     ),
                     sourceStatusMessage = sourceStatusMessage,
                     onAgenda = { screen = "inbox" },
@@ -617,7 +622,10 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         (neisClient.isSampleMode && connectorState.sites["neis-public"]?.status == ConnectionStatus.CONNECTED),
                     pendingTaskCount = kr.mom.probe.reminder.BriefingReminders.briefingTasks(assistantTasks).size,
                     briefingReady = notificationsAllowed && kr.mom.probe.reminder.BriefingReminders.hasEnabledBriefing(context),
-                    rememberedNotificationIds = assistantTasks.mapNotNull { it.sourceNotificationId }.toSet(),
+                    rememberedGroupKeys = assistantTasks
+                        .map { it.noticeGroupKeys + listOfNotNull(it.sourceNotificationId) }
+                        .filter { it.isNotEmpty() }
+                        .toSet(),
                     onEnableBriefings = {
                         if (notificationsAllowed) {
                             assistantAlertsEnabled = kr.mom.probe.reminder.AssistantAlertNotifier.setEnabled(context, true)
@@ -630,7 +638,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         }
                     },
                     onAssistant = {
-                    context.startActivity(Intent(context, kr.mom.probe.agent.AgentActivity::class.java))
+                    context.startActivity(Intent(context, kr.mom.probe.task.AssistantTasksActivity::class.java))
                 })
                 }
                 "inbox" -> InboxScreen(records, { selectedId = it.id; previous = "inbox"; screen = "detail" }, {
@@ -640,13 +648,21 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     val record = records.find { it.id == selectedId }
                     if (record == null) Page { BackHeading("받은 알림", ::back); EmptyCard("삭제되었거나 보관 기간이 끝났어요", "현재 남아 있는 알림을 확인해주세요.") }
                     else {
-                        val sourceNotificationId = kr.mom.probe.data.ProbeRules.recordIdentity(record)
-                        DetailScreen(record, assistantTasks.any { it.sourceNotificationId == sourceNotificationId }, kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings), ::back, { deleteTarget = record.id }, {
+                        val institution = kr.mom.probe.data.NoticeGrouping.institution(settings)
+                        val sourceNotificationId = kr.mom.probe.data.NoticeGrouping.groupId(record, institution)
+                        val recordKeys = kr.mom.probe.data.NoticeGrouping.keys(record, institution)
+                        DetailScreen(record, assistantTasks.any { task ->
+                            task.sourceNotificationId == sourceNotificationId ||
+                                kr.mom.probe.data.NoticeGrouping.matches(
+                                    recordKeys,
+                                    task.noticeGroupKeys + listOfNotNull(task.sourceNotificationId),
+                                )
+                        }, kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings), ::back, { deleteTarget = record.id }, {
                         val intent = context.packageManager.getLaunchIntentForPackage(record.packageName)
                         if (intent == null) message = "원래 앱을 찾지 못했어요. 휴대폰에서 직접 확인해주세요."
                         else try { context.startActivity(intent) } catch (_: Exception) { message = "원래 앱을 열지 못했어요. 직접 확인해주세요." }
                     }, onRemember = { taskText, dueAt, remindAt ->
-                        val request = PendingTaskSave(taskText, sourceNotificationId, record.id, dueAt, remindAt)
+                        val request = PendingTaskSave(taskText, sourceNotificationId, record.id, dueAt, remindAt, recordKeys)
                         if (remindAt != null && !kr.mom.probe.task.TaskReminderScheduler.canDeliver(context)) {
                             pendingTaskSave = request
                             pendingNotificationTest = false

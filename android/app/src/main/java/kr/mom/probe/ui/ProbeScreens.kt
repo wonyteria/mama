@@ -39,11 +39,11 @@ import kr.mom.probe.data.ChildNoticeProfile
 import kr.mom.probe.data.NoticeApplicability
 import kr.mom.probe.data.NoticeDecision
 import kr.mom.probe.data.NoticeDecisionEngine
+import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.NoticeObligation
 import kr.mom.probe.data.ProbeRecord
 import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.data.NotificationCandidateParser
-import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.connector.NeisEvent
 import kr.mom.probe.sync.SourceAgendaItem
 
@@ -219,7 +219,7 @@ fun HomeScreen(settings: ProbeSettings, records: List<ProbeRecord>, access: Bool
                sourceStatusMessage: String? = null,
                schoolEventsLimited: Boolean = false,
                pendingTaskCount: Int = 0, briefingReady: Boolean = true,
-               rememberedNotificationIds: Set<String> = emptySet(),
+               rememberedGroupKeys: Set<Set<String>> = emptySet(),
                onAgenda: () -> Unit = onInbox,
                onEnableBriefings: () -> Unit = {}, onAssistant: (() -> Unit)? = null) {
     val hasApps = settings.selectedPackages.isNotEmpty()
@@ -229,22 +229,27 @@ fun HomeScreen(settings: ProbeSettings, records: List<ProbeRecord>, access: Bool
         NoticeDecisionEngine.childProfile(settings)
     }
     val now = remember(records, pendingTaskCount) { System.currentTimeMillis() }
-    val noticeDecisions = remember(records, childProfile, rememberedNotificationIds) {
-        records.distinctBy { ProbeRules.recordIdentity(it) }
+    val institution = remember(settings.schoolName) { NoticeGrouping.institution(settings) }
+    val noticeDecisions = remember(records, childProfile, rememberedGroupKeys, institution) {
+        val groupIds = NoticeGrouping.groupIds(records, institution)
+        records.distinctBy { groupIds.getValue(it.id) }
             .map { it to NoticeDecisionEngine.decide(it, childProfile) }
+    }
+    fun linkedToTask(record: ProbeRecord): Boolean {
+        if (rememberedGroupKeys.isEmpty()) return false
+        val recordKeys = NoticeGrouping.keys(record, institution)
+        return rememberedGroupKeys.any { NoticeGrouping.matches(recordKeys, it) }
     }
     val actionRecords = noticeDecisions
         .filter { (record, decision) ->
-            val identity = ProbeRules.recordIdentity(record)
-            identity !in rememberedNotificationIds && NoticeDecisionEngine.isBriefingAction(decision, now)
+            !linkedToTask(record) && NoticeDecisionEngine.isBriefingAction(decision, now)
         }
         .sortedWith(compareBy<Pair<ProbeRecord, NoticeDecision>> { it.second.action?.dueAt ?: Long.MAX_VALUE }
             .thenByDescending { it.first.receivedAt })
         .map { it.first }
     val optionalRecords = noticeDecisions
         .filter { (record, decision) ->
-            val identity = ProbeRules.recordIdentity(record)
-            identity !in rememberedNotificationIds && decision.isOptionalForChild()
+            !linkedToTask(record) && decision.isOptionalForChild()
         }
         .sortedByDescending { it.first.receivedAt }
     val topAction = actionRecords.firstOrNull()
@@ -294,7 +299,7 @@ fun HomeScreen(settings: ProbeSettings, records: List<ProbeRecord>, access: Bool
                 onAssistant != null -> AgentButton("모모에게 부탁하기", onClick = onAssistant)
             }
             if (onAssistant != null && (topAction != null || pendingTaskCount > 0 || !briefingReady)) {
-                TextButton(onClick = onAssistant, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("모모에게 묻기") }
+                TextButton(onClick = onAssistant, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("부탁 목록 보기") }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
