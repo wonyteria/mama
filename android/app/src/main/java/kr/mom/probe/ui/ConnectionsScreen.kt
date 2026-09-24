@@ -44,7 +44,7 @@ fun ChildProfileScreen(settings: ProbeSettings, busy: Boolean,
         BackHeading("자녀 정보", onBack)
         Eyebrow("엄마 비서의 첫 번째 가족")
         Text("누구의 소식을\n챙기면 될까요?", style = MaterialTheme.typography.headlineLarge)
-        Text("이름이나 별칭만으로 시작할 수 있어요. 학교와 학년은 나이스 공개 일정을 연결할 때만 입력해주세요.", color = Clay.Muted)
+        Text("이름이나 별칭만으로 시작할 수 있어요. 학교와 학년은 학교 홈페이지 연결과 공지 대상 확인에 써요.", color = Clay.Muted)
         OutlinedTextField(name, { if (it.length <= 30) name = it }, Modifier.fillMaxWidth(),
             label = { Text("아이 이름 또는 별칭") }, singleLine = true, shape = RoundedCornerShape(22.dp),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next))
@@ -52,7 +52,7 @@ fun ChildProfileScreen(settings: ProbeSettings, busy: Boolean,
             label = { Text("학교 정식 이름 (선택)") }, placeholder = { Text("예: 성남정자초등학교") }, singleLine = true,
             shape = RoundedCornerShape(22.dp), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             isError = school.isNotBlank() && !validSchool,
-            supportingText = { Text(if (school.isNotBlank() && !validSchool) "학교 이름을 2~60자로 입력해주세요." else "간단히 적어도 연결할 때 나이스 공식 이름으로 확인해요.") })
+            supportingText = { Text(if (school.isNotBlank() && !validSchool) "학교 이름을 2~60자로 입력해주세요." else "지원되는 학교 홈페이지는 정식 이름으로 확인해요.") })
         Box {
             OutlinedButton(onClick = { levelMenu = true }, Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(22.dp)) {
                 Text(level?.label ?: "학교급 선택 (선택)", Modifier.weight(1f)); Text("⌄")
@@ -96,17 +96,13 @@ fun ConnectionsScreen(
     busy: Boolean,
     onBack: () -> Unit,
     onToggleApp: (String, Boolean) -> Unit,
-    onConnectNeis: () -> Unit,
-    onDisconnectNeis: () -> Unit,
     sourceSnapshots: Map<String, SourceSyncSnapshot> = emptyMap(),
     onRefreshSource: (String) -> Unit = {},
     onToggleWebsite: (String, Boolean) -> Unit,
     onRecommendApp: (SourceApp) -> Unit,
     onSkip: () -> Unit = {},
     notificationAccess: Boolean = true,
-    neisSampleMode: Boolean = false,
 ) {
-    val publicConnection = connectorState.sites[SourceIds.NEIS_PUBLIC]
     val schoolWebsiteLane = SourceLanes.schoolWebsiteLane(settings, sourceSnapshots[SourceIds.SCHOOL_WEBSITE])
     val schoolWebsiteAvailable = schoolWebsiteLane.enabled
     Page {
@@ -155,23 +151,6 @@ fun ConnectionsScreen(
                 )
                 HorizontalDivider(color = Color.White.copy(alpha = .8f))
             }
-            val neisLane = SourceLanes.neisLane(connectorState, sourceSnapshots[SourceIds.NEIS_PUBLIC], neisSampleMode)
-            ConnectionSwitchRow(
-                mark = "N",
-                name = neisLane.name,
-                status = neisLane.statusText,
-                checked = neisLane.enabled,
-                enabled = !busy && settings.schoolName.isNotBlank(),
-                onCheckedChange = { checked -> if (checked) onConnectNeis() else onDisconnectNeis() },
-            )
-            if (publicConnection?.status == ConnectionStatus.CONNECTED) {
-                TextButton(onClick = { onRefreshSource(SourceIds.NEIS_PUBLIC) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                    Text("나이스 지금 확인")
-                }
-            }
-            HorizontalDivider(color = Color.White.copy(alpha = .8f))
-            ConnectionSwitchRow("N+", "나이스 학부모서비스", "개인 공지 조회 연동 미지원", false, false) { }
-            HorizontalDivider(color = Color.White.copy(alpha = .8f))
             val ealimiLane = SourceLanes.webLane("e알리미 웹", SourceIds.EALIMI_WEB, connectorState, sourceSnapshots[SourceIds.EALIMI_WEB])
             val ealimi = connectorState.sites["ealimi-web"]
             ConnectionSwitchRow("e", ealimiLane.name, ealimiLane.statusText, ealimiLane.enabled, !busy) {

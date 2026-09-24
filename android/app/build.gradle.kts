@@ -14,10 +14,8 @@ android {
         versionCode = 10
         versionName = "0.9.0-agent"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // No production secret is compiled into the APK. Debug builds may read a local
-        // developer key for QA; release always ships an empty key so the NEIS lane
-        // reports sample mode honestly until a server-side proxy exists.
-        buildConfigField("String", "NEIS_API_KEY", "\"\"")
+        // No service credentials are compiled into the APK. The production NEIS lane
+        // was removed; a server-side proxy would be required to restore it.
     }
     signingConfigs {
         maybeCreate("release").apply {
@@ -38,9 +36,6 @@ android {
         debug {
             applicationIdSuffix = ".qa"
             versionNameSuffix = "-qa"
-            val neisKey = (providers.gradleProperty("NEIS_API_KEY").orNull ?: System.getenv("NEIS_API_KEY") ?: "")
-                .replace("\\", "\\\\").replace("\"", "\\\"")
-            buildConfigField("String", "NEIS_API_KEY", "\"$neisKey\"")
         }
         release {
             // Fail closed: release builds require real signing material. There is no
@@ -84,7 +79,7 @@ val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
         }
     }
 }
-tasks.matching { it.name == "preReleaseBuild" || it.name == "assembleRelease" || it.name == "bundleRelease" }.configureEach {
+tasks.matching { it.name == "packageRelease" || it.name == "assembleRelease" || it.name == "bundleRelease" }.configureEach {
     dependsOn(verifyReleaseSigning)
 }
 dependencies {

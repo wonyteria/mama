@@ -44,7 +44,6 @@ import kr.mom.probe.data.NoticeObligation
 import kr.mom.probe.data.ProbeRecord
 import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.data.NotificationCandidateParser
-import kr.mom.probe.connector.NeisEvent
 import kr.mom.probe.sync.SourceAgendaItem
 
 fun displayTime(millis: Long): String = Instant.ofEpochMilli(millis).atZone(ZoneId.of("Asia/Seoul"))
@@ -101,7 +100,7 @@ fun WelcomeScreen(busy: Boolean, onStart: () -> Unit, onPolicy: () -> Unit) {
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("선택한 앱의 새 알림을 모모가 기기 안에서 정리해요. 날짜와 행동이 분명한 일은 자동으로 부탁과 알림을 만들어요.", style = MaterialTheme.typography.bodyMedium, color = Clay.Muted)
-            Text("선택한 앱의 알림과 자녀 정보는 이 기기에 암호화해 보관해요. 학교명은 나이스 공식 OpenAPI에서 학교를 찾을 때만 전송해요. 알림 원문은 14일 뒤 삭제하며 재설치하면 복구할 수 없어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+            Text("선택한 앱의 알림과 자녀 정보는 이 기기에 암호화해 보관해요. 알림 원문은 14일 뒤 삭제하며 재설치하면 복구할 수 없어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
             TextButton(onClick = onPolicy) { Text("수집·보관·삭제 설명 보기") }
             ConsentRow(agreed, { agreed = it }, "설명을 확인했고, 이 기기에서 알림을 모아 챙길 후보를 찾는 데 동의해요. (필수)")
         }
@@ -214,7 +213,7 @@ fun AccessScreen(labels: List<String>, busy: Boolean, onOpen: () -> Unit, onSkip
 @Composable
 fun HomeScreen(settings: ProbeSettings, records: List<ProbeRecord>, access: Boolean, connected: Boolean,
                onSetup: () -> Unit, onInbox: () -> Unit, onRecord: (ProbeRecord) -> Unit,
-               connectedSiteCount: Int = 0, schoolEvents: List<NeisEvent> = emptyList(),
+               connectedSiteCount: Int = 0,
                sourceAgenda: List<SourceAgendaItem> = emptyList(),
                sourceStatusMessage: String? = null,
                schoolEventsLimited: Boolean = false,
@@ -554,7 +553,7 @@ fun PolicyContent(onDelete: (() -> Unit)? = null) {
         onDelete?.let { delete -> TextButton(onClick = delete) { Text("참여 종료 · 전체 데이터 삭제", color = Clay.Error) } }
         Text("수집: 직접 선택한 앱의 새 알림 제목·본문·게시 시각·앱 정보, 아이 이름/별칭·학교·학년. 다른 앱 내용은 저장하지 않습니다.")
         Text("보관: Android 보안 키로 암호화하여 이 휴대폰에만 저장합니다. 원문은 받은 날부터 14일, 아이 이름과 설정은 참여 종료까지 보관합니다. 휴대폰이 꺼져 있으면 다음 실행 시 만료 자료를 정리합니다.")
-        Text("외부 연결: 선택한 학교명을 나이스 공식 OpenAPI로 보내 공개 학교정보를 찾을 수 있습니다. 부모 계정 비밀번호는 보관하지 않습니다. 일반 ChatGPT 로그인은 이 앱의 API 사용권이 아니며, 알림 원문은 서버·AI·광고 서비스로 자동 전송하지 않습니다.")
+        Text("외부 연결: 학교 홈페이지 공지는 공개 게시판에서만 확인하며, 학교명은 외부 서비스로 보내지 않습니다. 부모 계정 비밀번호는 보관하지 않습니다. 일반 ChatGPT 로그인은 이 앱의 API 사용권이 아니며, 알림 원문은 서버·AI·광고 서비스로 자동 전송하지 않습니다.")
         Text("통제: 언제든 앱 선택을 바꾸거나 수집을 멈출 수 있습니다. 개별 알림 또는 전체 정보를 삭제할 수 있습니다. 전체 삭제는 동의와 암호화 키, 캘린더·알람 앱 선택 기록과 실행 기록까지 제거합니다.")
         Text("제한: 앱 안의 공지·첨부파일 전체를 읽지 않습니다. 후보를 자동 확정하거나 AI 서버로 보내지 않으며, 결제도 하지 않습니다. 앱 삭제/재설치/기기 변경 시 복구하지 않습니다. 이미 외부에 저장한 파일과 외부 캘린더 일정은 앱에서 회수할 수 없습니다.")
     }

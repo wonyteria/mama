@@ -74,7 +74,6 @@ class SourceLanesTest {
             installedPackages = setOf("com.ewut.allealimi"),
             verifiedPackages = setOf("com.ewut.allealimi"),
             notificationAccess = true,
-            neisSampleMode = false,
         )
         val withoutApp = SourceLanes.services(
             settings.copy(selectedPackages = emptySet()),
@@ -82,7 +81,6 @@ class SourceLanesTest {
             installedPackages = setOf("com.ewut.allealimi"),
             verifiedPackages = emptySet(),
             notificationAccess = true,
-            neisSampleMode = false,
         )
 
         val webWithApp = withAppPreferred.first { it.name == "e알리미" }.lanes.single { it.name == "e알리미 웹" }
@@ -104,23 +102,6 @@ class SourceLanesTest {
         assertFalse(lane.enabled)
     }
 
-    @Test fun `neis lane reports sample mode honestly instead of pretending production coverage`() {
-        val connectors = ConnectorState(
-            sites = mapOf(
-                SourceIds.NEIS_PUBLIC to SiteConnection(
-                    id = SourceIds.NEIS_PUBLIC,
-                    childId = "primary-child",
-                    status = ConnectionStatus.CONNECTED,
-                ),
-            ),
-        )
-
-        val lane = SourceLanes.neisLane(connectors, snapshot = null, sampleMode = true)
-
-        assertEquals(LaneHealth.TEMPORARILY_UNCERTAIN, lane.health)
-        assertTrue(lane.statusText.contains("샘플"))
-    }
-
     @Test fun `web lane without implemented adapter reports unsupported not connected`() {
         val lane = SourceLanes.webLane("e알리미 웹", SourceIds.EALIMI_WEB, ConnectorState(), null)
 
@@ -132,10 +113,6 @@ class SourceLanesTest {
     @Test fun `no lane exposes internal identifiers in user-facing text`() {
         val connectors = ConnectorState(
             sites = mapOf(
-                SourceIds.NEIS_PUBLIC to SiteConnection(
-                    id = SourceIds.NEIS_PUBLIC, childId = "primary-child",
-                    status = ConnectionStatus.CONNECTED,
-                ),
                 SourceIds.EALIMI_WEB to SiteConnection(
                     id = SourceIds.EALIMI_WEB, childId = "primary-child",
                     status = ConnectionStatus.SESSION_READY,
@@ -156,7 +133,6 @@ class SourceLanesTest {
             installedPackages = setOf("com.ewut.allealimi"),
             verifiedPackages = setOf("com.ewut.allealimi"),
             notificationAccess = true,
-            neisSampleMode = false,
         )
 
         services.flatMap { it.lanes }.forEach { lane ->

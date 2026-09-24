@@ -85,7 +85,6 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     val connectorRepository = remember { ConnectorRepository.get(context) }
     val sourceStateStore = remember { SourceSyncStateStore.get(context) }
     val connectorState by connectorRepository.state.collectAsStateWithLifecycle()
-    val neisClient = remember { NeisPublicClient() }
     val settings by repository.settings.collectAsStateWithLifecycle()
     val records by repository.records.collectAsStateWithLifecycle()
     val assistantStore = remember { kr.mom.probe.task.AssistantTaskStore.get(context) }
@@ -118,7 +117,6 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     var appLoginPackage by rememberSaveable { mutableStateOf<String?>(null) }
     var showAccessRationale by remember { mutableStateOf(false) }
     var pendingWebsiteId by rememberSaveable { mutableStateOf<String?>(null) }
-    var neisEvents by remember { mutableStateOf(emptyList<NeisEvent>()) }
     val sourceSnapshots by sourceStateStore.snapshotsFlow.collectAsStateWithLifecycle()
     val installed = remember(refresh) { SourceCatalog.installed(context) }
     val missing = remember(refresh) { SourceCatalog.missing(context) }
@@ -181,29 +179,6 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
         if (uri?.scheme != "https") { message = "안전한 공식 주소를 확인하지 못했어요."; return }
         try { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
         catch (_: Exception) { message = "공식 사이트를 열 수 없어요." }
-    }
-
-    fun refreshNeisEvents(connection: SiteConnection?) {
-        if (connection?.status != ConnectionStatus.CONNECTED) { neisEvents = emptyList(); return }
-        val school = NeisSchool(
-            officeCode = connection.metadata["officeCode"].orEmpty(),
-            schoolCode = connection.metadata["schoolCode"].orEmpty(),
-            name = connection.metadata["schoolName"].orEmpty(),
-            address = connection.metadata["address"].orEmpty(),
-            level = connection.metadata["level"].orEmpty(),
-        )
-        scope.launch {
-            when (val result = neisClient.upcomingEvents(school)) {
-                is NeisResult.Success -> {
-                    val currentSchoolCode = connectorRepository.state.value.sites["neis-public"]?.metadata?.get("schoolCode")
-                    if (currentSchoolCode == school.schoolCode) neisEvents = result.value
-                }
-                is NeisResult.Failure -> {
-                    val currentSchoolCode = connectorRepository.state.value.sites["neis-public"]?.metadata?.get("schoolCode")
-                    if (currentSchoolCode == school.schoolCode) message = result.message
-                }
-            }
-        }
     }
 
     fun openAccess() {
@@ -389,9 +364,6 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
             openedInitialRecord = true
         }
     }
-    LaunchedEffect(connectorState.sites["neis-public"]) {
-        refreshNeisEvents(connectorState.sites["neis-public"])
-    }
     LaunchedEffect(connectorState.sites, ready, settings.onboardingDone, settings.selectedPackages, access) {
         val usableSite = connectorState.sites.values.any {
             it.status == ConnectionStatus.CONNECTED
@@ -480,7 +452,6 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     connectorState = connectorState,
                     busy = busy,
                     notificationAccess = access,
-                    neisSampleMode = neisClient.isSampleMode,
                     onBack = ::back,
                     onSkip = { command({ repository.deferSetup() }) {
                         SourceSyncScheduler.enqueueActive(context, SourceRunTrigger.CONNECTION_READY)
@@ -509,44 +480,6 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             }
                         }
                     },
-                    onConnectNeis = {
-                        if (!busy) scope.launch {
-                            busy = true
-                            try {
-                                when (val found = neisClient.findExactSchool(settings.schoolName)) {
-                                    is NeisResult.Success -> {
-                                        val school = found.value
-                                        val profileSaved = repository.saveChild(settings.childName, school.name, settings.schoolGrade, settings.schoolLevel ?: kr.mom.probe.data.NoticeDecisionEngine.inferLevel(school.name))
-                                        val saved = profileSaved && connectorRepository.markConnected("neis-public", mapOf(
-                                            "officeCode" to school.officeCode,
-                                            "schoolCode" to school.schoolCode,
-                                            "schoolName" to school.name,
-                                            "address" to school.address,
-                                            "level" to school.level,
-                                        ))
-                                        if (saved) {
-                                            SourceSyncScheduler.enqueue(context, SourceIds.NEIS_PUBLIC, SourceRunTrigger.CONNECTION_READY)
-                                            refreshSourceSnapshots()
-                                            message = "${school.name} 학교정보를 연결했어요."
-                                        } else {
-                                            message = "연결 상태를 저장하지 못했어요."
-                                        }
-                                    }
-                                    is NeisResult.Failure -> message = found.message
-                                }
-                            } finally { busy = false }
-                        }
-                    },
-                    onDisconnectNeis = { command({
-                        val disconnected = connectorRepository.disconnect("neis-public")
-                        if (disconnected) {
-                            SourceSyncScheduler.cancel(context, SourceIds.NEIS_PUBLIC)
-                            suspendAutomaticTasksForSources(setOf(SourceIds.NEIS_PUBLIC))
-                            sourceStateStore.bumpGeneration(SourceIds.NEIS_PUBLIC)
-                            repository.clearSourceRecords(setOf(SourceIds.NEIS_PUBLIC))
-                        }
-                        disconnected
-                    }) { neisEvents = emptyList(); refreshSourceSnapshots(); message = "학교정보 연결을 해제했어요." } },
                     sourceSnapshots = sourceSnapshots,
                     onRefreshSource = { sourceId ->
                         SourceSyncScheduler.enqueue(context, sourceId, SourceRunTrigger.MANUAL)
@@ -584,15 +517,14 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         val saved = repository.saveChild(name, school, grade, level)
                         if (saved && changedScope) {
                             SourceSyncScheduler.cancelAll(context)
-                            suspendAutomaticTasksForSources(setOf(SourceIds.SCHOOL_WEBSITE, SourceIds.NEIS_PUBLIC, SourceIds.EALIMI_WEB))
+                            suspendAutomaticTasksForSources(setOf(SourceIds.SCHOOL_WEBSITE, SourceIds.EALIMI_WEB))
                         }
                         if (saved && changedSchool) {
                             sourceStateStore.bumpGeneration(SourceIds.SCHOOL_WEBSITE)
-                            sourceStateStore.bumpGeneration(SourceIds.NEIS_PUBLIC)
                             sourceStateStore.bumpGeneration(SourceIds.EALIMI_WEB)
-                            repository.clearSourceRecords(setOf(SourceIds.SCHOOL_WEBSITE, SourceIds.NEIS_PUBLIC, SourceIds.EALIMI_WEB))
+                            repository.clearSourceRecords(setOf(SourceIds.SCHOOL_WEBSITE, SourceIds.EALIMI_WEB))
                         }
-                        if (saved && changedSchool) connectorRepository.disconnect("neis-public") else saved
+                        saved
                     }) {
                         SourceSyncScheduler.enqueueActive(context, SourceRunTrigger.CONNECTION_READY)
                         refreshSourceSnapshots()
@@ -609,7 +541,6 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     it.status == ConnectionStatus.CONNECTED
                 } + activeSourceScopes
                     .count { it.sourceId == SourceIds.SCHOOL_WEBSITE },
-                    schoolEvents = emptyList(),
                     sourceAgenda = SourceRecordSelectors.agenda(
                         records,
                         kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings),
@@ -618,8 +549,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     ),
                     sourceStatusMessage = sourceStatusMessage,
                     onAgenda = { screen = "inbox" },
-                    schoolEventsLimited = sourceStatusMessage != null ||
-                        (neisClient.isSampleMode && connectorState.sites["neis-public"]?.status == ConnectionStatus.CONNECTED),
+                    schoolEventsLimited = sourceStatusMessage != null,
                     pendingTaskCount = kr.mom.probe.reminder.BriefingReminders.briefingTasks(assistantTasks).size,
                     briefingReady = notificationsAllowed && kr.mom.probe.reminder.BriefingReminders.hasEnabledBriefing(context),
                     rememberedGroupKeys = assistantTasks
@@ -744,7 +674,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     if (resetWebsites) AlertDialog(
         onDismissRequest = { if (!busy) resetWebsites = false },
         title = { Text("웹 로그인 데이터를 지울까요?") },
-        text = { Text("이 시험 버전은 웹 저장소를 함께 사용해 e알리미·하이클래스 웹 로그인을 모두 지워요. 원래 앱의 로그인과 나이스 공개 학교정보는 유지돼요.") },
+        text = { Text("이 시험 버전은 웹 저장소를 함께 사용해 e알리미·하이클래스 웹 로그인을 모두 지워요. 원래 앱의 로그인은 유지돼요.") },
         confirmButton = { TextButton(enabled = !busy, onClick = {
             command({
                 val cleared = WebsiteSessionManager.clearAll() && connectorRepository.disconnectWebsites()

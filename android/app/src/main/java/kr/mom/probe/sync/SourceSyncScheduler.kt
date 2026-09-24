@@ -149,7 +149,6 @@ object SourceScopeFactory {
             } else {
                 null
             }
-            SourceIds.NEIS_PUBLIC -> neisScope(app, child, consentEpoch, authorizationToken, trigger, base)
             SourceIds.EALIMI_WEB -> privateScope(app, child, consentEpoch, authorizationToken, trigger, base)
             else -> null
         }
@@ -159,37 +158,8 @@ object SourceScopeFactory {
         val connectors = ConnectorRepository.get(context.applicationContext).state.value.sites
         val ids = mutableSetOf<String>()
         if (isSeongnamJeongjaElementaryFromSettings(context)) ids += SourceIds.SCHOOL_WEBSITE
-        if (connectors[SourceIds.NEIS_PUBLIC]?.status == ConnectionStatus.CONNECTED) ids += SourceIds.NEIS_PUBLIC
         if (connectors[SourceIds.EALIMI_WEB]?.status in setOf(ConnectionStatus.SESSION_READY, ConnectionStatus.CONNECTED)) ids += SourceIds.EALIMI_WEB
         return ids
-    }
-
-    private fun neisScope(
-        context: Context,
-        child: ChildSourceScope,
-        consentEpoch: Long,
-        authorizationToken: String,
-        trigger: SourceRunTrigger,
-        coverage: SourceCoverageWindow,
-    ): SourceScope? {
-        val connection = ConnectorRepository.get(context).state.value.sites[SourceIds.NEIS_PUBLIC] ?: return null
-        if (connection.status != ConnectionStatus.CONNECTED) return null
-        val schoolName = connection.metadata["schoolName"].orEmpty()
-        val officeCode = connection.metadata["officeCode"].orEmpty().ifBlank { null }
-        val schoolCode = connection.metadata["schoolCode"].orEmpty().ifBlank { null }
-        if (schoolName.isBlank() || officeCode == null || schoolCode == null) return null
-        return SourceScope(
-            sourceId = SourceIds.NEIS_PUBLIC,
-            kind = SourceKind.NEIS_PUBLIC,
-            school = CanonicalSchoolScope(schoolName = schoolName, officeCode = officeCode, schoolCode = schoolCode, officialHost = "open.neis.go.kr"),
-            child = child,
-            connectionGeneration = generationFor(context, SourceIds.NEIS_PUBLIC),
-            consentEpoch = consentEpoch,
-            authorizationToken = authorizationToken,
-            consentVersion = ProbeRules.CONSENT_VERSION,
-            coverageWindow = coverage,
-            trigger = trigger,
-        )
     }
 
     private fun privateScope(

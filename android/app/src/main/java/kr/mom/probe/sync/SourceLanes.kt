@@ -99,25 +99,6 @@ object SourceLanes {
         )
     }
 
-    /** The public NEIS API lane. Production secrets are never embedded; sample mode stays honest. */
-    fun neisLane(connectorState: ConnectorState, snapshot: SourceSyncSnapshot?, sampleMode: Boolean): SourceLane {
-        val connection = connectorState.sites[SourceIds.NEIS_PUBLIC]
-        val connected = connection?.status == ConnectionStatus.CONNECTED
-        val (health, text) = when {
-            !connected -> LaneHealth.NEEDS_SETUP to "학교 일정 공개 API · 연결하면 확인해요"
-            sampleMode -> LaneHealth.TEMPORARILY_UNCERTAIN to "샘플 일정만 확인 중 · 운영 연동 준비 중"
-            else -> snapshotHealth(snapshot, ready = "학교 일정을 확인할 수 있어요")
-        }
-        return SourceLane(
-            name = "나이스 학교정보",
-            capabilities = setOf(LaneCapability.LISTING_DISCOVERY, LaneCapability.REVISION_DETECTION),
-            health = health,
-            statusText = text,
-            enabled = connected,
-            internalKey = SourceIds.NEIS_PUBLIC,
-        )
-    }
-
     /**
      * Private web-adapter lanes. e알리미/하이클래스 DOM capture is not implemented, so these lanes
      * honestly report UNSUPPORTED regardless of whether a login session exists.
@@ -150,7 +131,6 @@ object SourceLanes {
         installedPackages: Set<String>,
         verifiedPackages: Set<String>,
         notificationAccess: Boolean,
-        neisSampleMode: Boolean,
     ): List<SourceService> {
         val ealimi = notificationServices.first { it.packageName == "com.ewut.allealimi" }
         val hiclass = notificationServices.first { it.packageName == "com.iscreammedia.app.hiclass.android" }
@@ -189,10 +169,6 @@ object SourceLanes {
                         notificationAccess = notificationAccess)),
                 )
             }
-        services += SourceService(
-            name = "나이스 학교정보",
-            lanes = listOf(neisLane(connectorState, snapshots[SourceIds.NEIS_PUBLIC], neisSampleMode)),
-        )
         return services
     }
 

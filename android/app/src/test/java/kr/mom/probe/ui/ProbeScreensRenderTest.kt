@@ -32,7 +32,6 @@ import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.data.ProbeRecord
 import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.NotificationCandidateParser
-import kr.mom.probe.connector.NeisEvent
 import kr.mom.probe.sync.SourceAgendaItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -104,7 +103,7 @@ class ProbeScreensRenderTest {
 
 
     @Test
-    fun homeScheduleUsesStoredAgendaInsteadOfTransientNeisFallback() {
+    fun homeScheduleUsesStoredAgenda() {
         var agendaOpens = 0
         val sourceRecord = candidateRecord().copy(id = "source-agenda-record", title = "QA 학교 일정", appLabel = "성남정자초 공식 홈페이지")
         render {
@@ -112,7 +111,6 @@ class ProbeScreensRenderTest {
                 settings = ProbeSettings(consent = true, childName = "QA", schoolName = "성남정자초등학교", schoolGrade = 2, onboardingDone = true),
                 records = emptyList(), access = false, connected = false,
                 onSetup = {}, onInbox = {}, onRecord = {}, connectedSiteCount = 1,
-                schoolEvents = listOf(NeisEvent("20260916", "Transient NEIS", "not stored")),
                 sourceAgenda = listOf(SourceAgendaItem(sourceRecord, "Stored agenda", "2026-09-16", "성남정자초 공식 홈페이지")),
                 onAgenda = { agendaOpens++ },
             )
@@ -125,20 +123,18 @@ class ProbeScreensRenderTest {
     }
 
     @Test
-    fun homeScheduleDoesNotDisplayTransientNeisWhenStoredAgendaIsEmpty() {
+    fun homeScheduleShowsEmptyStateWhenStoredAgendaIsEmpty() {
         render {
             HomeScreen(
                 settings = ProbeSettings(consent = true, childName = "QA", schoolName = "성남정자초등학교", schoolGrade = 2, onboardingDone = true),
                 records = emptyList(), access = false, connected = false,
                 onSetup = {}, onInbox = {}, onRecord = {}, connectedSiteCount = 1,
-                schoolEvents = listOf(NeisEvent("20260916", "Transient NEIS", "not stored")),
                 sourceAgenda = emptyList(),
             )
         }
 
         compose.onAllNodesWithText("0개", useUnmergedTree = true).assertCountEquals(2)
         compose.onNodeWithText("저장된 학교 일정 없음").performScrollTo().assertIsDisplayed()
-        compose.onAllNodesWithText("Transient NEIS").assertCountEquals(0)
     }
 
     @Test

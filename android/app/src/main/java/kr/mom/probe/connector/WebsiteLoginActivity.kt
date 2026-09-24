@@ -36,7 +36,7 @@ class WebsiteLoginActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (!BuildConfig.DEBUG) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         definition = ConnectorCatalog.site(intent.getStringExtra(EXTRA_SITE_ID).orEmpty())
-            ?.takeIf { it.available && it.id != "neis-parent" } ?: run { finish(); return }
+            ?.takeIf { it.available } ?: run { finish(); return }
 
         val density = resources.displayMetrics.density
         fun dp(value: Int) = (value * density).toInt()

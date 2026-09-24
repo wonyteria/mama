@@ -105,7 +105,7 @@ APK 직접 설치 경로에 따라 Android의 ‘제한된 설정’ 안내가 �
 
 G0는 실제 엄마 5~10명, 7~14일, 중요 공지와 대조한 알림 300건 이상을 모아야 끝납니다. 0.6의 검토 내보내기에 후보 종류와 해석한 기한이 자동 포함되어 제품팀이 원문과 대조할 수 있습니다. 정상 빌드나 합성 알림 테스트만으로 학교 앱 연동/사업 가능성을 입증하지 않습니다.
 
-나이스 공개 API는 정식 운영 시 발급받은 인증키가 필요합니다. debug 빌드만 `NEIS_API_KEY` Gradle property 또는 환경변수를 읽고, 키가 없으면 공식 sample 제한에 맞춰 최대5건 시험 조회로 표시합니다. release APK에는 키를 컴파일하지 않으므로 release에서는 항상 sample 모드로 동작합니다. 정식 배포 전에는 서버 측 프록시와 사용 제한을 만들어 release lane을 복구해야 하는 후속 작업이 남아 있습니다.
+나이스 공개 API 연동은 제거했습니다. 인증키를 APK에 넣을 수 없고 안전한 서버 프록시가 없어서, 학사일정은 확인된 학교 홈페이지 게시판 lane에서만 가져옵니다. 나이스 연동을 되살리려면 서버 측 프록시와 사용 제한을 먼저 만들어야 합니다.
 
 release 빌드는 서명 자격 증명이 없으면 실패합니다. `MAMA_RELEASE_STORE_FILE`, `MAMA_RELEASE_STORE_PASSWORD`, `MAMA_RELEASE_KEY_ALIAS`, `MAMA_RELEASE_KEY_PASSWORD`를 Gradle property 또는 환경변수로 설정해야 `assembleRelease`가 진행되며, debug 서명으로의 대체는 없습니다.
 

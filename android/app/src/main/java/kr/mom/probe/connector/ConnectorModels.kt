@@ -40,24 +40,6 @@ data class SiteDefinition(
 object ConnectorCatalog {
     val sites = listOf(
         SiteDefinition(
-            id = "neis-public",
-            name = "나이스 학교정보",
-            description = "공식 OpenAPI · 학사일정·급식·시간표",
-            startUrl = "https://open.neis.go.kr/",
-            allowedHostSuffixes = setOf("open.neis.go.kr"),
-            mark = "N",
-            available = true,
-        ),
-        SiteDefinition(
-            id = "neis-parent",
-            name = "나이스 학부모서비스",
-            description = "성적·출결·학교생활 · 공식 위임 연동 준비 중",
-            startUrl = "https://parents.neis.go.kr/csp-prnt/#/prn-main/intro",
-            allowedHostSuffixes = setOf("neis.go.kr"),
-            mark = "N",
-            available = false,
-        ),
-        SiteDefinition(
             id = "ealimi-web",
             name = "e알리미 웹",
             description = "보호자 웹 연결 방식 검증 중",
