@@ -64,8 +64,11 @@ class ReleaseOnboardingDriverTest {
         val deadline = System.currentTimeMillis() + 30_000
         var reached = false
         while (System.currentTimeMillis() < deadline && !reached) {
+            // The system permission dialog renders its buttons uppercase on some
+            // locales/images, so all three spellings are accepted exactly.
             findByText("허용", exact = true)?.let { clickRow(it) }
             findByText("Allow", exact = true)?.let { clickRow(it) }
+            findByText("ALLOW", exact = true)?.let { clickRow(it) }
             reached = findByText("오늘") != null
             if (!reached) Thread.sleep(500)
         }
