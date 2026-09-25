@@ -63,7 +63,7 @@ fun TaskRow(
                 checked = task.completed,
                 onCheckedChange = { onToggle(task) },
                 enabled = !busy && !task.excluded,
-                modifier = Modifier.testTag("task-check-${task.id}"),
+                modifier = Modifier.minTouchTarget().testTag("task-check-${task.id}"),
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
@@ -122,19 +122,19 @@ fun TaskRow(
                 }
             }
             if (task.evidenceText != null) {
-                TextButton(onClick = { showEvidence = true }, modifier = Modifier.padding(start = 40.dp)) { Text("근거 보기") }
+                TextButton(onClick = { showEvidence = true }, modifier = Modifier.padding(start = 40.dp).minTouchTarget()) { Text("근거 보기") }
             }
             Row(Modifier.fillMaxWidth().padding(start = 40.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 if (!task.completed && !task.excluded) {
-                    TextButton(onClick = { onSnooze(task) }, enabled = !busy) { Text("미루기") }
-                    TextButton(onClick = { onEdit(task) }, enabled = !busy) { Text("수정") }
-                    TextButton(onClick = { onExclude(task) }, enabled = !busy) { Text("제외") }
+                    TextButton(onClick = { onSnooze(task) }, enabled = !busy, modifier = Modifier.minTouchTarget()) { Text("미루기") }
+                    TextButton(onClick = { onEdit(task) }, enabled = !busy, modifier = Modifier.minTouchTarget()) { Text("수정") }
+                    TextButton(onClick = { onExclude(task) }, enabled = !busy, modifier = Modifier.minTouchTarget()) { Text("제외") }
                 }
                 if (task.completed) {
-                    TextButton(onClick = { onToggle(task) }, enabled = !busy) { Text("완료 되돌리기") }
+                    TextButton(onClick = { onToggle(task) }, enabled = !busy, modifier = Modifier.minTouchTarget()) { Text("완료 되돌리기") }
                 }
                 if (task.excluded) {
-                    TextButton(onClick = { onExclude(task) }, enabled = !busy) { Text("제외 해제") }
+                    TextButton(onClick = { onExclude(task) }, enabled = !busy, modifier = Modifier.minTouchTarget()) { Text("제외 해제") }
                 }
             }
         }
@@ -186,7 +186,7 @@ private fun TaskEvidenceDialog(task: AssistantTask, onDismiss: () -> Unit) {
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        confirmButton = { TextButton(onClick = onDismiss, modifier = Modifier.minTouchTarget()) { Text("닫기") } },
     )
 }
 
@@ -208,11 +208,11 @@ private fun SnoozeDialog(task: AssistantTask, onPick: (Long?) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("할 일은 완료될 때까지 목록에 남아요.", color = Clay.Muted, style = MaterialTheme.typography.bodySmall)
                 options.forEach { (label, at) ->
-                    OutlinedButton(onClick = { onPick(at) }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+                    OutlinedButton(onClick = { onPick(at) }, modifier = Modifier.fillMaxWidth().minTouchTarget()) { Text(label) }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onPick(null) }) { Text("취소") } },
+        confirmButton = { TextButton(onClick = { onPick(null) }, modifier = Modifier.minTouchTarget()) { Text("취소") } },
     )
 }
 
@@ -261,15 +261,15 @@ private fun TaskEditDialog(
                         color = Clay.Muted,
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    TextButton(onClick = ::pickDue) { Text("기한 정하기") }
-                    if (dueAt != null) TextButton(onClick = { dueAt = null }) { Text("지우기") }
+                    TextButton(onClick = ::pickDue, modifier = Modifier.minTouchTarget()) { Text("기한 정하기") }
+                    if (dueAt != null) TextButton(onClick = { dueAt = null }, modifier = Modifier.minTouchTarget()) { Text("지우기") }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(text.trim(), dueAt) }, enabled = valid && !busy) { Text("저장") }
+            TextButton(onClick = { onSave(text.trim(), dueAt) }, enabled = valid && !busy, modifier = Modifier.minTouchTarget()) { Text("저장") }
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("취소") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.minTouchTarget()) { Text("취소") } },
     )
 }
 
@@ -308,7 +308,7 @@ fun TodayScreen(
     Page {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Brand() }
-            TextButton(onClick = onOpenSettings, modifier = Modifier.testTag("open-settings")) { Text("설정") }
+            TextButton(onClick = onOpenSettings, modifier = Modifier.minTouchTarget().testTag("open-settings")) { Text("설정") }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -333,7 +333,7 @@ fun TodayScreen(
             ) {
                 Text("알림이 꺼져 있어요", style = MaterialTheme.typography.titleMedium)
                 Text("할 일과 브리핑은 앱 안에서 계속 확인할 수 있어요. 소리 알림을 받으려면 알림을 켜주세요.", color = Clay.Muted, style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = onEnableNotifications, modifier = Modifier.align(Alignment.End)) { Text("알림 켜기") }
+                TextButton(onClick = onEnableNotifications, modifier = Modifier.align(Alignment.End).minTouchTarget()) { Text("알림 켜기") }
             }
         }
         sourceStatusMessage?.let {
@@ -373,7 +373,7 @@ fun TodayScreen(
             }
         }
         if (openCount > shownTasks.size || openCount > 0) {
-            TextButton(onClick = onOpenTodo, modifier = Modifier.align(Alignment.CenterHorizontally).testTag("open-todo-all")) {
+            TextButton(onClick = onOpenTodo, modifier = Modifier.align(Alignment.CenterHorizontally).minTouchTarget().testTag("open-todo-all")) {
                 Text("할 일 모두 보기  ›")
             }
         }
@@ -505,7 +505,7 @@ fun TodoScreen(
             }
         }
         if (done.isNotEmpty()) {
-            TextButton(onClick = { showDone = !showDone }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            TextButton(onClick = { showDone = !showDone }, modifier = Modifier.align(Alignment.CenterHorizontally).minTouchTarget()) {
                 Text(if (showDone) "완료한 일 접기" else "완료한 일 ${done.size}개 보기")
             }
             if (showDone) done.forEach { task ->
@@ -515,7 +515,7 @@ fun TodoScreen(
             }
         }
         if (excluded.isNotEmpty()) {
-            TextButton(onClick = { showExcluded = !showExcluded }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            TextButton(onClick = { showExcluded = !showExcluded }, modifier = Modifier.align(Alignment.CenterHorizontally).minTouchTarget()) {
                 Text(if (showExcluded) "제외한 일 접기" else "제외한 일 ${excluded.size}개 보기")
             }
             if (showExcluded) excluded.forEach { task ->

@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -152,6 +153,9 @@ fun LeafMark(modifier: Modifier = Modifier) {
         drawLine(Clay.Green,Offset(w*.14f,w*.96f),Offset(w*.65f,w*.42f),w*.055f,cap=androidx.compose.ui.graphics.StrokeCap.Round)
     }
 }
+
+/** Expands small text-level actions to the 48dp minimum accessible touch target. */
+fun Modifier.minTouchTarget(): Modifier = sizeIn(minWidth = 48.dp, minHeight = 48.dp)
 
 @Composable
 fun ClayCard(modifier: Modifier = Modifier, tint: Color = Clay.Background, content: @Composable ColumnScope.() -> Unit) {
@@ -302,7 +306,7 @@ fun ProbeBottomBar(current: String, onSelect: (String) -> Unit) {
         listOf("home" to "오늘", "todo" to "할 일", "news" to "소식").forEach { (key, label) ->
             val selected = current == key
             Column(Modifier.weight(1f).background(if (selected) Clay.Sage else Color.Transparent, RoundedCornerShape(26.dp))
-                .clickable(role = Role.Tab, onClick = { onSelect(key) }).padding(vertical = 9.dp),
+                .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(key) }).padding(vertical = 9.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 NavGlyph(key, selected)
                 Text(label, color = if (selected) Clay.Green else Clay.Muted, style = MaterialTheme.typography.bodySmall)

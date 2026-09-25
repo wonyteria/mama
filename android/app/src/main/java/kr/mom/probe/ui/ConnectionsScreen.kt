@@ -143,7 +143,7 @@ fun ConnectionsScreen(
                     onCheckedChange = { onToggleApp(app.packageName, it) },
                 )
                 if (enabled && popupOn == false) {
-                    TextButton(onClick = { onOpenAppNotifications(app.packageName) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = { onOpenAppNotifications(app.packageName) }, enabled = !busy, modifier = Modifier.fillMaxWidth().minTouchTarget()) {
                         Text("${app.name} 알림 설정 열기")
                     }
                 }
@@ -175,7 +175,7 @@ fun ConnectionsScreen(
                     onRefresh = { onRefreshSource(SourceIds.SCHOOL_WEBSITE) },
                     hint = postingHints[SourceIds.SCHOOL_WEBSITE],
                 )
-                TextButton(onClick = { onOpenWebsite(SourceIds.SCHOOL_WEBSITE) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = { onOpenWebsite(SourceIds.SCHOOL_WEBSITE) }, enabled = !busy, modifier = Modifier.fillMaxWidth().minTouchTarget()) {
                     Text("홈페이지 열기")
                 }
                 HorizontalDivider(color = Color.White.copy(alpha = .8f))
@@ -190,7 +190,7 @@ fun ConnectionsScreen(
                 onCheckedChange = { checked -> if (checked) onConnectNeis() else onDisconnectNeis() },
             )
             if (neisProductionEnabled && publicConnection?.status == ConnectionStatus.CONNECTED) {
-                TextButton(onClick = { onRefreshSource(SourceIds.NEIS_PUBLIC) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = { onRefreshSource(SourceIds.NEIS_PUBLIC) }, enabled = !busy, modifier = Modifier.fillMaxWidth().minTouchTarget()) {
                     Text("나이스 지금 확인")
                 }
             }
@@ -199,7 +199,7 @@ fun ConnectionsScreen(
             HorizontalDivider(color = Color.White.copy(alpha = .8f))
         }
         Text("앱과 웹이 같은 서비스이면 앱만 표시해요. 학교 공식 홈페이지와 나이스처럼 앱과 역할이 다른 사이트만 따로 보여줘요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
-        if (!settings.onboardingDone) TextButton(onClick = onSkip, enabled = !busy) { Text("연결은 나중에 · 비서 만나기") }
+        if (!settings.onboardingDone) TextButton(onClick = onSkip, enabled = !busy, modifier = Modifier.minTouchTarget()) { Text("연결은 나중에 · 비서 만나기") }
     }
 }
 
@@ -248,7 +248,7 @@ private fun SourceStatusRow(mark: String, name: String, status: String, enabled:
             Text(status, style = MaterialTheme.typography.bodySmall, color = Clay.Green)
             if (hint != null) Text(hint, style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
         }
-        TextButton(onClick = onRefresh, enabled = enabled) { Text("지금") }
+        TextButton(onClick = onRefresh, enabled = enabled, modifier = Modifier.minTouchTarget()) { Text("지금") }
     }
 }
 

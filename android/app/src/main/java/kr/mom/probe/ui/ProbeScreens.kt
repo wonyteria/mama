@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,7 +79,7 @@ fun Brand() {
 
 @Composable
 fun ConsentRow(checked: Boolean, onChange: (Boolean) -> Unit, text: String) {
-    Row(Modifier.fillMaxWidth().toggleable(checked, role = Role.Checkbox, onValueChange = onChange).padding(vertical = 5.dp),
+    Row(Modifier.fillMaxWidth().minTouchTarget().toggleable(checked, role = Role.Checkbox, onValueChange = onChange).padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked, onCheckedChange = null)
         Text(text, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
@@ -103,7 +104,7 @@ fun WelcomeScreen(busy: Boolean, onStart: () -> Unit, onPolicy: () -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("선택한 앱의 새 알림을 모모가 기기 안에서 정리해요. 날짜와 행동이 분명한 일은 자동으로 부탁과 알림을 만들어요.", style = MaterialTheme.typography.bodyMedium, color = Clay.Muted)
             Text("선택한 앱의 알림과 자녀 정보는 이 기기에 암호화해 보관해요. 학교명은 나이스 공식 OpenAPI에서 학교를 찾을 때만 전송해요. 알림 원문은 14일 뒤 삭제하며 재설치하면 복구할 수 없어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
-            TextButton(onClick = onPolicy) { Text("수집·보관·삭제 설명 보기") }
+            TextButton(onClick = onPolicy, modifier = Modifier.minTouchTarget()) { Text("수집·보관·삭제 설명 보기") }
             ConsentRow(agreed, { agreed = it }, "설명을 확인했고, 이 기기에서 알림을 모아 챙길 후보를 찾는 데 동의해요. (필수)")
         }
         ClayButton(if (busy) "준비하고 있어요…" else "이 기기에서 시작", Modifier.testTag("start"), agreed && !busy, onClick = onStart)
@@ -149,8 +150,8 @@ fun SourcesScreen(apps: List<SourceApp>, initial: Set<String>, busy: Boolean, al
         }
         ClayButton(if (allowEmpty) "선택 저장" else "이 앱 챙기기", Modifier.testTag("save-sources"), (selected.isNotEmpty() || allowEmpty) && !busy, onClick = { onSave(selected) })
         if (allowEmpty) Text("선택을 해제하면 해당 앱의 새 알림 수집만 멈춰요. 모아둔 알림은 14일 보관 규칙에 따라 남아 있어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
-        TextButton(onClick = onSkip, enabled = !busy, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("나중에 설정할게요") }
-        TextButton(onClick = { showCatalog = !showCatalog }) { Text(if (showCatalog) "테스트 대상 접기" else "어떤 앱이 테스트 대상인가요?") }
+        TextButton(onClick = onSkip, enabled = !busy, modifier = Modifier.align(Alignment.CenterHorizontally).minTouchTarget()) { Text("나중에 설정할게요") }
+        TextButton(onClick = { showCatalog = !showCatalog }, modifier = Modifier.minTouchTarget()) { Text(if (showCatalog) "테스트 대상 접기" else "어떤 앱이 테스트 대상인가요?") }
         if (showCatalog) Text(SourceCatalog.candidates.joinToString(" · ") { it.name } + "\n앱 계정 연결이나 공지 원문 전체 접근을 보장하지 않아요.", color = Clay.Muted, style = MaterialTheme.typography.bodyMedium)
     }
     if (discard) DiscardDialog({ discard = false }, { discard = false; onBack() })
@@ -184,8 +185,8 @@ fun ChildScreen(initial: String, busy: Boolean, onSave: (String) -> Unit, onBack
 private fun DiscardDialog(onKeep: () -> Unit, onDiscard: () -> Unit) {
     AlertDialog(onDismissRequest = onKeep, title = { Text("입력한 내용을 남겨둘까요?") },
         text = { Text("아직 저장하지 않았어요. 돌아가면 지금 바꾼 내용은 저장되지 않아요.") },
-        confirmButton = { TextButton(onClick = onKeep) { Text("계속 입력") } },
-        dismissButton = { TextButton(onClick = onDiscard) { Text("저장하지 않고 돌아가기") } })
+        confirmButton = { TextButton(onClick = onKeep, modifier = Modifier.minTouchTarget()) { Text("계속 입력") } },
+        dismissButton = { TextButton(onClick = onDiscard, modifier = Modifier.minTouchTarget()) { Text("저장하지 않고 돌아가기") } })
 }
 
 @Composable
@@ -203,7 +204,7 @@ fun AccessScreen(labels: List<String>, busy: Boolean, onOpen: () -> Unit, onSkip
         Text("Android는 넓은 알림 접근을 허용하는 화면을 보여줘요. 나는 엄마다는 위에서 고른 앱만 처리해요.", style = MaterialTheme.typography.bodyMedium, color = Clay.Muted)
         ClayButton("설정 열기", Modifier.testTag("open-access"), !busy, onClick = onOpen)
         Text("돌아오시면 설정됐는지 자동으로 확인할게요.", Modifier.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
-        TextButton(onClick = { help = !help }) { Text("어디를 누르나요?  ${if (help) "−" else "+"}") }
+        TextButton(onClick = { help = !help }, modifier = Modifier.minTouchTarget()) { Text("어디를 누르나요?  ${if (help) "−" else "+"}") }
         if (help) ClayCard {
             Text("1. 설정에서 ‘나는 엄마다’를 찾아요.\n2. 알림 읽기를 허용해요.\n3. 뒤로가기로 앱에 돌아와요.", style = MaterialTheme.typography.bodyLarge)
             Text("휴대폰에 따라 설정 이름과 위치가 달라요. ‘제한된 설정’이 보이면 설치 경로에 따른 추가 안내가 필요할 수 있어요. 어려우면 나중에 이어서 해도 괜찮아요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
@@ -230,7 +231,13 @@ fun EmptyCard(title: String, subtitle: String) {
 
 @Composable
 fun RecordCard(record: ProbeRecord, unread: Boolean = false, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().flatSurface().clickable(role = Role.Button, onClick = onClick).padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(
+        Modifier.fillMaxWidth().flatSurface()
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { if (unread) stateDescription = "읽지 않은 소식" }
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (unread) Box(Modifier.size(8.dp).background(Clay.Coral, CircleShape).testTag("unread-dot"))
             Text(record.appLabel, Modifier.weight(1f).padding(start = if (unread) 8.dp else 0.dp), color = Clay.Green, style = MaterialTheme.typography.bodySmall)
@@ -266,7 +273,7 @@ fun NewsScreen(records: List<ProbeRecord>, readIds: Set<String>, onRecord: (Prob
         }
         if (shown.isEmpty()) EmptyCard("아직 모아둔 소식이 없어요", "연결한 앱·사이트에 새 소식이 오면 여기에 보여요.")
         else shown.take(limit).forEach { RecordCard(it, unread = it.id !in readIds) { onRecord(it) } }
-        if (shown.size > limit) TextButton(onClick = { limit += 30 }) { Text("더 보기") }
+        if (shown.size > limit) TextButton(onClick = { limit += 30 }, modifier = Modifier.minTouchTarget()) { Text("더 보기") }
         ClayButton("연구자료 검토하고 저장", enabled = records.isNotEmpty(), primary = false, onClick = onExport)
     }
 }
@@ -324,7 +331,7 @@ fun DetailScreen(record: ProbeRecord, alreadyRemembered: Boolean = false, childP
                     }
                 }
                 onOpenTodo?.let { open ->
-                    TextButton(onClick = open, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("할 일에서 관리  ›") }
+                    TextButton(onClick = open, modifier = Modifier.align(Alignment.CenterHorizontally).minTouchTarget()) { Text("할 일에서 관리  ›") }
                 }
             }
         }
@@ -351,12 +358,12 @@ fun DetailScreen(record: ProbeRecord, alreadyRemembered: Boolean = false, childP
                 if (action.required) {
                     AgentButton(if (alreadyRemembered) "이미 할 일에 있어요" else "날짜 확인하고 할 일로 추가", enabled = canRemember, onClick = ::chooseDueTime)
                 } else {
-                    OutlinedButton(onClick = onSource, modifier = Modifier.fillMaxWidth()) { Text("원문에서 살펴보기") }
+                    OutlinedButton(onClick = onSource, modifier = Modifier.fillMaxWidth().minTouchTarget()) { Text("원문에서 살펴보기") }
                 }
             }
         }
         ClayButton("원래 앱에서 확인", primary = false, onClick = onSource)
-        TextButton(onClick = { fields = !fields }) { Text(if (fields) "수집 내용 접기" else "수집한 내용 모두 보기") }
+        TextButton(onClick = { fields = !fields }, modifier = Modifier.minTouchTarget()) { Text(if (fields) "수집 내용 접기" else "수집한 내용 모두 보기") }
         if (fields) {
             listOf("제목" to record.title, "짧은 본문" to record.text, "펼친 본문" to record.bigText,
                 "본문 줄" to record.textLines.joinToString("\n"), "추가 설명" to record.subText.orEmpty(), "묶음 설명" to record.summaryText.orEmpty(),
@@ -365,7 +372,7 @@ fun DetailScreen(record: ProbeRecord, alreadyRemembered: Boolean = false, childP
             }
         }
         Text("원문은 기기 안에서만 보관하고 규칙으로 챙길 후보를 찾아요. 자동 확정하거나 외부로 보내지 않아요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
-        TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(contentColor = Clay.Error)) { Text("이 알림 삭제") }
+        TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(contentColor = Clay.Error), modifier = Modifier.minTouchTarget()) { Text("이 알림 삭제") }
     }
     confirmedDueAt?.let { dueAt ->
         val zone = ZoneId.of("Asia/Seoul")
@@ -378,13 +385,13 @@ fun DetailScreen(record: ProbeRecord, alreadyRemembered: Boolean = false, childP
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("확인한 기한: ${displayTime(dueAt)}", color = Clay.Green)
                     Text("휴대폰 절전 상태에 따라 몇 분 늦게 도착할 수 있어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
-                    OutlinedButton(onClick = { onRemember(taskText(), dueAt, previousEvening); confirmedDueAt = null }, enabled = previousEvening > System.currentTimeMillis(), modifier = Modifier.fillMaxWidth()) { Text("전날 오후 8시 무렵") }
-                    OutlinedButton(onClick = { onRemember(taskText(), dueAt, oneHourBefore); confirmedDueAt = null }, enabled = oneHourBefore > System.currentTimeMillis(), modifier = Modifier.fillMaxWidth()) { Text("1시간 전쯤") }
-                    OutlinedButton(onClick = { onRemember(taskText(), dueAt, dueAt); confirmedDueAt = null }, enabled = dueAt > System.currentTimeMillis(), modifier = Modifier.fillMaxWidth()) { Text("기한 무렵") }
+                    OutlinedButton(onClick = { onRemember(taskText(), dueAt, previousEvening); confirmedDueAt = null }, enabled = previousEvening > System.currentTimeMillis(), modifier = Modifier.fillMaxWidth().minTouchTarget()) { Text("전날 오후 8시 무렵") }
+                    OutlinedButton(onClick = { onRemember(taskText(), dueAt, oneHourBefore); confirmedDueAt = null }, enabled = oneHourBefore > System.currentTimeMillis(), modifier = Modifier.fillMaxWidth().minTouchTarget()) { Text("1시간 전쯤") }
+                    OutlinedButton(onClick = { onRemember(taskText(), dueAt, dueAt); confirmedDueAt = null }, enabled = dueAt > System.currentTimeMillis(), modifier = Modifier.fillMaxWidth().minTouchTarget()) { Text("기한 무렵") }
                 }
             },
-            confirmButton = { TextButton(onClick = { onRemember(taskText(), dueAt, null); confirmedDueAt = null }) { Text("알림 없이 저장") } },
-            dismissButton = { TextButton(onClick = { confirmedDueAt = null }) { Text("취소") } },
+            confirmButton = { TextButton(onClick = { onRemember(taskText(), dueAt, null); confirmedDueAt = null }, modifier = Modifier.minTouchTarget()) { Text("알림 없이 저장") } },
+            dismissButton = { TextButton(onClick = { confirmedDueAt = null }, modifier = Modifier.minTouchTarget()) { Text("취소") } },
         )
     }
 }
@@ -429,12 +436,12 @@ fun SettingsScreen(settings: ProbeSettings, access: Boolean, connected: Boolean,
             HorizontalDivider(color = Color.White)
             SettingLink("홈 화면 비서", "모모를 홈 화면에 놓기", onWidget)
         }
-        TextButton(onClick = { details = !details }) { Text(if (details) "도움말 접기" else "도움말 · 연결 문제 해결") }
+        TextButton(onClick = { details = !details }, modifier = Modifier.minTouchTarget()) { Text(if (details) "도움말 접기" else "도움말 · 연결 문제 해결") }
         if (details) ClayCard {
             SettingLink("알림 읽기", if (access) "허용됨" else "설정 필요", onPermission)
             Text(if (!access) "알림 읽기가 꺼져 있어요" else if (connected) "알림을 받을 준비가 됐어요" else "휴대폰과 연결을 준비하고 있어요", style = MaterialTheme.typography.titleMedium)
             Text("저장된 알림 ${recordCount}개\n선택한 앱: ${settings.selectedPackages.joinToString(" · ") { SourceCatalog.label(it) }.ifBlank { "없음" }}", style = MaterialTheme.typography.bodyMedium, color = Clay.Muted)
-            TextButton(onClick = onTest) { Text("테스트 알림 보내기") }
+            TextButton(onClick = onTest, modifier = Modifier.minTouchTarget()) { Text("테스트 알림 보내기") }
             Text("이 버튼은 앱의 알림 보내기만 확인해요. 학교 앱 수집 성공을 뜻하지 않아요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
         }
         SettingLink("개인정보 및 데이터", "보관 범위와 삭제", onPolicy)
@@ -460,7 +467,7 @@ fun PolicyContent(onDelete: (() -> Unit)? = null) {
         Text("모모와 부탁: 질문은 이 기기에 저장된 알림·부탁 안에서만 답합니다. 명확하고 되돌릴 수 있는 저장 명령은 바로 암호화 저장하고 화면에서 취소할 수 있습니다. 정한 기한과 다시 알릴 시각도 이 기기에만 저장합니다.")
         Text("캘린더: 엄마가 직접 고른 쓰기 가능한 캘린더 ID와 계정 이름을 이 기기에 암호화해 보관합니다. 일정 저장 성공은 휴대폰 CalendarProvider에서 다시 읽어 확인한 결과이며, 계정 서버 동기화나 다른 기기 반영 완료를 뜻하지 않습니다.")
         Text("브리핑과 음성: 알림 시간은 이 기기에 저장합니다. 소리로 듣기를 누르면 휴대폰의 음성 엔진에 부탁 문장을 전달하며, 엔진 설정에 따라 네트워크를 사용할 수 있어요.")
-        onDelete?.let { delete -> TextButton(onClick = delete) { Text("참여 종료 · 전체 데이터 삭제", color = Clay.Error) } }
+        onDelete?.let { delete -> TextButton(onClick = delete, modifier = Modifier.minTouchTarget()) { Text("참여 종료 · 전체 데이터 삭제", color = Clay.Error) } }
         Text("수집: 직접 선택한 앱의 새 알림 제목·본문·게시 시각·앱 정보, 아이 이름/별칭·학교·학년. 다른 앱 내용은 저장하지 않습니다.")
         Text("보관: Android 보안 키로 암호화하여 이 휴대폰에만 저장합니다. 원문은 받은 날부터 14일, 아이 이름과 설정은 참여 종료까지 보관합니다. 휴대폰이 꺼져 있으면 다음 실행 시 만료 자료를 정리합니다.")
         Text("외부 연결: 선택한 학교명을 나이스 공식 OpenAPI로 보내 공개 학교정보를 찾을 수 있습니다. 부모 계정 비밀번호는 보관하지 않습니다. 일반 ChatGPT 로그인은 이 앱의 API 사용권이 아니며, 알림 원문은 서버·AI·광고 서비스로 자동 전송하지 않습니다.")
