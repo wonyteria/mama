@@ -52,19 +52,20 @@ class ReleaseOnboardingDriverTest {
             clickText("2 학년", timeoutMs = 5_000, exact = true)
             scrollUntil("자녀 정보 저장", 10)
             clickText("자녀 정보 저장", timeoutMs = 5_000)
-
-            // 3. Connections: enable NEIS public school info (completes onboarding).
-            scrollUntil("나이스 학교정보", 10)
-            val neis = waitForText("나이스 학교정보", timeoutMs = 15_000)
-            assertNotNull("NEIS row not found", neis)
-            clickRow(neis!!)
         }
-        // Onboarding auto-completes once a site reports CONNECTED.
+        // 3. Connections: the NEIS production lane is intentionally disabled
+        // until a secure proxy exists, so finish through the explicit defer path.
+        if (waitForText("골라주세요", timeoutMs = 3_000) != null) {
+            scrollUntil("연결은 나중에 · 비서 만나기", 30)
+            clickText("연결은 나중에 · 비서 만나기", timeoutMs = 15_000)
+        }
+        // Onboarding completes after the explicit defer action.
         // The system notification-permission dialog may sit on top; grant it.
         val deadline = System.currentTimeMillis() + 30_000
         var reached = false
         while (System.currentTimeMillis() < deadline && !reached) {
             findByText("허용", exact = true)?.let { clickRow(it) }
+            findByText("Allow", exact = true)?.let { clickRow(it) }
             reached = findByText("오늘") != null
             if (!reached) Thread.sleep(500)
         }
