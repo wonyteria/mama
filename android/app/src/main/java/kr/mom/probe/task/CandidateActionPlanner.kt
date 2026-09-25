@@ -19,6 +19,11 @@ data class CandidateActionPlan(
     val actionKind: String? = null,
     val checklist: List<String> = emptyList(),
     val noticeGroupKeys: Set<String> = emptySet(),
+    val evidenceText: String? = null,
+    val sourceTitle: String? = null,
+    val sourceLabel: String? = null,
+    val sourceCapturedAt: Long? = null,
+    val audienceLabel: String? = null,
 )
 
 /**
@@ -45,6 +50,13 @@ object CandidateActionPlanner {
         val groupKeys = NoticeGrouping.keys(record, institution)
         val remindAt = dueAt?.let { nextReminder(it, now) }
         val plans = mutableListOf<CandidateActionPlan>()
+        val decision = NoticeDecisionEngine.decide(record, child)
+        val evidenceText = decision.action?.evidence?.quote?.trim()?.takeIf(String::isNotEmpty)
+            ?: record.bigText.ifBlank { record.text }.ifBlank { record.textLines.joinToString(" ") }
+                .trim().take(AssistantTaskStore.MAX_EVIDENCE_TEXT).takeIf(String::isNotEmpty)
+        val audienceLabel = child.grade?.let { grade ->
+            "${child.schoolLevel.label} ${grade}학년"
+        } ?: "자녀 대상"
         val noticeText = listOf(record.title, record.bigText, record.text, record.textLines.joinToString(" "))
             .filter { it.isNotBlank() }.joinToString(" ")
         if (candidate.kind != NotificationCandidate.Kind.PREPARE || submitEvidence.containsMatchIn(noticeText)) {
@@ -55,6 +67,11 @@ object CandidateActionPlanner {
                 remindAt = remindAt,
                 actionKind = "submit",
                 noticeGroupKeys = groupKeys,
+                evidenceText = evidenceText,
+                sourceTitle = record.title.ifBlank { "제목 없는 공지" },
+                sourceLabel = record.appLabel.ifBlank { "학교·학원 소식" },
+                sourceCapturedAt = record.receivedAt,
+                audienceLabel = audienceLabel,
             )
         }
         if (candidate.kind == NotificationCandidate.Kind.PREPARE || candidate.items.isNotEmpty()) {
@@ -66,6 +83,11 @@ object CandidateActionPlanner {
                 actionKind = "prepare",
                 checklist = candidate.items,
                 noticeGroupKeys = groupKeys,
+                evidenceText = evidenceText,
+                sourceTitle = record.title.ifBlank { "제목 없는 공지" },
+                sourceLabel = record.appLabel.ifBlank { "학교·학원 소식" },
+                sourceCapturedAt = record.receivedAt,
+                audienceLabel = audienceLabel,
             )
         }
         return plans
@@ -136,6 +158,11 @@ object AutoActionCoordinator {
                         checklist = plan.checklist,
                         dueAt = plan.dueAt,
                         remindAt = plan.remindAt,
+                        evidenceText = plan.evidenceText,
+                        sourceTitle = plan.sourceTitle,
+                        sourceLabel = plan.sourceLabel,
+                        sourceCapturedAt = plan.sourceCapturedAt,
+                        audienceLabel = plan.audienceLabel,
                     )
                 },
             )

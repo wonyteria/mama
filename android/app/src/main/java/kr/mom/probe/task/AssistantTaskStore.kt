@@ -32,6 +32,11 @@ data class AutoTaskPlan(
     val checklist: List<String> = emptyList(),
     val dueAt: Long? = null,
     val remindAt: Long? = null,
+    val evidenceText: String? = null,
+    val sourceTitle: String? = null,
+    val sourceLabel: String? = null,
+    val sourceCapturedAt: Long? = null,
+    val audienceLabel: String? = null,
 )
 
 data class AssistantTask(
@@ -60,6 +65,13 @@ data class AssistantTask(
     val checklistBeforeCompletion: List<TaskChecklistItem>? = null,
     val userEdited: Boolean = false,
     val noticeGroupKeys: Set<String> = emptySet(),
+    val evidenceText: String? = null,
+    val originalEvidenceText: String? = null,
+    val sourceTitle: String? = null,
+    val sourceLabel: String? = null,
+    val sourceCapturedAt: Long? = null,
+    val audienceLabel: String? = null,
+    val revisionSummary: String? = null,
 )
 
 sealed class TaskAlarmSnoozeResult {
@@ -114,6 +126,11 @@ class AssistantTaskStore private constructor(context: Context) {
         checklist: List<String> = emptyList(),
         actionKind: String? = null,
         noticeGroupKeys: Set<String> = emptySet(),
+        evidenceText: String? = null,
+        sourceTitle: String? = null,
+        sourceLabel: String? = null,
+        sourceCapturedAt: Long? = null,
+        audienceLabel: String? = null,
     ): AssistantTask? {
         val normalized = text.trim()
         require(normalized.isNotEmpty() && normalized.length <= MAX_TEXT) { "할 일을 1~300자로 적어주세요." }
@@ -156,6 +173,12 @@ class AssistantTaskStore private constructor(context: Context) {
                     suspended = false,
                     checklist = mergeChecklist(existing.checklist, checklist),
                     noticeGroupKeys = existing.noticeGroupKeys + incomingKeys,
+                    evidenceText = normalizedEvidence(evidenceText) ?: existing.evidenceText,
+                    originalEvidenceText = existing.originalEvidenceText ?: existing.evidenceText ?: normalizedEvidence(evidenceText),
+                    sourceTitle = normalizedMetadata(sourceTitle) ?: existing.sourceTitle,
+                    sourceLabel = normalizedMetadata(sourceLabel) ?: existing.sourceLabel,
+                    sourceCapturedAt = sourceCapturedAt ?: existing.sourceCapturedAt,
+                    audienceLabel = normalizedMetadata(audienceLabel) ?: existing.audienceLabel,
                 )
                 if (updated == existing) return null
                 save(listOf(updated) + current.filterNot { it.id == existing.id })
@@ -181,6 +204,12 @@ class AssistantTaskStore private constructor(context: Context) {
             checklist = checklist.map { TaskChecklistItem(newOccurrenceId(), it.trim().take(MAX_ITEM_TEXT)) }.filter { it.text.isNotEmpty() },
             actionKind = actionKind,
             noticeGroupKeys = noticeGroupKeys + listOfNotNull(sourceNotificationId),
+            evidenceText = normalizedEvidence(evidenceText),
+            originalEvidenceText = normalizedEvidence(evidenceText),
+            sourceTitle = normalizedMetadata(sourceTitle),
+            sourceLabel = normalizedMetadata(sourceLabel),
+            sourceCapturedAt = sourceCapturedAt,
+            audienceLabel = normalizedMetadata(audienceLabel),
         )
         save(listOf(task) + current)
         return task
@@ -340,87 +369,13 @@ class AssistantTaskStore private constructor(context: Context) {
         noticeGroupKeys: Set<String> = emptySet(),
     ): Boolean {
         if (!loaded) load()
-        val incomingKeys = noticeGroupKeys + sourceNotificationId
-        val current = mutableTasks.value
-        var changed = false
-        val next = current.toMutableList()
-        val reconciledIds = mutableSetOf<String>()
-        plans.forEach { plan ->
-            val normalized = plan.text.trim().take(MAX_TEXT)
-            if (normalized.isEmpty()) return@forEach
-            val existing = next.firstOrNull {
-                it.actionKind == plan.actionKind && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
-                    !it.suspended && taskMatchesGroup(it, sourceNotificationId, incomingKeys)
-            } ?: next.firstOrNull {
-                it.actionKind == plan.actionKind && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
-                    taskMatchesGroup(it, sourceNotificationId, incomingKeys)
-            } ?: return@forEach run {
-                val occurrenceId = plan.remindAt?.let { newOccurrenceId() }
-                val created = AssistantTask(
-                    UUID.randomUUID().toString(),
-                    normalized,
-                    false,
-                    System.currentTimeMillis(),
-                    sourceNotificationId,
-                    sourceRevisionId,
-                    AssistantTaskSource.AUTO_NOTICE,
-                    plan.dueAt,
-                    plan.remindAt,
-                    reminderOccurrenceId = occurrenceId,
-                    reminderOccurrenceAt = plan.remindAt,
-                    checklist = plan.checklist.map { TaskChecklistItem(newOccurrenceId(), it.trim().take(MAX_ITEM_TEXT)) }
-                        .filter { it.text.isNotEmpty() },
-                    actionKind = plan.actionKind,
-                    noticeGroupKeys = incomingKeys,
-                )
-                next.add(0, created)
-                changed = true
-            }
-            reconciledIds += existing.id
-            val updated = if (existing.completed) {
-                existing.copy(sourceRevisionId = sourceRevisionId, suspended = false,
-                    noticeGroupKeys = existing.noticeGroupKeys + incomingKeys)
-            } else {
-                val reminderChanged = existing.remindAt != plan.remindAt
-                existing.copy(
-                    text = if (existing.userEdited) existing.text else normalized,
-                    sourceRevisionId = sourceRevisionId,
-                    dueAt = plan.dueAt,
-                    remindAt = plan.remindAt,
-                    reminderOccurrenceId = if (reminderChanged) plan.remindAt?.let { newOccurrenceId() } else existing.reminderOccurrenceId,
-                    reminderOccurrenceAt = if (reminderChanged) plan.remindAt else existing.reminderOccurrenceAt,
-                    activeAlarmOccurrenceId = null,
-                    activeAlarmScheduledAt = null,
-                    activeAlarmNotificationId = null,
-                    reminderAttempts = 0,
-                    suspended = false,
-                    checklist = mergeChecklist(existing.checklist, plan.checklist),
-                    noticeGroupKeys = existing.noticeGroupKeys + incomingKeys,
-                )
-            }
-            if (updated != existing) {
-                next[next.indexOfFirst { it.id == existing.id }] = updated
-                changed = true
-            }
-        }
-        // Suspend automatic tasks whose action kind disappeared from the new revision.
-        val final = next.map {
-            if (taskMatchesGroup(it, sourceNotificationId, incomingKeys) && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
-                !it.completed && it.id !in reconciledIds && !it.suspended) {
-                changed = true
-                it.copy(
-                    suspended = true,
-                    remindAt = null,
-                    reminderOccurrenceId = null,
-                    reminderOccurrenceAt = null,
-                    activeAlarmOccurrenceId = null,
-                    activeAlarmScheduledAt = null,
-                    activeAlarmNotificationId = null,
-                )
-            } else {
-                it
-            }
-        }
+        val (final, changed) = applyAutomaticPlansFrom(
+            mutableTasks.value,
+            sourceNotificationId,
+            sourceRevisionId,
+            plans,
+            noticeGroupKeys,
+        )
         if (!changed) return false
         save(final)
         return true
@@ -560,7 +515,23 @@ class AssistantTaskStore private constructor(context: Context) {
     companion object {
         const val MAX_TEXT = 300
         const val MAX_ITEM_TEXT = 80
+        const val MAX_EVIDENCE_TEXT = 600
         private const val MAX_TASKS = 200
+
+        private fun normalizedEvidence(value: String?): String? =
+            value?.trim()?.take(MAX_EVIDENCE_TEXT)?.takeIf(String::isNotEmpty)
+
+        private fun normalizedMetadata(value: String?): String? =
+            value?.trim()?.take(MAX_ITEM_TEXT)?.takeIf(String::isNotEmpty)
+
+        private fun revisionSummary(existing: AssistantTask, plan: AutoTaskPlan, normalizedText: String): String? {
+            val changes = buildList {
+                if (!existing.userEdited && existing.text != normalizedText) add("할 일 문구")
+                if (existing.dueAt != plan.dueAt) add("기한")
+                if (existing.evidenceText != normalizedEvidence(plan.evidenceText)) add("근거 문구")
+            }
+            return changes.takeIf { it.isNotEmpty() }?.joinToString(" · ", postfix = " 변경")
+        }
 
         /** Keeps done state of items that survive a revision; matches by normalized text. */
         internal fun mergeChecklist(existing: List<TaskChecklistItem>, revised: List<String>): List<TaskChecklistItem> {
@@ -594,6 +565,120 @@ class AssistantTaskStore private constructor(context: Context) {
             }
         }
         internal fun newOccurrenceId(): String = UUID.randomUUID().toString()
+
+        internal fun applyAutomaticPlansFrom(
+            tasks: List<AssistantTask>,
+            sourceNotificationId: String,
+            sourceRevisionId: String,
+            plans: List<AutoTaskPlan>,
+            noticeGroupKeys: Set<String> = emptySet(),
+            now: Long = System.currentTimeMillis(),
+            idProvider: () -> String = ::newOccurrenceId,
+        ): Pair<List<AssistantTask>, Boolean> {
+            val incomingKeys = noticeGroupKeys + sourceNotificationId
+            var changed = false
+            val next = tasks.toMutableList()
+            val reconciledIds = mutableSetOf<String>()
+            plans.forEach { plan ->
+                val normalized = plan.text.trim().take(MAX_TEXT)
+                if (normalized.isEmpty()) return@forEach
+                val existing = next.firstOrNull {
+                    it.actionKind == plan.actionKind && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
+                        !it.suspended && taskMatchesGroup(it, sourceNotificationId, incomingKeys)
+                } ?: next.firstOrNull {
+                    it.actionKind == plan.actionKind && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
+                        taskMatchesGroup(it, sourceNotificationId, incomingKeys)
+                }
+                if (existing == null) {
+                    val occurrenceId = plan.remindAt?.let { idProvider() }
+                    val created = AssistantTask(
+                        idProvider(),
+                        normalized,
+                        false,
+                        now,
+                        sourceNotificationId,
+                        sourceRevisionId,
+                        AssistantTaskSource.AUTO_NOTICE,
+                        plan.dueAt,
+                        plan.remindAt,
+                        reminderOccurrenceId = occurrenceId,
+                        reminderOccurrenceAt = plan.remindAt,
+                        checklist = plan.checklist.map { TaskChecklistItem(idProvider(), it.trim().take(MAX_ITEM_TEXT)) }
+                            .filter { it.text.isNotEmpty() },
+                        actionKind = plan.actionKind,
+                        noticeGroupKeys = incomingKeys,
+                        evidenceText = normalizedEvidence(plan.evidenceText),
+                        originalEvidenceText = normalizedEvidence(plan.evidenceText),
+                        sourceTitle = normalizedMetadata(plan.sourceTitle),
+                        sourceLabel = normalizedMetadata(plan.sourceLabel),
+                        sourceCapturedAt = plan.sourceCapturedAt,
+                        audienceLabel = normalizedMetadata(plan.audienceLabel),
+                    )
+                    next.add(0, created)
+                    reconciledIds += created.id
+                    changed = true
+                    return@forEach
+                }
+                reconciledIds += existing.id
+                val updated = if (existing.completed) {
+                    existing.copy(
+                        sourceRevisionId = sourceRevisionId,
+                        suspended = false,
+                        noticeGroupKeys = existing.noticeGroupKeys + incomingKeys,
+                    )
+                } else {
+                    val reminderChanged = existing.remindAt != plan.remindAt
+                    val revisionChanged = existing.sourceRevisionId != sourceRevisionId
+                    val nextEvidence = normalizedEvidence(plan.evidenceText) ?: existing.evidenceText
+                    existing.copy(
+                        text = if (existing.userEdited) existing.text else normalized,
+                        sourceRevisionId = sourceRevisionId,
+                        dueAt = plan.dueAt,
+                        remindAt = plan.remindAt,
+                        reminderOccurrenceId = if (reminderChanged) plan.remindAt?.let { idProvider() } else existing.reminderOccurrenceId,
+                        reminderOccurrenceAt = if (reminderChanged) plan.remindAt else existing.reminderOccurrenceAt,
+                        activeAlarmOccurrenceId = null,
+                        activeAlarmScheduledAt = null,
+                        activeAlarmNotificationId = null,
+                        reminderAttempts = 0,
+                        suspended = false,
+                        checklist = mergeChecklist(existing.checklist, plan.checklist),
+                        noticeGroupKeys = existing.noticeGroupKeys + incomingKeys,
+                        evidenceText = nextEvidence,
+                        originalEvidenceText = existing.originalEvidenceText ?: existing.evidenceText ?: nextEvidence,
+                        sourceTitle = normalizedMetadata(plan.sourceTitle) ?: existing.sourceTitle,
+                        sourceLabel = normalizedMetadata(plan.sourceLabel) ?: existing.sourceLabel,
+                        sourceCapturedAt = plan.sourceCapturedAt ?: existing.sourceCapturedAt,
+                        audienceLabel = normalizedMetadata(plan.audienceLabel) ?: existing.audienceLabel,
+                        revisionSummary = if (revisionChanged) revisionSummary(existing, plan, normalized) else existing.revisionSummary,
+                    )
+                }
+                if (updated != existing) {
+                    next[next.indexOfFirst { it.id == existing.id }] = updated
+                    changed = true
+                }
+            }
+            val final = next.map { task ->
+                if (taskMatchesGroup(task, sourceNotificationId, incomingKeys) &&
+                    task.sourceKind == AssistantTaskSource.AUTO_NOTICE && !task.completed &&
+                    task.id !in reconciledIds && !task.suspended
+                ) {
+                    changed = true
+                    task.copy(
+                        suspended = true,
+                        remindAt = null,
+                        reminderOccurrenceId = null,
+                        reminderOccurrenceAt = null,
+                        activeAlarmOccurrenceId = null,
+                        activeAlarmScheduledAt = null,
+                        activeAlarmNotificationId = null,
+                    )
+                } else {
+                    task
+                }
+            }
+            return final to changed
+        }
         internal fun expectedOccurrenceId(task: AssistantTask): String? =
             task.reminderOccurrenceId ?: task.remindAt?.let { "legacy:${task.id}:$it" }
 
@@ -759,6 +844,13 @@ internal fun encodeTask(task: AssistantTask): JSONObject = JSONObject()
     .put("checklistBeforeCompletion", task.checklistBeforeCompletion?.let { AssistantTaskStore.encodeChecklist(it) } ?: JSONObject.NULL)
     .put("userEdited", task.userEdited)
     .put("noticeGroupKeys", JSONArray(task.noticeGroupKeys))
+    .put("evidenceText", task.evidenceText ?: JSONObject.NULL)
+    .put("originalEvidenceText", task.originalEvidenceText ?: JSONObject.NULL)
+    .put("sourceTitle", task.sourceTitle ?: JSONObject.NULL)
+    .put("sourceLabel", task.sourceLabel ?: JSONObject.NULL)
+    .put("sourceCapturedAt", task.sourceCapturedAt ?: JSONObject.NULL)
+    .put("audienceLabel", task.audienceLabel ?: JSONObject.NULL)
+    .put("revisionSummary", task.revisionSummary ?: JSONObject.NULL)
 
 internal fun decodeTask(item: JSONObject): AssistantTask {
     val sourceNotificationId = item.optionalId("sourceNotificationId") ?: item.optionalId("sourceRecordId")
@@ -794,6 +886,13 @@ internal fun decodeTask(item: JSONObject): AssistantTask {
                 .mapNotNull { array.optString(it).takeUnless(String::isBlank) }
                 .toSet()
         } ?: listOfNotNull(sourceNotificationId).toSet(),
+        item.optionalText("evidenceText", AssistantTaskStore.MAX_EVIDENCE_TEXT),
+        item.optionalText("originalEvidenceText", AssistantTaskStore.MAX_EVIDENCE_TEXT),
+        item.optionalText("sourceTitle", AssistantTaskStore.MAX_ITEM_TEXT),
+        item.optionalText("sourceLabel", AssistantTaskStore.MAX_ITEM_TEXT),
+        item.optionalLong("sourceCapturedAt"),
+        item.optionalText("audienceLabel", AssistantTaskStore.MAX_ITEM_TEXT),
+        item.optionalText("revisionSummary", AssistantTaskStore.MAX_TEXT),
     )
 }
 
@@ -809,3 +908,6 @@ internal fun JSONObject.optionalId(name: String): String? =
     } else {
         optString(name).trim().takeUnless { it.isEmpty() || it == "null" }
     }
+
+private fun JSONObject.optionalText(name: String, maxLength: Int): String? =
+    optionalId(name)?.take(maxLength)

@@ -75,6 +75,11 @@ class NeisPublicClient(
     private val nowProvider: () -> Long = { System.currentTimeMillis() },
     transport: ((String) -> NeisResult<NeisJsonResponse>)? = null,
 ) : SourceFetcher {
+    companion object {
+        /** Production sync stays off until a server-side proxy owns credentials and rate limits. */
+        const val PRODUCTION_SYNC_ENABLED = false
+    }
+
     private val transport: (String) -> NeisResult<NeisJsonResponse> = transport ?: ::getJsonResponse
 
     val isSampleMode: Boolean get() = apiKey.isBlank()

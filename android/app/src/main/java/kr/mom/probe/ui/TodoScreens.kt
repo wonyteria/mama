@@ -4,8 +4,11 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -25,8 +28,8 @@ import java.time.ZoneId
 import java.util.Calendar
 import java.util.TimeZone
 import kr.mom.probe.data.NoticeDecisionEngine
+import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.ProbeRecord
-import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.sync.SourceAgendaItem
 import kr.mom.probe.task.AssistantTask
@@ -48,6 +51,7 @@ fun TaskRow(
     onEdit: (AssistantTask) -> Unit,
     onExclude: (AssistantTask) -> Unit,
 ) {
+    var showEvidence by remember(task.id, task.sourceRevisionId) { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().flatSurface(if (task.completed) Clay.Background else Clay.Paper)
             .clickable(role = Role.Button) { onExpand(task) }
@@ -70,16 +74,30 @@ fun TaskRow(
                     textDecoration = if (task.completed) TextDecoration.LineThrough else null,
                     color = if (task.completed) Clay.Muted else Clay.Ink,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                val statusLabel = when {
+                    task.excluded -> "제외됨"
+                    task.completed -> "완료"
+                    task.suspended -> "공지 변경 확인 필요"
+                    else -> "진행 중"
+                }
+                val metadata = buildList {
                     task.actionKind?.let { kind ->
-                        val label = runCatching { TaskActionKind.valueOf(kind.uppercase()).label }.getOrDefault(kind)
-                        Text(label, color = Clay.Green, style = MaterialTheme.typography.bodySmall)
+                        add(runCatching { TaskActionKind.valueOf(kind.uppercase()).label }.getOrDefault(kind))
                     }
-                    TodoSelectors.dueLabel(task, now)?.let { label ->
-                        Text(label, color = if (label == "기한 지남") Clay.Error else Clay.CoralDark, style = MaterialTheme.typography.bodySmall)
-                    }
-                    task.dueAt?.let { Text("기한 ${displayTime(it)}", color = Clay.Muted, style = MaterialTheme.typography.bodySmall) }
-                    TodoSelectors.progressText(task)?.let { Text(it, color = Clay.Green, style = MaterialTheme.typography.bodySmall) }
+                    task.audienceLabel?.let(::add)
+                    add(task.dueAt?.let { "기한 ${displayTime(it)}" } ?: "날짜 없음")
+                    task.sourceLabel?.let(::add)
+                    add(statusLabel)
+                }
+                Text(
+                    metadata.joinToString(" · "),
+                    color = if (TodoSelectors.dueLabel(task, now) == "기한 지남") Clay.Error else Clay.Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                TodoSelectors.progressText(task)?.let {
+                    Text(it, color = Clay.Green, style = MaterialTheme.typography.bodySmall)
                 }
                 task.remindAt?.let {
                     Text("알림 ${displayTime(it)} 예정", color = Clay.Muted, style = MaterialTheme.typography.bodySmall)
@@ -103,6 +121,9 @@ fun TaskRow(
                     )
                 }
             }
+            if (task.evidenceText != null) {
+                TextButton(onClick = { showEvidence = true }, modifier = Modifier.padding(start = 40.dp)) { Text("근거 보기") }
+            }
             Row(Modifier.fillMaxWidth().padding(start = 40.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 if (!task.completed && !task.excluded) {
                     TextButton(onClick = { onSnooze(task) }, enabled = !busy) { Text("미루기") }
@@ -118,6 +139,55 @@ fun TaskRow(
             }
         }
     }
+    if (showEvidence) {
+        TaskEvidenceDialog(task) { showEvidence = false }
+    }
+}
+
+@Composable
+private fun TaskEvidenceDialog(task: AssistantTask, onDismiss: () -> Unit) {
+    val currentEvidence = task.evidenceText ?: return
+    val originalEvidence = task.originalEvidenceText ?: currentEvidence
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("할 일 근거") },
+        text = {
+            Column(
+                Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                task.sourceTitle?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
+                Text(
+                    listOfNotNull(
+                        task.sourceLabel,
+                        task.sourceCapturedAt?.let { displayTime(it) },
+                        task.audienceLabel,
+                    ).joinToString(" · "),
+                    color = Clay.Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                task.revisionSummary?.let {
+                    StatusPill("공지 수정 반영")
+                    Text(it, color = Clay.CoralDark, style = MaterialTheme.typography.bodyMedium)
+                }
+                if (originalEvidence != currentEvidence) {
+                    Text("처음 근거", style = MaterialTheme.typography.labelLarge)
+                    SelectionContainer { Text(originalEvidence) }
+                    Text("현재 근거", style = MaterialTheme.typography.labelLarge)
+                    SelectionContainer { Text(currentEvidence) }
+                } else {
+                    Text("원문 근거", style = MaterialTheme.typography.labelLarge)
+                    SelectionContainer { Text(currentEvidence) }
+                }
+                Text(
+                    "위 문구는 저장된 공지 원문이고, 할 일과 기한은 MAMA가 해석한 결과예요.",
+                    color = Clay.Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }
 
 @Composable
@@ -325,18 +395,12 @@ fun TodayScreen(
                 )
             }
         }
-        val linkedIds = remember(tasks) { tasks.mapNotNull { it.sourceNotificationId }.toSet() }
         val childProfile = remember(settings.schoolGrade, settings.schoolLevel, settings.schoolName) {
             NoticeDecisionEngine.childProfile(settings)
         }
-        val reviewRecords = remember(records, childProfile, linkedIds, now) {
-            records.distinctBy { ProbeRules.recordIdentity(it) }
-                .filter { ProbeRules.recordIdentity(it) !in linkedIds }
-                .map { it to NoticeDecisionEngine.decide(it, childProfile) }
-                .filter { it.second.isRequiredForChild() || it.second.isOptionalForChild() }
-                .sortedByDescending { it.first.receivedAt }
-                .take(3)
-                .map { it.first }
+        val institution = remember(settings.schoolName) { NoticeGrouping.institution(settings) }
+        val reviewRecords = remember(records, tasks, childProfile, institution) {
+            todayReviewRecords(records, tasks, childProfile, institution)
         }
         if (reviewRecords.isNotEmpty()) {
             Eyebrow("확인할 소식")
@@ -352,6 +416,26 @@ fun TodayScreen(
     editTarget?.let { target ->
         TaskEditDialog(target, target.text, busy, { text, due -> editTarget = null; onEdit(target, text, due) }, { editTarget = null })
     }
+}
+
+internal fun todayReviewRecords(
+    records: List<ProbeRecord>,
+    tasks: List<AssistantTask>,
+    childProfile: kr.mom.probe.data.ChildNoticeProfile,
+    institution: String,
+): List<ProbeRecord> {
+    val linkedKeySets = tasks.map { it.noticeGroupKeys + listOfNotNull(it.sourceNotificationId) }
+        .filter { it.isNotEmpty() }
+    return NoticeGrouping.representatives(records, institution)
+        .filter { record ->
+            val recordKeys = NoticeGrouping.keys(record, institution)
+            linkedKeySets.none { NoticeGrouping.matches(recordKeys, it) }
+        }
+        .map { it to NoticeDecisionEngine.decide(it, childProfile) }
+        .filter { it.second.isRequiredForChild() || it.second.isOptionalForChild() }
+        .sortedByDescending { it.first.receivedAt }
+        .take(3)
+        .map { it.first }
 }
 
 @Composable

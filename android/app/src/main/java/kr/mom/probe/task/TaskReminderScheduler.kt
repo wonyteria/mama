@@ -278,6 +278,13 @@ object TaskReminderScheduler {
     internal fun taskId(intent: Intent): String? = intent.getStringExtra(EXTRA_TASK_ID)
     internal fun occurrenceId(intent: Intent): String? = intent.getStringExtra(EXTRA_OCCURRENCE_ID)
     internal fun notificationId(intent: Intent): Int = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
+    internal fun stopIntent(
+        context: Context,
+        taskId: String,
+        occurrenceId: String,
+        notificationId: Int,
+        scheduledAt: Long,
+    ): Intent = alarmActionIntent(context, ACTION_STOP, taskId, occurrenceId, notificationId, scheduledAt)
 }
 
 class TaskReminderReceiver : BroadcastReceiver() {

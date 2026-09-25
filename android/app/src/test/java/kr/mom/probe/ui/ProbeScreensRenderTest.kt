@@ -174,6 +174,43 @@ class ProbeScreensRenderTest {
     }
 
     @Test
+    fun todoShowsEvidenceAndRevisionDifference() {
+        render {
+            TodoScreen(
+                tasks = listOf(
+                    kr.mom.probe.task.AssistantTask(
+                        id = "evidence-1",
+                        text = "동의서 월요일 제출",
+                        completed = false,
+                        createdAt = NOW,
+                        sourceNotificationId = "group-1",
+                        sourceRevisionId = "revision-2",
+                        sourceKind = kr.mom.probe.task.AssistantTaskSource.AUTO_NOTICE,
+                        actionKind = "submit",
+                        evidenceText = "동의서는 월요일까지 제출해 주세요.",
+                        originalEvidenceText = "동의서는 금요일까지 제출해 주세요.",
+                        sourceTitle = "동의서 제출일 정정",
+                        sourceLabel = "학교 앱",
+                        sourceCapturedAt = NOW,
+                        audienceLabel = "초등 2학년",
+                        revisionSummary = "기한 · 근거 문구 변경",
+                    ),
+                ),
+                busy = false,
+                now = NOW,
+                onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
+                onEdit = { _, _, _ -> }, onExclude = {}, onAddTask = { _, _ -> },
+            )
+        }
+
+        compose.onNodeWithText("동의서 월요일 제출").performClick()
+        compose.onNodeWithText("근거 보기").assertIsDisplayed().performClick()
+        compose.onNodeWithText("공지 수정 반영").assertIsDisplayed()
+        compose.onNodeWithText("동의서는 금요일까지 제출해 주세요.").assertIsDisplayed()
+        compose.onNodeWithText("동의서는 월요일까지 제출해 주세요.").assertIsDisplayed()
+    }
+
+    @Test
     fun todoCompletedTasksFoldBehindToggle() {
         render {
             TodoScreen(
@@ -242,6 +279,7 @@ class ProbeScreensRenderTest {
         compose.onAllNodesWithText("하이클래스 웹").assertCountEquals(0)
         compose.onAllNodesWithText("e알리미 사이트 열기").assertCountEquals(0)
         compose.onAllNodesWithText("하이클래스 사이트 열기").assertCountEquals(0)
+        compose.onAllNodesWithText("정리되면 원본 알림 숨기기").assertCountEquals(0)
         screenshot("connections-apps-only")
     }
 

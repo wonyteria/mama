@@ -110,6 +110,24 @@ class SourceLanesTest {
         assertFalse(lane.statusText.contains(SourceIds.EALIMI_WEB))
     }
 
+    @Test fun `keyless NEIS lane is disabled until a secure proxy exists`() {
+        val connectors = ConnectorState(
+            sites = mapOf(
+                SourceIds.NEIS_PUBLIC to SiteConnection(
+                    id = SourceIds.NEIS_PUBLIC,
+                    childId = "primary-child",
+                    status = ConnectionStatus.CONNECTED,
+                ),
+            ),
+        )
+
+        val lane = SourceLanes.neisLane(connectors, snapshot = null, sampleMode = false)
+
+        assertEquals(LaneHealth.UNSUPPORTED, lane.health)
+        assertFalse(lane.enabled)
+        assertTrue(lane.statusText.contains("자동 조회 미지원"))
+    }
+
     @Test fun `no lane exposes internal identifiers in user-facing text`() {
         val connectors = ConnectorState(
             sites = mapOf(

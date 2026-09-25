@@ -77,14 +77,20 @@ object NoticeGrouping {
                 }
             }
         }
-        // A shared fingerprint merges only when neither side carries a conflicting official ID.
+        // A fingerprint bucket may contain an app-only copy without official identifiers.
+        // Do not let that keyless record bridge two different official documents transitively.
         fingerprintOwner.values.forEach { indices ->
-            for (i in 0 until indices.size) for (j in i + 1 until indices.size) {
-                val a = indices[i]
-                val b = indices[j]
-                val strongA = strongKeys(recordKeys[a])
-                val strongB = strongKeys(recordKeys[b])
-                if (strongA.isEmpty() || strongB.isEmpty() || strongA.any { it in strongB }) union(a, b)
+            val roots = indices.map(::find).distinct()
+            fun componentStrongKeys(root: Int): Set<String> = recordKeys.indices
+                .filter { find(it) == root }
+                .flatMapTo(mutableSetOf()) { strongKeys(recordKeys[it]) }
+            val strongRoots = roots.filter { componentStrongKeys(it).isNotEmpty() }
+            if (strongRoots.size <= 1) {
+                roots.drop(1).forEach { union(roots.first(), it) }
+            } else {
+                // Ambiguous keyless copies remain separate from every official document.
+                val keylessRoots = roots.filter { componentStrongKeys(it).isEmpty() }
+                keylessRoots.drop(1).forEach { union(keylessRoots.first(), it) }
             }
         }
         val componentKeys = mutableMapOf<Int, String>()

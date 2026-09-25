@@ -76,6 +76,11 @@ private data class PendingTaskSave(
     val dueAt: Long?,
     val remindAt: Long?,
     val noticeGroupKeys: Set<String> = emptySet(),
+    val evidenceText: String? = null,
+    val sourceTitle: String? = null,
+    val sourceLabel: String? = null,
+    val sourceCapturedAt: Long? = null,
+    val audienceLabel: String? = null,
 )
 
 @Composable
@@ -211,6 +216,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     }
 
     fun refreshNeisEvents(connection: SiteConnection?) {
+        if (!NeisPublicClient.PRODUCTION_SYNC_ENABLED) { neisEvents = emptyList(); return }
         if (connection?.status != ConnectionStatus.CONNECTED) { neisEvents = emptyList(); return }
         val school = NeisSchool(
             officeCode = connection.metadata["officeCode"].orEmpty(),
@@ -274,6 +280,11 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         sourceRevisionId = request.sourceRevisionId,
                         sourceKind = kr.mom.probe.task.AssistantTaskSource.USER_CONFIRMED_NOTICE,
                         noticeGroupKeys = request.noticeGroupKeys,
+                        evidenceText = request.evidenceText,
+                        sourceTitle = request.sourceTitle,
+                        sourceLabel = request.sourceLabel,
+                        sourceCapturedAt = request.sourceCapturedAt,
+                        audienceLabel = request.audienceLabel,
                     ) != null
                 }
                 message = if (added) "모모가 부탁과 알림을 기억해뒀어요." else "이미 모모가 기억하고 있어요."
@@ -731,7 +742,24 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         if (intent == null) message = "원래 앱을 찾지 못했어요. 휴대폰에서 직접 확인해주세요."
                         else try { context.startActivity(intent) } catch (_: Exception) { message = "원래 앱을 열지 못했어요. 직접 확인해주세요." }
                     }, onRemember = { taskText, dueAt, remindAt ->
-                        val request = PendingTaskSave(taskText, sourceNotificationId, record.id, dueAt, remindAt, recordKeys)
+                        val childProfile = kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings)
+                        val evidence = kr.mom.probe.data.NoticeDecisionEngine.decide(record, childProfile)
+                            .action?.evidence?.quote?.trim()?.takeIf(String::isNotEmpty)
+                            ?: record.bigText.ifBlank { record.text }.trim().takeIf(String::isNotEmpty)
+                        val audience = childProfile.grade?.let { "${childProfile.schoolLevel.label} ${it}학년" } ?: "자녀 대상"
+                        val request = PendingTaskSave(
+                            taskText,
+                            sourceNotificationId,
+                            record.id,
+                            dueAt,
+                            remindAt,
+                            recordKeys,
+                            evidence,
+                            record.title.ifBlank { "제목 없는 공지" },
+                            record.appLabel.ifBlank { "학교·학원 소식" },
+                            record.receivedAt,
+                            audience,
+                        )
                         if (remindAt != null && !kr.mom.probe.task.TaskReminderScheduler.canDeliver(context)) {
                             pendingTaskSave = request
                             pendingNotificationTest = false

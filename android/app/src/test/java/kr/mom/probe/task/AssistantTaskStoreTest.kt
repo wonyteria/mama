@@ -8,6 +8,73 @@ import org.junit.Test
 import org.json.JSONObject
 
 class AssistantTaskStoreTest {
+    @Test fun newlyCreatedAutomaticPlanRemainsActiveAndScheduled() {
+        var nextId = 0
+        val (tasks, changed) = AssistantTaskStore.applyAutomaticPlansFrom(
+            tasks = emptyList(),
+            sourceNotificationId = "group-1",
+            sourceRevisionId = "revision-1",
+            plans = listOf(AutoTaskPlan("submit", "동의서 제출", dueAt = 30_000L, remindAt = 20_000L)),
+            noticeGroupKeys = setOf("fp:notice"),
+            now = 10_000L,
+            idProvider = { "generated-${nextId++}" },
+        )
+
+        assertTrue(changed)
+        val created = tasks.single()
+        assertFalse(created.suspended)
+        assertEquals(20_000L, created.remindAt)
+        assertEquals("generated-0", created.reminderOccurrenceId)
+        assertEquals("generated-1", created.id)
+        assertEquals(setOf("group-1", "fp:notice"), created.noticeGroupKeys)
+    }
+
+    @Test fun newerRevisionUpdatesOneTaskAndRetainsOriginalEvidence() {
+        val original = AssistantTask(
+            id = "task",
+            text = "동의서 금요일 제출",
+            completed = false,
+            createdAt = 10L,
+            sourceNotificationId = "group-1",
+            sourceRevisionId = "revision-1",
+            sourceKind = AssistantTaskSource.AUTO_NOTICE,
+            dueAt = 30_000L,
+            actionKind = "submit",
+            noticeGroupKeys = setOf("group-1", "fp:notice"),
+            evidenceText = "동의서는 금요일까지 제출해 주세요.",
+            originalEvidenceText = "동의서는 금요일까지 제출해 주세요.",
+        )
+
+        val (tasks, changed) = AssistantTaskStore.applyAutomaticPlansFrom(
+            tasks = listOf(original),
+            sourceNotificationId = "group-1",
+            sourceRevisionId = "revision-2",
+            plans = listOf(
+                AutoTaskPlan(
+                    "submit",
+                    "동의서 월요일 제출",
+                    dueAt = 40_000L,
+                    evidenceText = "동의서는 월요일까지 제출해 주세요.",
+                    sourceTitle = "동의서 제출일 정정",
+                    sourceLabel = "학교",
+                    sourceCapturedAt = 20L,
+                    audienceLabel = "초등 2학년",
+                ),
+            ),
+            noticeGroupKeys = setOf("fp:notice"),
+            now = 20L,
+        )
+
+        assertTrue(changed)
+        val revised = tasks.single()
+        assertEquals("revision-2", revised.sourceRevisionId)
+        assertEquals("동의서 월요일 제출", revised.text)
+        assertEquals("동의서는 금요일까지 제출해 주세요.", revised.originalEvidenceText)
+        assertEquals("동의서는 월요일까지 제출해 주세요.", revised.evidenceText)
+        assertTrue(revised.revisionSummary?.contains("기한") == true)
+        assertTrue(revised.revisionSummary?.contains("근거 문구") == true)
+    }
+
     @Test fun consumingReminderClearsItAndReturnsOriginalTaskOnce() {
         val reminder = AssistantTask("one", "물통 챙기기", false, 10L, remindAt = 20L)
         val other = AssistantTask("two", "회신하기", false, 11L, remindAt = 30L)
@@ -225,6 +292,13 @@ class AssistantTaskStoreTest {
             sourceKind = AssistantTaskSource.AUTO_NOTICE,
             dueAt = null,
             noticeGroupKeys = setOf("nid-1", "ext:abc", "fp:def"),
+            evidenceText = "서류를 제출해 주세요.",
+            originalEvidenceText = "서류를 제출해 주세요.",
+            sourceTitle = "서류 안내",
+            sourceLabel = "학교",
+            sourceCapturedAt = 9L,
+            audienceLabel = "초등 2학년",
+            revisionSummary = "기한 변경",
         )
 
         val restored = decodeTask(encodeTask(task))

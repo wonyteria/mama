@@ -21,6 +21,7 @@ import kr.mom.probe.connector.*
 import kr.mom.probe.data.NoticeDecisionEngine
 import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.data.SchoolLevel
+import kr.mom.probe.service.NotificationHidingPolicy
 import kr.mom.probe.sync.SourceIds
 import kr.mom.probe.sync.SourceLanes
 import kr.mom.probe.sync.SourceSyncSnapshot
@@ -146,7 +147,7 @@ fun ConnectionsScreen(
                         Text("${app.name} 알림 설정 열기")
                     }
                 }
-                if (enabled) HideOriginalRow(
+                if (enabled && NotificationHidingPolicy.mayHideOriginal()) HideOriginalRow(
                     hidden = app.packageName in hiddenPackages,
                     enabled = !busy,
                     onToggle = { onToggleHideOriginal(app.packageName, it) },
@@ -164,6 +165,7 @@ fun ConnectionsScreen(
         }
 
         ConnectionSection("사이트") {
+            val neisProductionEnabled = NeisPublicClient.PRODUCTION_SYNC_ENABLED && !neisSampleMode
             if (schoolWebsiteAvailable) {
                 SourceStatusRow(
                     mark = "정",
@@ -184,10 +186,10 @@ fun ConnectionsScreen(
                 name = neisLane.name,
                 status = neisLane.statusText,
                 checked = neisLane.enabled,
-                enabled = !busy && settings.schoolName.isNotBlank(),
+                enabled = !busy && settings.schoolName.isNotBlank() && neisProductionEnabled,
                 onCheckedChange = { checked -> if (checked) onConnectNeis() else onDisconnectNeis() },
             )
-            if (publicConnection?.status == ConnectionStatus.CONNECTED) {
+            if (neisProductionEnabled && publicConnection?.status == ConnectionStatus.CONNECTED) {
                 TextButton(onClick = { onRefreshSource(SourceIds.NEIS_PUBLIC) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                     Text("나이스 지금 확인")
                 }

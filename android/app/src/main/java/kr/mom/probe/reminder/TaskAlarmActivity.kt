@@ -151,6 +151,17 @@ class TaskAlarmActivity : ComponentActivity() {
                     state = screenState.copy(snoozeEnabled = screenState.snoozeEnabled && !busy),
                     onStopSound = {
                         pendingAskMomo.cancel()
+                        if (id != null && occurrence != null) {
+                            sendBroadcast(
+                                TaskReminderScheduler.stopIntent(
+                                    this@TaskAlarmActivity,
+                                    id,
+                                    occurrence,
+                                    notificationId,
+                                    scheduledAt,
+                                ),
+                            )
+                        }
                         stopOwnNotification()
                         finish()
                     },

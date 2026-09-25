@@ -2,6 +2,7 @@ package kr.mom.probe.sync
 
 import kr.mom.probe.connector.ConnectionStatus
 import kr.mom.probe.connector.ConnectorState
+import kr.mom.probe.connector.NeisPublicClient
 import kr.mom.probe.data.NoticeDecisionEngine
 import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.data.SchoolLevel
@@ -99,16 +100,14 @@ object SourceLanes {
         )
     }
 
-    /**
-     * The public NEIS API lane. No production secret is embedded in the APK, so the lane
-     * always runs its honestly labeled keyless-limited mode until a server-side proxy exists.
-     */
+    /** The NEIS lane stays unavailable until a server-side proxy owns credentials and limits. */
     fun neisLane(connectorState: ConnectorState, snapshot: SourceSyncSnapshot?, sampleMode: Boolean = true): SourceLane {
         val connection = connectorState.sites[SourceIds.NEIS_PUBLIC]
         val connected = connection?.status == ConnectionStatus.CONNECTED
+        val productionEnabled = NeisPublicClient.PRODUCTION_SYNC_ENABLED && !sampleMode
         val (health, text) = when {
+            !productionEnabled -> LaneHealth.UNSUPPORTED to "안전한 운영 연동 준비 중 · 현재 자동 조회 미지원"
             !connected -> LaneHealth.NEEDS_SETUP to "학교 일정 공개 API · 연결하면 확인해요"
-            sampleMode -> LaneHealth.TEMPORARILY_UNCERTAIN to "제한된 공개 조회로 확인 중 · 운영 연동 준비 중"
             else -> snapshotHealth(snapshot, ready = "학교 일정을 확인할 수 있어요")
         }
         return SourceLane(
@@ -116,7 +115,7 @@ object SourceLanes {
             capabilities = setOf(LaneCapability.LISTING_DISCOVERY, LaneCapability.REVISION_DETECTION),
             health = health,
             statusText = text,
-            enabled = connected,
+            enabled = connected && productionEnabled,
             internalKey = SourceIds.NEIS_PUBLIC,
         )
     }

@@ -105,6 +105,28 @@ class NoticeGroupingTest {
     }
 
     @Test
+    fun `keyless fingerprint copy cannot bridge disjoint official notices`() {
+        val body = "동일한 안내 문구와 제목을 사용하는 반복 공지입니다. 신청 내용을 확인해 주세요."
+        val officialA = source(
+            sourceId = "school-website-snjj", itemId = "101", host = "snjj-e.goesn.kr",
+            canonicalUrl = "https://snjj-e.goesn.kr/snjj-e/na/ntt/viewNtt.do?nttSn=101",
+            title = "신청 안내", body = body,
+        )
+        val appOnly = notification(title = "신청 안내", body = body, notificationKey = "app-copy")
+        val officialB = source(
+            sourceId = "school-website-snjj", itemId = "102", host = "snjj-e.goesn.kr",
+            canonicalUrl = "https://snjj-e.goesn.kr/snjj-e/na/ntt/viewNtt.do?nttSn=102",
+            title = "신청 안내", body = body,
+        )
+
+        val groups = NoticeGrouping.groupIds(listOf(officialA, appOnly, officialB), institution)
+
+        assertNotEquals(groups.getValue(officialA.id), groups.getValue(officialB.id))
+        assertNotEquals(groups.getValue(officialA.id), groups.getValue(appOnly.id))
+        assertNotEquals(groups.getValue(officialB.id), groups.getValue(appOnly.id))
+    }
+
+    @Test
     fun `same notice via ealimi app and school website merges on content fingerprint`() {
         val body = "10월 20일 현장체험학습 출발 시간 안내. 오전 8시 40분까지 등교해 주세요. " +
             "준비물과 점심 도시락은 가정에서 준비해 주세요."

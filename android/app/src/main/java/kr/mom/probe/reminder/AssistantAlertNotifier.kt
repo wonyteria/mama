@@ -39,13 +39,13 @@ object AssistantAlertNotifier {
     fun reset(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
 
     fun cancel(context: Context, record: ProbeRecord) {
-        val institution = NoticeGrouping.institution(kr.mom.probe.data.ProbeRepository.get(context).settings.value)
-        val stableNotificationId = NoticeGrouping.groupId(record, institution).hashCode()
+        val sourceId = sourceIdentity(context, record)
+        val stableNotificationId = sourceId.hashCode()
         context.getSystemService(NotificationManager::class.java).cancel(stableNotificationId)
-        val sourceId = ProbeRules.recordIdentity(record)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(postedKey(sourceId), false)
             .remove(linkKey(sourceId))
+            .remove(alertIdKey(stableNotificationId))
             .apply()
     }
 
@@ -79,7 +79,7 @@ object AssistantAlertNotifier {
         if (!isEnabled(context)) return false
         val repository = kr.mom.probe.data.ProbeRepository.get(context)
         val institution = NoticeGrouping.institution(repository.settings.value)
-        val sourceId = NoticeGrouping.groupId(record, institution)
+        val sourceId = sourceIdentity(context, record)
         val recordKeys = NoticeGrouping.keys(record, institution)
         val completedSource = kr.mom.probe.task.AssistantTaskStore.get(context).tasks.value.any { task ->
             task.completed &&
@@ -166,6 +166,10 @@ object AssistantAlertNotifier {
         .minOrNull()
 
     internal fun alertFingerprintForTest(decision: NoticeDecision): String? = alertFingerprint(decision)
+    internal fun sourceIdentity(context: Context, record: ProbeRecord): String {
+        val institution = NoticeGrouping.institution(kr.mom.probe.data.ProbeRepository.get(context).settings.value)
+        return NoticeGrouping.groupId(record, institution)
+    }
     internal fun recordAlertedForTest(context: Context, sourceId: String, fingerprint: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(alertedKey(sourceId), fingerprint).commit()
     }
