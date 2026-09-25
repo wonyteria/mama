@@ -222,8 +222,12 @@ object BriefingReminders {
         }
     }
     fun briefingTasks(tasks: List<kr.mom.probe.task.AssistantTask>, now: Long = System.currentTimeMillis()): List<kr.mom.probe.task.AssistantTask> =
-        tasks.filter { !it.completed && !it.suspended && (it.dueAt == null || (it.dueAt > now && it.dueAt <= now + 7 * 86_400_000L)) }
-            .sortedWith(compareBy<kr.mom.probe.task.AssistantTask> { it.dueAt ?: Long.MAX_VALUE }.thenByDescending { it.createdAt })
+        kr.mom.probe.task.TodoSelectors.open(tasks)
+            .sortedWith(
+                compareBy<kr.mom.probe.task.AssistantTask> { it.dueAt == null }
+                    .thenBy { it.dueAt ?: Long.MAX_VALUE }
+                    .thenByDescending { it.createdAt },
+            )
     fun briefingAgenda(
         context: Context,
         records: List<kr.mom.probe.data.ProbeRecord>,

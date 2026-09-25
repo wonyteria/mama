@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -11,32 +14,34 @@ android {
         applicationId = "kr.mom.probe"
         minSdk = 33
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.9.0-agent"
+        versionCode = 14
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // No service credentials are compiled into the APK. The production NEIS lane
-        // was removed; a server-side proxy would be required to restore it.
+        // needs a server-side proxy before an API key can be shipped safely.
     }
+    val keystoreProps = Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    fun releaseSigningProperty(envName: String, keystoreName: String): String? =
+        providers.gradleProperty(envName).orNull
+            ?: System.getenv(envName)
+            ?: keystoreProps.getProperty(keystoreName)
     signingConfigs {
         maybeCreate("release").apply {
-            val storePath = providers.gradleProperty("MAMA_RELEASE_STORE_FILE").orNull
-                ?: System.getenv("MAMA_RELEASE_STORE_FILE")
+            val storePath = releaseSigningProperty("MAMA_RELEASE_STORE_FILE", "storeFile")
             if (!storePath.isNullOrBlank()) {
-                storeFile = file(storePath)
-                storePassword = providers.gradleProperty("MAMA_RELEASE_STORE_PASSWORD").orNull
-                    ?: System.getenv("MAMA_RELEASE_STORE_PASSWORD")
-                keyAlias = providers.gradleProperty("MAMA_RELEASE_KEY_ALIAS").orNull
-                    ?: System.getenv("MAMA_RELEASE_KEY_ALIAS")
-                keyPassword = providers.gradleProperty("MAMA_RELEASE_KEY_PASSWORD").orNull
-                    ?: System.getenv("MAMA_RELEASE_KEY_PASSWORD")
+                val candidate = File(storePath)
+                storeFile = if (candidate.isAbsolute) candidate else rootProject.file(storePath)
+                storePassword = releaseSigningProperty("MAMA_RELEASE_STORE_PASSWORD", "storePassword")
+                keyAlias = releaseSigningProperty("MAMA_RELEASE_KEY_ALIAS", "keyAlias")
+                keyPassword = releaseSigningProperty("MAMA_RELEASE_KEY_PASSWORD", "keyPassword")
             }
         }
     }
     buildTypes {
-        debug {
-            applicationIdSuffix = ".qa"
-            versionNameSuffix = "-qa"
-        }
+        debug { applicationIdSuffix = ".qa"; versionNameSuffix = "-qa" }
         release {
             // Fail closed: release builds require real signing material. There is no
             // debug-signing fallback; `verifyReleaseSigning` aborts the build clearly.
@@ -74,8 +79,8 @@ val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
         require(config != null && config.storeFile?.exists() == true) {
             "Release signing is not configured. Set MAMA_RELEASE_STORE_FILE, " +
                 "MAMA_RELEASE_STORE_PASSWORD, MAMA_RELEASE_KEY_ALIAS and " +
-                "MAMA_RELEASE_KEY_PASSWORD (gradle properties or environment). " +
-                "Debug signing is never used for release builds."
+                "MAMA_RELEASE_KEY_PASSWORD (gradle properties or environment), or provide " +
+                "keystore.properties in the project root. Debug signing is never used for release builds."
         }
     }
 }

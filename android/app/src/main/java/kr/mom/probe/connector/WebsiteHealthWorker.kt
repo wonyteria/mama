@@ -17,7 +17,7 @@ class WebsiteHealthWorker(context: Context, params: WorkerParameters) : Coroutin
         val connectors = ConnectorRepository.get(applicationContext)
         var saved = true
         connectors.state.value.sites.values
-            .filter { it.id == "ealimi-web" || it.id == "hiclass-web" }
+            .filter { ConnectorCatalog.shouldShowWebsite(it.id) }
             .filter { it.status == ConnectionStatus.SESSION_READY || it.status == ConnectionStatus.CONNECTED }
             .forEach { connection ->
                 val definition = ConnectorCatalog.site(connection.id) ?: return@forEach

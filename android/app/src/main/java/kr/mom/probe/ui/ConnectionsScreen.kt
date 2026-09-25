@@ -24,7 +24,6 @@ import kr.mom.probe.data.SchoolLevel
 import kr.mom.probe.sync.SourceIds
 import kr.mom.probe.sync.SourceLanes
 import kr.mom.probe.sync.SourceSyncSnapshot
-import kr.mom.probe.sync.SourceSyncStatus
 
 @Composable
 fun ChildProfileScreen(settings: ProbeSettings, busy: Boolean,
@@ -44,7 +43,7 @@ fun ChildProfileScreen(settings: ProbeSettings, busy: Boolean,
         BackHeading("자녀 정보", onBack)
         Eyebrow("엄마 비서의 첫 번째 가족")
         Text("누구의 소식을\n챙기면 될까요?", style = MaterialTheme.typography.headlineLarge)
-        Text("이름이나 별칭만으로 시작할 수 있어요. 학교와 학년은 학교 홈페이지 연결과 공지 대상 확인에 써요.", color = Clay.Muted)
+        Text("이름이나 별칭만으로 시작할 수 있어요. 학교와 학년은 나이스 공개 일정을 연결할 때만 입력해주세요.", color = Clay.Muted)
         OutlinedTextField(name, { if (it.length <= 30) name = it }, Modifier.fillMaxWidth(),
             label = { Text("아이 이름 또는 별칭") }, singleLine = true, shape = RoundedCornerShape(22.dp),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next))
@@ -52,7 +51,7 @@ fun ChildProfileScreen(settings: ProbeSettings, busy: Boolean,
             label = { Text("학교 정식 이름 (선택)") }, placeholder = { Text("예: 성남정자초등학교") }, singleLine = true,
             shape = RoundedCornerShape(22.dp), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             isError = school.isNotBlank() && !validSchool,
-            supportingText = { Text(if (school.isNotBlank() && !validSchool) "학교 이름을 2~60자로 입력해주세요." else "지원되는 학교 홈페이지는 정식 이름으로 확인해요.") })
+            supportingText = { Text(if (school.isNotBlank() && !validSchool) "학교 이름을 2~60자로 입력해주세요." else "간단히 적어도 연결할 때 나이스 공식 이름으로 확인해요.") })
         Box {
             OutlinedButton(onClick = { levelMenu = true }, Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(22.dp)) {
                 Text(level?.label ?: "학교급 선택 (선택)", Modifier.weight(1f)); Text("⌄")
@@ -96,13 +95,22 @@ fun ConnectionsScreen(
     busy: Boolean,
     onBack: () -> Unit,
     onToggleApp: (String, Boolean) -> Unit,
+    onConnectNeis: () -> Unit,
+    onDisconnectNeis: () -> Unit,
     sourceSnapshots: Map<String, SourceSyncSnapshot> = emptyMap(),
     onRefreshSource: (String) -> Unit = {},
-    onToggleWebsite: (String, Boolean) -> Unit,
     onRecommendApp: (SourceApp) -> Unit,
     onSkip: () -> Unit = {},
-    notificationAccess: Boolean = true,
+    listenerAccess: Boolean = true,
+    appPopupOn: Map<String, Boolean?> = emptyMap(),
+    onOpenAppNotifications: (String) -> Unit = {},
+    onOpenWebsite: (String) -> Unit = {},
+    postingHints: Map<String, String> = emptyMap(),
+    hiddenPackages: Set<String> = emptySet(),
+    onToggleHideOriginal: (String, Boolean) -> Unit = { _, _ -> },
+    neisSampleMode: Boolean = true,
 ) {
+    val publicConnection = connectorState.sites[SourceIds.NEIS_PUBLIC]
     val schoolWebsiteLane = SourceLanes.schoolWebsiteLane(settings, sourceSnapshots[SourceIds.SCHOOL_WEBSITE])
     val schoolWebsiteAvailable = schoolWebsiteLane.enabled
     Page {
@@ -113,20 +121,35 @@ fun ConnectionsScreen(
         ConnectionSection("앱") {
             if (installedApps.isEmpty()) ConnectionEmptyRow("연결할 수 있는 앱이 없어요")
             installedApps.forEach { app ->
+                val enabled = app.packageName in settings.selectedPackages
+                val popupOn = appPopupOn[app.packageName]
                 val lane = SourceLanes.notificationLane(
                     app.packageName, app.name,
                     installed = true,
                     settings = settings,
                     verifiedPackages = verifiedAppPackages,
-                    notificationAccess = notificationAccess,
+                    notificationAccess = listenerAccess,
                 )
                 ConnectionSwitchRow(
                     mark = app.mark,
                     name = app.name,
-                    status = lane.statusText,
+                    status = when {
+                        enabled && popupOn == false -> "이 앱의 알림이 꺼져 있어요 · 켜야 가져올 수 있어요"
+                        else -> lane.statusText
+                    },
                     checked = lane.enabled,
                     enabled = !busy,
                     onCheckedChange = { onToggleApp(app.packageName, it) },
+                )
+                if (enabled && popupOn == false) {
+                    TextButton(onClick = { onOpenAppNotifications(app.packageName) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("${app.name} 알림 설정 열기")
+                    }
+                }
+                if (enabled) HideOriginalRow(
+                    hidden = app.packageName in hiddenPackages,
+                    enabled = !busy,
+                    onToggle = { onToggleHideOriginal(app.packageName, it) },
                 )
             }
         }
@@ -148,26 +171,32 @@ fun ConnectionsScreen(
                     status = schoolWebsiteLane.statusText,
                     enabled = !busy && settings.onboardingDone,
                     onRefresh = { onRefreshSource(SourceIds.SCHOOL_WEBSITE) },
+                    hint = postingHints[SourceIds.SCHOOL_WEBSITE],
                 )
+                TextButton(onClick = { onOpenWebsite(SourceIds.SCHOOL_WEBSITE) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Text("홈페이지 열기")
+                }
                 HorizontalDivider(color = Color.White.copy(alpha = .8f))
             }
-            val ealimiLane = SourceLanes.webLane("e알리미 웹", SourceIds.EALIMI_WEB, connectorState, sourceSnapshots[SourceIds.EALIMI_WEB])
-            val ealimi = connectorState.sites["ealimi-web"]
-            ConnectionSwitchRow("e", ealimiLane.name, ealimiLane.statusText, ealimiLane.enabled, !busy) {
-                onToggleWebsite("ealimi-web", it)
-            }
-            if (ealimi?.status in setOf(ConnectionStatus.SESSION_READY, ConnectionStatus.CONNECTED)) {
-                TextButton(onClick = { onRefreshSource(SourceIds.EALIMI_WEB) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                    Text("e알리미 지금 확인")
+            val neisLane = SourceLanes.neisLane(connectorState, sourceSnapshots[SourceIds.NEIS_PUBLIC], neisSampleMode)
+            ConnectionSwitchRow(
+                mark = "N",
+                name = neisLane.name,
+                status = neisLane.statusText,
+                checked = neisLane.enabled,
+                enabled = !busy && settings.schoolName.isNotBlank(),
+                onCheckedChange = { checked -> if (checked) onConnectNeis() else onDisconnectNeis() },
+            )
+            if (publicConnection?.status == ConnectionStatus.CONNECTED) {
+                TextButton(onClick = { onRefreshSource(SourceIds.NEIS_PUBLIC) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Text("나이스 지금 확인")
                 }
             }
             HorizontalDivider(color = Color.White.copy(alpha = .8f))
-            val hiclassLane = SourceLanes.webLane("하이클래스 웹", "hiclass-web", connectorState, null)
-            ConnectionSwitchRow("Hi", hiclassLane.name, hiclassLane.statusText, hiclassLane.enabled, !busy) {
-                onToggleWebsite("hiclass-web", it)
-            }
+            ConnectionSwitchRow("N+", "나이스 학부모서비스", "개인 공지 조회 연동 미지원", false, false) { }
+            HorizontalDivider(color = Color.White.copy(alpha = .8f))
         }
-        Text("AI 분석 미연결 · 이 기기에서 기본 정리. 웹 로그인은 시험 연결이며 개인 공지 자동 조회·로그인 갱신은 아직 지원하지 않아요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text("앱과 웹이 같은 서비스이면 앱만 표시해요. 학교 공식 홈페이지와 나이스처럼 앱과 역할이 다른 사이트만 따로 보여줘요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
         if (!settings.onboardingDone) TextButton(onClick = onSkip, enabled = !busy) { Text("연결은 나중에 · 비서 만나기") }
     }
 }
@@ -194,13 +223,28 @@ private fun ConnectionSwitchRow(mark: String, name: String, status: String, chec
 }
 
 @Composable
-private fun SourceStatusRow(mark: String, name: String, status: String, enabled: Boolean, onRefresh: () -> Unit) {
+private fun HideOriginalRow(hidden: Boolean, enabled: Boolean, onToggle: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth()
+        .toggleable(value = hidden, enabled = enabled, role = Role.Switch, onValueChange = onToggle)
+        .padding(start = 62.dp, end = 8.dp, top = 2.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("정리되면 원본 알림 숨기기", style = MaterialTheme.typography.bodyMedium)
+            Text("꺼두면 원본과 모모 알림이 함께 보여요", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+        }
+        Switch(checked = hidden, onCheckedChange = null, enabled = enabled)
+    }
+}
+
+@Composable
+private fun SourceStatusRow(mark: String, name: String, status: String, enabled: Boolean, onRefresh: () -> Unit, hint: String? = null) {
     Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         ConnectorMark(mark, Clay.Sage)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(name, style = MaterialTheme.typography.titleMedium)
             Text(status, style = MaterialTheme.typography.bodySmall, color = Clay.Green)
+            if (hint != null) Text(hint, style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
         }
         TextButton(onClick = onRefresh, enabled = enabled) { Text("지금") }
     }

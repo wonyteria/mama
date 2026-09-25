@@ -1,7 +1,5 @@
 package kr.mom.probe.task
 
-import java.time.Instant
-import java.time.ZoneId
 import kr.mom.probe.data.NotificationCandidate
 import kr.mom.probe.data.NotificationCandidateParser
 import kr.mom.probe.data.ChildNoticeProfile
@@ -18,33 +16,67 @@ data class CandidateActionPlan(
     val sourceNotificationId: String,
     val dueAt: Long?,
     val remindAt: Long?,
+    val actionKind: String? = null,
+    val checklist: List<String> = emptyList(),
     val noticeGroupKeys: Set<String> = emptySet(),
 )
 
-/** Automates only explicit, sufficiently-evidenced actions; ambiguous notices remain review-only. */
+/**
+ * Automates only explicit, evidence-backed required actions. Submission and
+ * preparation become separate tasks; preparation carries its own checklist.
+ * Ambiguous notices remain review-only.
+ */
 object CandidateActionPlanner {
+    private val submitEvidence = Regex("제출|회신|납부|신청|응답|서명|동의서|마감|기한")
+
+    fun plans(
+        record: ProbeRecord,
+        now: Long = System.currentTimeMillis(),
+        child: ChildNoticeProfile = ChildNoticeProfile(),
+        institution: String = "",
+    ): List<CandidateActionPlan> {
+        val candidate = NotificationCandidateParser.parse(record, child) ?: return emptyList()
+        val dueAt = candidate.dueAt
+        if (dueAt != null && dueAt <= now + 5 * 60_000L) return emptyList()
+        if (record.title.isBlank()) return emptyList()
+        // Undated preparation requests without an explicit item list stay review-only.
+        if (dueAt == null && candidate.kind == NotificationCandidate.Kind.PREPARE && candidate.items.isEmpty()) return emptyList()
+        val sourceNotificationId = NoticeGrouping.groupId(record, institution)
+        val groupKeys = NoticeGrouping.keys(record, institution)
+        val remindAt = dueAt?.let { nextReminder(it, now) }
+        val plans = mutableListOf<CandidateActionPlan>()
+        val noticeText = listOf(record.title, record.bigText, record.text, record.textLines.joinToString(" "))
+            .filter { it.isNotBlank() }.joinToString(" ")
+        if (candidate.kind != NotificationCandidate.Kind.PREPARE || submitEvidence.containsMatchIn(noticeText)) {
+            plans += CandidateActionPlan(
+                text = actionText(record, "제출·신청", candidate.dueText),
+                sourceNotificationId = sourceNotificationId,
+                dueAt = dueAt,
+                remindAt = remindAt,
+                actionKind = "submit",
+                noticeGroupKeys = groupKeys,
+            )
+        }
+        if (candidate.kind == NotificationCandidate.Kind.PREPARE || candidate.items.isNotEmpty()) {
+            plans += CandidateActionPlan(
+                text = actionText(record, "준비물 챙기기", candidate.dueText),
+                sourceNotificationId = sourceNotificationId,
+                dueAt = dueAt,
+                remindAt = remindAt,
+                actionKind = "prepare",
+                checklist = candidate.items,
+                noticeGroupKeys = groupKeys,
+            )
+        }
+        return plans
+    }
+
     fun plan(
         record: ProbeRecord,
         now: Long = System.currentTimeMillis(),
         child: ChildNoticeProfile = ChildNoticeProfile(),
         institution: String = "",
-    ): CandidateActionPlan? {
-        val candidate = NotificationCandidateParser.parse(record, child) ?: return null
-        val dueAt = candidate.dueAt
-        if (dueAt != null && dueAt <= now + 5 * 60_000L) return null
-        val explicitEnough = when (candidate.kind) {
-            NotificationCandidate.Kind.PREPARE -> candidate.items.isNotEmpty()
-            NotificationCandidate.Kind.SUBMIT, NotificationCandidate.Kind.DEADLINE -> record.title.isNotBlank()
-        }
-        if (!explicitEnough) return null
-        return CandidateActionPlan(
-            text = taskText(record, candidate),
-            sourceNotificationId = NoticeGrouping.groupId(record, institution),
-            dueAt = dueAt,
-            remindAt = null,
-            noticeGroupKeys = NoticeGrouping.keys(record, institution),
-        )
-    }
+    ): CandidateActionPlan? = plans(record, now, child, institution).firstOrNull()
 
     fun taskText(record: ProbeRecord, candidate: NotificationCandidate): String {
         val actionLabel = when (candidate.kind) {
@@ -57,18 +89,12 @@ object CandidateActionPlanner {
             .joinToString(" · ").take(AssistantTaskStore.MAX_TEXT)
     }
 
-    private fun defaultReminder(dueAt: Long, now: Long): Long? {
-        val due = Instant.ofEpochMilli(dueAt).atZone(SEOUL)
-        val previousEvening = due.minusDays(1).withHour(20).withMinute(0).withSecond(0).withNano(0).toInstant().toEpochMilli()
-        val oneHourBefore = dueAt - 60 * 60_000L
-        return when {
-            previousEvening > now + 5 * 60_000L -> previousEvening
-            oneHourBefore > now + 5 * 60_000L -> oneHourBefore
-            else -> null
-        }
-    }
+    private fun actionText(record: ProbeRecord, actionLabel: String, dueText: String?): String =
+        listOfNotNull(record.title.ifBlank { "알림 확인" }, actionLabel, dueText)
+            .joinToString(" · ").take(AssistantTaskStore.MAX_TEXT)
 
-    private val SEOUL = ZoneId.of("Asia/Seoul")
+    internal fun nextReminder(dueAt: Long, now: Long): Long? =
+        TaskReminderScheduler.nextReminderAfter(dueAt, now + 4 * 60_000L)
 }
 
 object AutoActionCoordinator {
@@ -93,21 +119,28 @@ object AutoActionCoordinator {
                 store.suspendAutomaticSource(sourceNotificationId, record.id, groupKeys)
                 return
             }
-            val plan = CandidateActionPlanner.plan(record, child = child, institution = institution) ?: run {
+            val plans = CandidateActionPlanner.plans(record, child = child, institution = institution)
+            if (plans.isEmpty()) {
                 kr.mom.probe.reminder.AssistantAlertNotifier.cancel(context, record)
                 store.suspendAutomaticSource(sourceNotificationId, record.id, groupKeys)
                 return
             }
-            val reminder = plan.remindAt?.takeIf { TaskReminderScheduler.canDeliver(context) }
-            store.addTask(
-                plan.text,
-                plan.sourceNotificationId,
-                plan.dueAt,
-                reminder,
-                sourceRevisionId = record.id,
-                sourceKind = AssistantTaskSource.AUTO_NOTICE,
-                noticeGroupKeys = plan.noticeGroupKeys,
+            store.applyAutomaticPlans(
+                sourceNotificationId,
+                record.id,
+                noticeGroupKeys = groupKeys,
+                plans = plans.map { plan ->
+                    AutoTaskPlan(
+                        actionKind = plan.actionKind ?: "submit",
+                        text = plan.text,
+                        checklist = plan.checklist,
+                        dueAt = plan.dueAt,
+                        remindAt = plan.remindAt,
+                    )
+                },
             )
+        }.onFailure {
+            android.util.Log.w("AutoActionCoordinator", "auto-action failed for ${record.id}", it)
         }
     }
 }

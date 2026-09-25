@@ -2,7 +2,7 @@
 
 학교·학원 공지에서 준비물, 마감, 일정 변경을 자동으로 챙기는 엄마용 로컬 에이전트입니다.
 
-현재 작업 폴더는 `D:\Codex\mom-agent`이고, 원격 저장소는 [wonyteria/mama](https://github.com/wonyteria/mama)입니다.
+현재 작업 폴더는 `D:\플랫폼\mama\project`이고, 원격 저장소는 [wonyteria/mama](https://github.com/wonyteria/mama)입니다.
 
 ## 구성
 

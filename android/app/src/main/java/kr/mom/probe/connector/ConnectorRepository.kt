@@ -66,7 +66,7 @@ class ConnectorRepository private constructor(context: Context) {
     }
 
     suspend fun disconnectWebsites(): Boolean = mutex.withLock {
-        persist(mutableState.value.copy(sites = emptyMap()))
+        persist(mutableState.value.copy(sites = mutableState.value.sites.filterKeys { it == "neis-public" }))
     }
 
     private suspend fun updateSite(siteId: String, transform: (SiteConnection) -> SiteConnection): Boolean = mutex.withLock {

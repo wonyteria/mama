@@ -85,7 +85,7 @@ object TaskReminderScheduler {
 
     fun sync(context: Context, tasks: List<AssistantTask>) {
         val app = context.applicationContext
-        val active = tasks.filter { !it.completed && !it.suspended && it.remindAt != null }.associateBy { it.id }
+        val active = tasks.filter { !it.completed && !it.suspended && !it.excluded && it.remindAt != null }.associateBy { it.id }
         val preferences = scheduledPrefs(app)
         val previous = preferences.getStringSet(SCHEDULED_IDS, emptySet()).orEmpty().toSet()
         (previous - active.keys).forEach { cancel(app, it) }
@@ -256,6 +256,22 @@ object TaskReminderScheduler {
 
     private fun legacyNotificationId(taskId: String): Int = taskId.hashCode() xor 0x4D4F4D4F
 
+    private val seoul: java.time.ZoneId = java.time.ZoneId.of("Asia/Seoul")
+
+    /**
+     * Recurring reminder slots for a due date: the previous evening, the morning of,
+     * and one hour before. Returns the earliest slot still in the future.
+     */
+    internal fun nextReminderAfter(dueAt: Long, after: Long): Long? {
+        val dueDay = java.time.Instant.ofEpochMilli(dueAt).atZone(seoul).toLocalDate()
+        val slots = listOf(
+            dueDay.minusDays(1).atTime(20, 0).atZone(seoul).toInstant().toEpochMilli(),
+            dueDay.atTime(7, 0).atZone(seoul).toInstant().toEpochMilli(),
+            dueAt - 3_600_000L,
+        )
+        return slots.filter { it > after + 60_000L }.minOrNull()
+    }
+
     internal fun isFire(intent: Intent): Boolean = intent.action == ACTION_FIRE
     internal fun isSnooze(intent: Intent): Boolean = intent.action == ACTION_SNOOZE
     internal fun isStop(intent: Intent): Boolean = intent.action == ACTION_STOP
@@ -294,6 +310,14 @@ class TaskReminderReceiver : BroadcastReceiver() {
                         store.activeAlarmNotificationId(taskId, occurrenceId)?.let {
                             context.getSystemService(NotificationManager::class.java).cancel(it)
                         }
+                        // Dismissing the sound does not finish the task; re-arm the next
+                        // reminder slot so unfinished work keeps surfacing.
+                        val task = store.tasks.value.firstOrNull {
+                            it.id == taskId && !it.completed && !it.suspended && !it.excluded &&
+                                it.activeAlarmOccurrenceId == occurrenceId
+                        }
+                        val nextAt = task?.dueAt?.let { TaskReminderScheduler.nextReminderAfter(it, System.currentTimeMillis()) }
+                        store.dismissAlarmOccurrence(taskId, occurrenceId, nextAt)
                     }
                     return@launch
                 }
@@ -310,7 +334,7 @@ class TaskReminderReceiver : BroadcastReceiver() {
                 }
                 val fireOccurrenceId = occurrenceId ?: return@launch
                 val task = store.tasks.value.firstOrNull {
-                    it.id == taskId && !it.completed && !it.suspended && it.remindAt != null &&
+                    it.id == taskId && !it.completed && !it.suspended && !it.excluded && it.remindAt != null &&
                         AssistantTaskStore.expectedOccurrenceId(it) == fireOccurrenceId
                 } ?: return@launch
                 if (!TaskReminderScheduler.canDeliver(context)) {

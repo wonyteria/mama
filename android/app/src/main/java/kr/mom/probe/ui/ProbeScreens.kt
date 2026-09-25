@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -39,11 +40,12 @@ import kr.mom.probe.data.ChildNoticeProfile
 import kr.mom.probe.data.NoticeApplicability
 import kr.mom.probe.data.NoticeDecision
 import kr.mom.probe.data.NoticeDecisionEngine
-import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.NoticeObligation
 import kr.mom.probe.data.ProbeRecord
 import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.data.NotificationCandidateParser
+import kr.mom.probe.data.ProbeRules
+import kr.mom.probe.connector.NeisEvent
 import kr.mom.probe.sync.SourceAgendaItem
 
 fun displayTime(millis: Long): String = Instant.ofEpochMilli(millis).atZone(ZoneId.of("Asia/Seoul"))
@@ -100,7 +102,7 @@ fun WelcomeScreen(busy: Boolean, onStart: () -> Unit, onPolicy: () -> Unit) {
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("선택한 앱의 새 알림을 모모가 기기 안에서 정리해요. 날짜와 행동이 분명한 일은 자동으로 부탁과 알림을 만들어요.", style = MaterialTheme.typography.bodyMedium, color = Clay.Muted)
-            Text("선택한 앱의 알림과 자녀 정보는 이 기기에 암호화해 보관해요. 알림 원문은 14일 뒤 삭제하며 재설치하면 복구할 수 없어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+            Text("선택한 앱의 알림과 자녀 정보는 이 기기에 암호화해 보관해요. 학교명은 나이스 공식 OpenAPI에서 학교를 찾을 때만 전송해요. 알림 원문은 14일 뒤 삭제하며 재설치하면 복구할 수 없어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
             TextButton(onClick = onPolicy) { Text("수집·보관·삭제 설명 보기") }
             ConsentRow(agreed, { agreed = it }, "설명을 확인했고, 이 기기에서 알림을 모아 챙길 후보를 찾는 데 동의해요. (필수)")
         }
@@ -210,136 +212,7 @@ fun AccessScreen(labels: List<String>, busy: Boolean, onOpen: () -> Unit, onSkip
     }
 }
 
-@Composable
-fun HomeScreen(settings: ProbeSettings, records: List<ProbeRecord>, access: Boolean, connected: Boolean,
-               onSetup: () -> Unit, onInbox: () -> Unit, onRecord: (ProbeRecord) -> Unit,
-               connectedSiteCount: Int = 0,
-               sourceAgenda: List<SourceAgendaItem> = emptyList(),
-               sourceStatusMessage: String? = null,
-               schoolEventsLimited: Boolean = false,
-               pendingTaskCount: Int = 0, briefingReady: Boolean = true,
-               rememberedGroupKeys: Set<Set<String>> = emptySet(),
-               onAgenda: () -> Unit = onInbox,
-               onEnableBriefings: () -> Unit = {}, onAssistant: (() -> Unit)? = null) {
-    val hasApps = settings.selectedPackages.isNotEmpty()
-    val configured = settings.childName.isNotBlank() && (connectedSiteCount > 0 || (hasApps && access))
-    val active = connectedSiteCount > 0 || (configured && hasApps && settings.collectionEnabled)
-    val childProfile = remember(settings.schoolGrade, settings.schoolLevel, settings.schoolName) {
-        NoticeDecisionEngine.childProfile(settings)
-    }
-    val now = remember(records, pendingTaskCount) { System.currentTimeMillis() }
-    val institution = remember(settings.schoolName) { NoticeGrouping.institution(settings) }
-    val noticeDecisions = remember(records, childProfile, rememberedGroupKeys, institution) {
-        val groupIds = NoticeGrouping.groupIds(records, institution)
-        records.distinctBy { groupIds.getValue(it.id) }
-            .map { it to NoticeDecisionEngine.decide(it, childProfile) }
-    }
-    fun linkedToTask(record: ProbeRecord): Boolean {
-        if (rememberedGroupKeys.isEmpty()) return false
-        val recordKeys = NoticeGrouping.keys(record, institution)
-        return rememberedGroupKeys.any { NoticeGrouping.matches(recordKeys, it) }
-    }
-    val actionRecords = noticeDecisions
-        .filter { (record, decision) ->
-            !linkedToTask(record) && NoticeDecisionEngine.isBriefingAction(decision, now)
-        }
-        .sortedWith(compareBy<Pair<ProbeRecord, NoticeDecision>> { it.second.action?.dueAt ?: Long.MAX_VALUE }
-            .thenByDescending { it.first.receivedAt })
-        .map { it.first }
-    val optionalRecords = noticeDecisions
-        .filter { (record, decision) ->
-            !linkedToTask(record) && decision.isOptionalForChild()
-        }
-        .sortedByDescending { it.first.receivedAt }
-    val topAction = actionRecords.firstOrNull()
-    val actionCount = actionRecords.size + pendingTaskCount
-    Page {
-        Brand()
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (configured) "오늘\n챙길 일" else "함께 챙길\n준비를 해요", Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
-            if (LocalDensity.current.fontScale <= 1.25f) BellMascot(Modifier.size(98.dp, 118.dp))
-        }
-        AgentCard(Modifier.fillMaxWidth()) {
-            StatusPill(when {
-                !configured -> "모모 준비 중"
-                !active -> "잠시 멈춤"
-                actionCount > 0 -> "곧 챙길 일 ${actionCount}개"
-                !briefingReady -> "브리핑 설정 필요"
-                else -> "모모가 확인 중"
-            })
-            Text(when {
-                !configured -> "마지막 준비를 도와드릴게요"
-                !active -> "알림 모으기를 멈췄어요"
-                topAction != null -> topAction.title.ifBlank { "확인할 새 소식이 있어요" }
-                pendingTaskCount > 0 -> "제가 기억하고 있는 부탁이 있어요"
-                !briefingReady -> "아침·저녁에 한 번에 정리해드릴까요?"
-                else -> "지금은 급하게 챙길 일이 없어요"
-            }, style = MaterialTheme.typography.titleLarge)
-            Text(when {
-                !configured -> "한 번만 설정하면, 고른 앱의 새 알림을\n이 휴대폰에서 확인할 수 있어요."
-                !active -> "저장한 소식은 그대로 있어요.\n원할 때 다시 시작할 수 있어요."
-                topAction != null -> {
-                    val action = NoticeDecisionEngine.decide(topAction, childProfile).action
-                    val items = NoticeDecisionEngine.extractItems("${topAction.title} ${topAction.bigText} ${topAction.text} ${topAction.textLines.joinToString(" ")}")
-                        .takeIf { it.isNotEmpty() }?.joinToString(", ")
-                    listOfNotNull(items, action?.whenText, topAction.appLabel.takeIf { it.isNotBlank() })
-                        .joinToString(" · ")
-                        .ifBlank { "원문에서 한 번 확인해 주세요." }
-                }
-                pendingTaskCount > 0 -> "완료할 때까지 부탁 목록에 안전하게 보관하고 있어요."
-                !briefingReady -> "새 소식은 묶어서 알려드리고,\n오늘 안에 놓칠 일만 바로 알려드려요."
-                else -> "새 소식이 오면 필요한 행동만 골라서 알려드릴게요."
-            }, color = Clay.Muted)
-            when {
-                !active -> AgentButton(if (configured) "다시 시작하기" else "이어서 설정하기", Modifier.testTag("resume-setup"), onClick = onSetup)
-                topAction != null -> AgentButton("내용 보기", onClick = { onRecord(topAction) })
-                pendingTaskCount > 0 && onAssistant != null -> AgentButton("부탁 확인하기", onClick = onAssistant)
-                !briefingReady -> AgentButton("모모 브리핑 켜기", onClick = onEnableBriefings)
-                onAssistant != null -> AgentButton("모모에게 부탁하기", onClick = onAssistant)
-            }
-            if (onAssistant != null && (topAction != null || pendingTaskCount > 0 || !briefingReady)) {
-                TextButton(onClick = onAssistant, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("부탁 목록 보기") }
-            }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            BentoCard(Modifier.weight(1f), Clay.Sage) {
-                Text("일정", color = Clay.Green, style = MaterialTheme.typography.bodySmall)
-                Text("${sourceAgenda.size}개", style = MaterialTheme.typography.titleLarge)
-                Text(sourceAgenda.firstOrNull()?.let { "${briefDate(it.dateIso)} ${it.title}" }
-                    ?: if (schoolEventsLimited) "저장된 일정 없음 · 일부 조회"
-                    else "저장된 학교 일정 없음",
-                    maxLines = 2, overflow = TextOverflow.Ellipsis, color = Clay.Muted, style = MaterialTheme.typography.bodySmall)
-                if (sourceAgenda.isNotEmpty()) TextButton(onClick = onAgenda) { Text("일정 보기") }
-                sourceStatusMessage?.let { Text(it, color = Clay.Error, style = MaterialTheme.typography.bodySmall) }
-            }
-            BentoCard(Modifier.weight(1f), Clay.Peach) {
-                Text("챙길 일", color = Clay.CoralDark, style = MaterialTheme.typography.bodySmall)
-                Text("${actionCount}개", style = MaterialTheme.typography.titleLarge)
-                Text(if (actionCount > 0) "후보 ${actionRecords.size} · 부탁 $pendingTaskCount" else "새 소식을 기다려요", color = Clay.Muted, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-        if (optionalRecords.isNotEmpty()) {
-            val (record, decision) = optionalRecords.first()
-            Column(Modifier.fillMaxWidth().flatSurface().clickable(role = Role.Button) { onRecord(record) }.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("관심 있을 만한 소식 ${optionalRecords.size}개", color = Clay.Green, style = MaterialTheme.typography.bodySmall)
-                Text(record.title.ifBlank { decision.action?.label ?: "선택 활동" }, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(decision.action?.whenText?.let { "접수 관련 원문 표현: $it" } ?: decision.applicabilityReason,
-                    color = Clay.Muted, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-        Text("연결한 곳 ${settings.selectedPackages.size + connectedSiteCount}개", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
-        if (records.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("새로 확인한 소식", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onInbox) { Text("전체  ›", style = MaterialTheme.typography.bodySmall) }
-            }
-            records.take(3).forEach { RecordCard(it, onClick = { onRecord(it) }) }
-        }
-    }
-}
-
-private fun briefDate(value: String): String = when {
+internal fun briefDate(value: String): String = when {
     value.length == 8 -> "${value.substring(4, 6)}월 ${value.substring(6, 8)}일"
     value.length == 10 && value[4] == '-' -> "${value.substring(5, 7)}월 ${value.substring(8, 10)}일"
     else -> value
@@ -356,9 +229,13 @@ fun EmptyCard(title: String, subtitle: String) {
 }
 
 @Composable
-fun RecordCard(record: ProbeRecord, onClick: () -> Unit) {
+fun RecordCard(record: ProbeRecord, unread: Boolean = false, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().flatSurface().clickable(role = Role.Button, onClick = onClick).padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Row { Text(record.appLabel, Modifier.weight(1f), color = Clay.Green, style = MaterialTheme.typography.bodySmall); Text(displayTime(record.receivedAt), color = Clay.Muted, style = MaterialTheme.typography.bodySmall) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (unread) Box(Modifier.size(8.dp).background(Clay.Coral, CircleShape).testTag("unread-dot"))
+            Text(record.appLabel, Modifier.weight(1f).padding(start = if (unread) 8.dp else 0.dp), color = Clay.Green, style = MaterialTheme.typography.bodySmall)
+            Text(displayTime(record.receivedAt), color = Clay.Muted, style = MaterialTheme.typography.bodySmall)
+        }
         Text(record.title.ifBlank { "제목 없는 알림" }, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
         val body = record.bigText.ifBlank { record.text }.ifBlank { record.textLines.joinToString(" ") }
         Text(body.ifBlank { "알림에 내용이 없어요. 원래 앱에서 확인해주세요." }, color = Clay.Muted, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -366,21 +243,29 @@ fun RecordCard(record: ProbeRecord, onClick: () -> Unit) {
 }
 
 @Composable
-fun InboxScreen(records: List<ProbeRecord>, onRecord: (ProbeRecord) -> Unit, onExport: () -> Unit) {
+fun NewsScreen(records: List<ProbeRecord>, readIds: Set<String>, onRecord: (ProbeRecord) -> Unit, onExport: () -> Unit, institution: String = "") {
     var filter by rememberSaveable { mutableStateOf("") }
     var limit by remember { mutableIntStateOf(30) }
-    val packages = records.map { it.packageName }.distinct()
-    val shown = records.filter { filter.isEmpty() || it.packageName == filter }
+    // One row per canonical notice group: app and web copies of the same notice
+    // collapse to the strongest representative while the record id stays stable.
+    val grouped = remember(records, institution) {
+        kr.mom.probe.data.NoticeGrouping.representatives(records, institution)
+            .sortedByDescending { it.receivedAt }
+    }
+    val packages = grouped.map { it.packageName }.distinct()
+    val packageLabels = grouped.groupBy { it.packageName }.mapValues { it.value.first().appLabel }
+    val shown = grouped.filter { filter.isEmpty() || it.packageName == filter }
+    val unreadCount = grouped.count { it.id !in readIds }
     Page {
         Eyebrow("이 기기에 모아둔 소식")
-        Text("받은 알림", style = MaterialTheme.typography.headlineLarge)
-        Text("총 ${records.size}개 · 14일 동안 보관해요", color = Clay.Muted)
+        Text("소식", style = MaterialTheme.typography.headlineLarge)
+        Text("총 ${grouped.size}개 · 확인하지 않은 소식 ${unreadCount}개 · 14일 동안 보관해요", color = Clay.Muted)
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             FilterChip(filter.isEmpty(), { filter = ""; limit = 30 }, label = { Text("전체") })
-            packages.forEach { pkg -> FilterChip(filter == pkg, { filter = pkg; limit = 30 }, label = { Text(SourceCatalog.label(pkg).take(8)) }) }
+            packages.forEach { pkg -> FilterChip(filter == pkg, { filter = pkg; limit = 30 }, label = { Text((packageLabels[pkg] ?: SourceCatalog.label(pkg)).take(8)) }) }
         }
-        if (shown.isEmpty()) EmptyCard("아직 모아둔 알림이 없어요", "연결한 앱에 새 알림이 오면 여기에 보여요.")
-        else shown.take(limit).forEach { RecordCard(it) { onRecord(it) } }
+        if (shown.isEmpty()) EmptyCard("아직 모아둔 소식이 없어요", "연결한 앱·사이트에 새 소식이 오면 여기에 보여요.")
+        else shown.take(limit).forEach { RecordCard(it, unread = it.id !in readIds) { onRecord(it) } }
         if (shown.size > limit) TextButton(onClick = { limit += 30 }) { Text("더 보기") }
         ClayButton("연구자료 검토하고 저장", enabled = records.isNotEmpty(), primary = false, onClick = onExport)
     }
@@ -388,7 +273,8 @@ fun InboxScreen(records: List<ProbeRecord>, onRecord: (ProbeRecord) -> Unit, onE
 
 @Composable
 fun DetailScreen(record: ProbeRecord, alreadyRemembered: Boolean = false, childProfile: ChildNoticeProfile = ChildNoticeProfile(), onBack: () -> Unit, onDelete: () -> Unit,
-                 onSource: () -> Unit, onRemember: (String, Long?, Long?) -> Unit = { _, _, _ -> }) {
+                 onSource: () -> Unit, onRemember: (String, Long?, Long?) -> Unit = { _, _, _ -> },
+                 linkedTasks: List<kr.mom.probe.task.AssistantTask> = emptyList(), onOpenTodo: (() -> Unit)? = null) {
     var fields by rememberSaveable(record.id) { mutableStateOf(false) }
     var confirmedDueAt by rememberSaveable(record.id) { mutableStateOf<Long?>(null) }
     val context = LocalContext.current
@@ -418,12 +304,36 @@ fun DetailScreen(record: ProbeRecord, alreadyRemembered: Boolean = false, childP
             val body = record.bigText.ifBlank { record.text }.ifBlank { record.textLines.joinToString("\n") }
             SelectionContainer { Text(body.ifBlank { "앱이 알림 내용을 보내주지 않았어요. 원래 앱에서 직접 확인해주세요." }, style = MaterialTheme.typography.bodyLarge) }
         }
+        if (linkedTasks.isNotEmpty()) {
+            ClayCard(tint = Clay.Sage) {
+                StatusPill("할 일에 저장됨")
+                linkedTasks.forEach { task ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(task.text, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                listOfNotNull(
+                                    if (task.completed) "완료됨" else "미완료",
+                                    kr.mom.probe.task.TodoSelectors.progressText(task),
+                                    task.dueAt?.let { "기한 ${displayTime(it)}" },
+                                ).joinToString(" · "),
+                                color = if (task.completed) Clay.Green else Clay.Muted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+                onOpenTodo?.let { open ->
+                    TextButton(onClick = open, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("할 일에서 관리  ›") }
+                }
+            }
+        }
         decision.action?.let { action ->
             AgentCard {
                 StatusPill(when {
                     decision.applicability == NoticeApplicability.INELIGIBLE -> "대상 아님"
                     decision.obligation == NoticeObligation.OPTIONAL_OPPORTUNITY -> "선택 활동"
-                    alreadyRemembered -> "기억 중"
+                    alreadyRemembered -> "할 일 있음"
                     else -> "근거 확인"
                 })
                 Text(action.label, style = MaterialTheme.typography.titleMedium)
@@ -433,13 +343,13 @@ fun DetailScreen(record: ProbeRecord, alreadyRemembered: Boolean = false, childP
                 if (decision.issues.isNotEmpty()) Text(decision.issues.joinToString("\n"), style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
                 val canRemember = action.required && !alreadyRemembered
                 Text(when {
-                    decision.obligation == NoticeObligation.OPTIONAL_OPPORTUNITY -> "관심을 표시하기 전에는 신청 부탁이나 마감 알림을 만들지 않아요."
-                    alreadyRemembered -> "같은 원문에서 만든 부탁은 중복으로 만들지 않아요."
+                    decision.obligation == NoticeObligation.OPTIONAL_OPPORTUNITY -> "관심을 표시하기 전에는 신청이나 마감 할 일을 만들지 않아요."
+                    alreadyRemembered -> "같은 원문에서 만든 할 일은 중복으로 만들지 않아요."
                     action.dueAt == null -> "시각이 분명하지 않아 자동 알림 없이 원문 확인이 필요해요."
-                    else -> "필요하면 확인한 시각으로 부탁에 저장할 수 있어요."
+                    else -> "필요하면 확인한 시각으로 할 일에 저장할 수 있어요."
                 }, style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
                 if (action.required) {
-                    AgentButton(if (alreadyRemembered) "이미 모모가 기억하고 있어요" else "날짜 확인하고 모모에게 맡기기", enabled = canRemember, onClick = ::chooseDueTime)
+                    AgentButton(if (alreadyRemembered) "이미 할 일에 있어요" else "날짜 확인하고 할 일로 추가", enabled = canRemember, onClick = ::chooseDueTime)
                 } else {
                     OutlinedButton(onClick = onSource, modifier = Modifier.fillMaxWidth()) { Text("원문에서 살펴보기") }
                 }
@@ -473,7 +383,7 @@ fun DetailScreen(record: ProbeRecord, alreadyRemembered: Boolean = false, childP
                     OutlinedButton(onClick = { onRemember(taskText(), dueAt, dueAt); confirmedDueAt = null }, enabled = dueAt > System.currentTimeMillis(), modifier = Modifier.fillMaxWidth()) { Text("기한 무렵") }
                 }
             },
-            confirmButton = { TextButton(onClick = { onRemember(taskText(), dueAt, null); confirmedDueAt = null }) { Text("알림 없이 부탁만") } },
+            confirmButton = { TextButton(onClick = { onRemember(taskText(), dueAt, null); confirmedDueAt = null }) { Text("알림 없이 저장") } },
             dismissButton = { TextButton(onClick = { confirmedDueAt = null }) { Text("취소") } },
         )
     }
@@ -553,7 +463,7 @@ fun PolicyContent(onDelete: (() -> Unit)? = null) {
         onDelete?.let { delete -> TextButton(onClick = delete) { Text("참여 종료 · 전체 데이터 삭제", color = Clay.Error) } }
         Text("수집: 직접 선택한 앱의 새 알림 제목·본문·게시 시각·앱 정보, 아이 이름/별칭·학교·학년. 다른 앱 내용은 저장하지 않습니다.")
         Text("보관: Android 보안 키로 암호화하여 이 휴대폰에만 저장합니다. 원문은 받은 날부터 14일, 아이 이름과 설정은 참여 종료까지 보관합니다. 휴대폰이 꺼져 있으면 다음 실행 시 만료 자료를 정리합니다.")
-        Text("외부 연결: 학교 홈페이지 공지는 공개 게시판에서만 확인하며, 학교명은 외부 서비스로 보내지 않습니다. 부모 계정 비밀번호는 보관하지 않습니다. 일반 ChatGPT 로그인은 이 앱의 API 사용권이 아니며, 알림 원문은 서버·AI·광고 서비스로 자동 전송하지 않습니다.")
+        Text("외부 연결: 선택한 학교명을 나이스 공식 OpenAPI로 보내 공개 학교정보를 찾을 수 있습니다. 부모 계정 비밀번호는 보관하지 않습니다. 일반 ChatGPT 로그인은 이 앱의 API 사용권이 아니며, 알림 원문은 서버·AI·광고 서비스로 자동 전송하지 않습니다.")
         Text("통제: 언제든 앱 선택을 바꾸거나 수집을 멈출 수 있습니다. 개별 알림 또는 전체 정보를 삭제할 수 있습니다. 전체 삭제는 동의와 암호화 키, 캘린더·알람 앱 선택 기록과 실행 기록까지 제거합니다.")
         Text("제한: 앱 안의 공지·첨부파일 전체를 읽지 않습니다. 후보를 자동 확정하거나 AI 서버로 보내지 않으며, 결제도 하지 않습니다. 앱 삭제/재설치/기기 변경 시 복구하지 않습니다. 이미 외부에 저장한 파일과 외부 캘린더 일정은 앱에서 회수할 수 없습니다.")
     }

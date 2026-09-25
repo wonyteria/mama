@@ -5,6 +5,7 @@ import kr.mom.probe.sync.SourceIds
 
 object PublicSourceFetchers {
     fun registerDefaults() {
+        SourceFetcherRegistry.register(SourceIds.NEIS_PUBLIC, NeisPublicClient())
         SourceFetcherRegistry.register(SourceIds.SCHOOL_WEBSITE, SchoolWebsiteClient())
     }
 }

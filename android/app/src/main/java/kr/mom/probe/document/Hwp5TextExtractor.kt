@@ -8,6 +8,7 @@ import java.util.zip.Inflater
 internal object Hwp5TextExtractor {
     private val utf16le = Charset.forName("UTF-16LE")
     private const val HWP_TAG_PARA_TEXT = 67
+    private const val EXTENDED_CONTROL_LENGTH = 8
     private const val FLAG_COMPRESSED = 1
     private const val FLAG_PASSWORD_PROTECTED = 1 shl 1
     private const val FLAG_DISTRIBUTION_PROTECTED = 1 shl 2
@@ -154,17 +155,43 @@ internal object Hwp5TextExtractor {
         return paragraphs
     }
 
+    // HWP 문단 텍스트의 제어 문자는 두 종류다. 0x0A/0x0D/0x18/0x1E/0x1F 같은
+    // 문자 제어는 1 WCHAR이고, 개체·표·필드·탭 등 인라인/확장 제어는 제어 문자 뒤에
+    // 컨트롤 ID와 매개변수가 붙는 8 WCHAR 블록이다. 확장 블록 전체를 건너뛰지 않으면
+    // 필드 데이터가 깨진 텍스트로 표시된다.
+    private fun isExtendedControl(code: Int): Boolean =
+        code in 0x01..0x09 || code in 0x0B..0x0C || code in 0x0E..0x17
+
     private fun visibleHwpText(bytes: ByteArray, offset: Int, size: Int): String {
         val safeSize = size - (size % 2)
         val decoded = String(bytes, offset, safeSize, utf16le)
         val builder = StringBuilder(decoded.length)
-        decoded.forEach { ch ->
+        var index = 0
+        while (index < decoded.length) {
+            val ch = decoded[index]
             when {
-                ch == '\t' -> builder.append('\t')
-                ch == '\n' || ch == '\r' -> builder.append('\n')
-                ch.code < 32 -> Unit
-                Character.isISOControl(ch) -> Unit
-                else -> builder.append(ch)
+                isExtendedControl(ch.code) -> {
+                    if (ch == '\t') builder.append('\t')
+                    index = minOf(index + EXTENDED_CONTROL_LENGTH, decoded.length)
+                }
+                ch == '\n' || ch == '\r' -> {
+                    builder.append('\n')
+                    index += 1
+                }
+                ch == '\u0018' -> {
+                    builder.append('-')
+                    index += 1
+                }
+                ch == '\u001E' || ch == '\u001F' -> {
+                    builder.append(' ')
+                    index += 1
+                }
+                ch.code < 32 -> index += 1
+                Character.isISOControl(ch) -> index += 1
+                else -> {
+                    builder.append(ch)
+                    index += 1
+                }
             }
         }
         return builder.toString().replace(Regex("""[ \t]+\n"""), "\n").replace(Regex("""\n{3,}"""), "\n\n").trim()

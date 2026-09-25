@@ -334,7 +334,7 @@ object NoticeDecisionEngine {
                 issues += "원문 요일이 날짜와 맞지 않아 정확한 시각으로 쓰지 않았어요."
             }
             NoticeDateFact(role, match.value.trim(), resolved?.first, resolved?.second, resolved?.third == true)
-        }
+        }.distinct()
         val dueFacts = facts.filter { it.role == NoticeDateRole.DUE }
         if (dueFacts.size > 1) issues += "여러 날짜가 섞여 있어 첫 날짜를 자동 기한으로 쓰지 않았어요."
         if (facts.any { it.dateIso == null && (it.text.contains("이번") || it.text.contains("다음")) }) {

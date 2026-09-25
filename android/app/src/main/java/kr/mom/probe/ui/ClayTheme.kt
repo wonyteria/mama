@@ -267,15 +267,21 @@ fun NavGlyph(kind: String, selected: Boolean, modifier: Modifier = Modifier) {
         val w = size.width
         val stroke = Stroke(w * .07f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
         when (kind) {
-            "home" -> {
-                val path = Path().apply { moveTo(w*.13f,w*.45f); lineTo(w*.5f,w*.13f); lineTo(w*.87f,w*.45f); lineTo(w*.8f,w*.45f); lineTo(w*.8f,w*.88f); lineTo(w*.2f,w*.88f); lineTo(w*.2f,w*.45f) }
-                drawPath(path,color,style=stroke)
-                drawRect(color,Offset(w*.42f,w*.58f),Size(w*.16f,w*.29f),style=stroke)
-            }
-            "inbox" -> {
+            "news", "inbox" -> {
                 drawRoundRect(color,Offset(w*.18f,w*.18f),Size(w*.64f,w*.66f),androidx.compose.ui.geometry.CornerRadius(w*.12f),style=stroke)
                 drawLine(color,Offset(w*.32f,w*.4f),Offset(w*.68f,w*.4f),w*.06f)
                 drawLine(color,Offset(w*.32f,w*.56f),Offset(w*.55f,w*.56f),w*.06f)
+            }
+            "todo" -> {
+                drawRoundRect(color,Offset(w*.18f,w*.14f),Size(w*.64f,w*.72f),androidx.compose.ui.geometry.CornerRadius(w*.12f),style=stroke)
+                val check = Path().apply { moveTo(w*.3f,w*.44f); lineTo(w*.44f,w*.56f); lineTo(w*.7f,w*.3f) }
+                drawPath(check,color,style=stroke)
+                drawLine(color,Offset(w*.3f,w*.72f),Offset(w*.7f,w*.72f),w*.06f)
+            }
+            "home", "today" -> {
+                val path = Path().apply { moveTo(w*.13f,w*.45f); lineTo(w*.5f,w*.13f); lineTo(w*.87f,w*.45f); lineTo(w*.8f,w*.45f); lineTo(w*.8f,w*.88f); lineTo(w*.2f,w*.88f); lineTo(w*.2f,w*.45f) }
+                drawPath(path,color,style=stroke)
+                drawRect(color,Offset(w*.42f,w*.58f),Size(w*.16f,w*.29f),style=stroke)
             }
             else -> {
                 drawCircle(color,w*.29f,style=stroke)
@@ -293,7 +299,7 @@ fun NavGlyph(kind: String, selected: Boolean, modifier: Modifier = Modifier) {
 fun ProbeBottomBar(current: String, onSelect: (String) -> Unit) {
     Row(Modifier.navigationBarsPadding().padding(horizontal = 22.dp, vertical = 10.dp)
         .fillMaxWidth().claySurface(radius = 36.dp).padding(7.dp), horizontalArrangement = Arrangement.SpaceAround) {
-        listOf("home" to "홈", "inbox" to "받은 알림", "settings" to "설정").forEach { (key, label) ->
+        listOf("home" to "오늘", "todo" to "할 일", "news" to "소식").forEach { (key, label) ->
             val selected = current == key
             Column(Modifier.weight(1f).background(if (selected) Clay.Sage else Color.Transparent, RoundedCornerShape(26.dp))
                 .clickable(role = Role.Tab, onClick = { onSelect(key) }).padding(vertical = 9.dp),

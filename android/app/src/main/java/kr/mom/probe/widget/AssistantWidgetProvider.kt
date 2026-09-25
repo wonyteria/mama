@@ -27,7 +27,7 @@ class AssistantWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        const val EXTRA_OPEN_ASSISTANT = "kr.mom.probe.widget.OPEN_ASSISTANT"
+        const val EXTRA_OPEN_TODO = "kr.mom.probe.widget.OPEN_TODO"
 
         /** True means the launcher accepted the request, not that the user placed the widget. */
         fun requestPin(context: Context): Boolean {
@@ -40,7 +40,7 @@ class AssistantWidgetProvider : AppWidgetProvider() {
 
         private fun update(context: Context, manager: AppWidgetManager, id: Int) {
             val intent = Intent(context, MainActivity::class.java)
-                .putExtra(EXTRA_OPEN_ASSISTANT, true)
+                .putExtra(EXTRA_OPEN_TODO, true)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             val open = PendingIntent.getActivity(
                 context, 4200, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,

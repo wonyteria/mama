@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
         // Production research builds protect raw notifications in recents/screenshots.
         if (!BuildConfig.DEBUG) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val session = ViewModelProvider(this)[ProbeSession::class.java]
-        val openAssistant = intent.getBooleanExtra(kr.mom.probe.widget.AssistantWidgetProvider.EXTRA_OPEN_ASSISTANT, false)
+        val openAssistant = intent.getBooleanExtra(kr.mom.probe.widget.AssistantWidgetProvider.EXTRA_OPEN_TODO, false)
         val initialRecordId = intent.getStringExtra(EXTRA_RECORD_ID)
         setContent { MomTheme { ProbeApp(session, openAssistant, initialRecordId) } }
     }
@@ -83,6 +83,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     val context = LocalContext.current
     val repository = remember { ProbeRepository.get(context) }
     val connectorRepository = remember { ConnectorRepository.get(context) }
+    val neisClient = remember { NeisPublicClient() }
     val sourceStateStore = remember { SourceSyncStateStore.get(context) }
     val connectorState by connectorRepository.state.collectAsStateWithLifecycle()
     val settings by repository.settings.collectAsStateWithLifecycle()
@@ -111,12 +112,15 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     var pendingNotificationTest by rememberSaveable { mutableStateOf(false) }
     var pendingAssistantAlertEnable by rememberSaveable { mutableStateOf(false) }
     var pendingTaskSave by remember { mutableStateOf<PendingTaskSave?>(null) }
+    var readIds by remember { mutableStateOf(kr.mom.probe.data.NoticeReadStore.readIds(context)) }
+    var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var pendingAccessReturn by rememberSaveable { mutableStateOf(false) }
     var accessRequestRefresh by rememberSaveable { mutableIntStateOf(-1) }
     var pendingAppPackage by rememberSaveable { mutableStateOf<String?>(null) }
     var appLoginPackage by rememberSaveable { mutableStateOf<String?>(null) }
     var showAccessRationale by remember { mutableStateOf(false) }
     var pendingWebsiteId by rememberSaveable { mutableStateOf<String?>(null) }
+    var neisEvents by remember { mutableStateOf(emptyList<NeisEvent>()) }
     val sourceSnapshots by sourceStateStore.snapshotsFlow.collectAsStateWithLifecycle()
     val installed = remember(refresh) { SourceCatalog.installed(context) }
     val missing = remember(refresh) { SourceCatalog.missing(context) }
@@ -128,11 +132,36 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     }
 
 
-    suspend fun suspendAutomaticTasksForSources(sourceIds: Set<String>) {
-        val identities = records.mapNotNull { record ->
-            record.sourceMetadata?.takeIf { it.sourceId in sourceIds }?.let { metadata ->
-                kr.mom.probe.data.ProbeRules.sourceItemIdentity(metadata.sourceId, metadata.itemId)
+    fun taskOperation(action: () -> Unit) {
+        if (busy) return
+        scope.launch {
+            busy = true
+            try {
+                withContext(Dispatchers.IO) { action() }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                message = error.message ?: "할 일을 저장하지 못했어요. 다시 시도해주세요."
+            } finally { busy = false }
+        }
+    }
+
+    fun openRecord(record: kr.mom.probe.data.ProbeRecord) {
+        selectedId = record.id
+        previous = if (screen == "todo") "todo" else if (screen == "news") "news" else "home"
+        screen = "detail"
+        scope.launch(Dispatchers.IO) {
+            if (kr.mom.probe.data.NoticeReadStore.markRead(context, record.id)) {
+                readIds = kr.mom.probe.data.NoticeReadStore.readIds(context)
             }
+        }
+    }
+
+    suspend fun suspendAutomaticTasksForSources(sourceIds: Set<String>) {
+        val institution = kr.mom.probe.data.NoticeGrouping.institution(repository.settings.value)
+        val identities = records.flatMap { record ->
+            record.sourceMetadata?.takeIf { it.sourceId in sourceIds }?.let {
+                kr.mom.probe.data.NoticeGrouping.keys(record, institution)
+            }.orEmpty()
         }.toSet()
         if (identities.isNotEmpty()) {
             withContext(Dispatchers.IO) {
@@ -179,6 +208,29 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
         if (uri?.scheme != "https") { message = "안전한 공식 주소를 확인하지 못했어요."; return }
         try { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
         catch (_: Exception) { message = "공식 사이트를 열 수 없어요." }
+    }
+
+    fun refreshNeisEvents(connection: SiteConnection?) {
+        if (connection?.status != ConnectionStatus.CONNECTED) { neisEvents = emptyList(); return }
+        val school = NeisSchool(
+            officeCode = connection.metadata["officeCode"].orEmpty(),
+            schoolCode = connection.metadata["schoolCode"].orEmpty(),
+            name = connection.metadata["schoolName"].orEmpty(),
+            address = connection.metadata["address"].orEmpty(),
+            level = connection.metadata["level"].orEmpty(),
+        )
+        scope.launch {
+            when (val result = neisClient.upcomingEvents(school)) {
+                is NeisResult.Success -> {
+                    val currentSchoolCode = connectorRepository.state.value.sites["neis-public"]?.metadata?.get("schoolCode")
+                    if (currentSchoolCode == school.schoolCode) neisEvents = result.value
+                }
+                is NeisResult.Failure -> {
+                    val currentSchoolCode = connectorRepository.state.value.sites["neis-public"]?.metadata?.get("schoolCode")
+                    if (currentSchoolCode == school.schoolCode) message = result.message
+                }
+            }
+        }
     }
 
     fun openAccess() {
@@ -319,7 +371,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
         if (ready && !started) {
             screen = when {
                 !validConsent -> "welcome"
-                settings.onboardingDone -> if (openAssistant) "inbox" else "home"
+                settings.onboardingDone -> if (openAssistant) "todo" else "home"
                 settings.childName.isBlank() -> "child"
                 else -> "connections"
             }
@@ -327,7 +379,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
         }
         if (ready && started && !validConsent) screen = "welcome"
         if (ready && screen == "export" && session.exportSnapshot.isEmpty()) {
-            screen = "inbox"
+            screen = "news"
             message = "앱이 다시 시작되어 자료 검토를 다시 열어주세요."
         }
     }
@@ -363,6 +415,9 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
             screen = "detail"
             openedInitialRecord = true
         }
+    }
+    LaunchedEffect(connectorState.sites["neis-public"]) {
+        refreshNeisEvents(connectorState.sites["neis-public"])
     }
     LaunchedEffect(connectorState.sites, ready, settings.onboardingDone, settings.selectedPackages, access) {
         val usableSite = connectorState.sites.values.any {
@@ -422,9 +477,9 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
         }
         if (leavingExport) session.clearExport()
     }
-    BackHandler(screen !in setOf("home", "inbox", "settings", "welcome")) { if (!busy) back() }
+    BackHandler(screen !in setOf("home", "todo", "news", "welcome")) { if (!busy) back() }
 
-    val rootTab = screen in setOf("home", "inbox", "settings")
+    val rootTab = screen in setOf("home", "todo", "news")
     Scaffold(
         containerColor = Clay.Background,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -451,7 +506,6 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     verifiedAppPackages = records.map { it.packageName }.toSet(),
                     connectorState = connectorState,
                     busy = busy,
-                    notificationAccess = access,
                     onBack = ::back,
                     onSkip = { command({ repository.deferSetup() }) {
                         SourceSyncScheduler.enqueueActive(context, SourceRunTrigger.CONNECTION_READY)
@@ -480,24 +534,50 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             }
                         }
                     },
+                    onConnectNeis = {
+                        if (!busy) scope.launch {
+                            busy = true
+                            try {
+                                when (val found = neisClient.findExactSchool(settings.schoolName)) {
+                                    is NeisResult.Success -> {
+                                        val school = found.value
+                                        val profileSaved = repository.saveChild(settings.childName, school.name, settings.schoolGrade, settings.schoolLevel ?: kr.mom.probe.data.NoticeDecisionEngine.inferLevel(school.name))
+                                        val saved = profileSaved && connectorRepository.markConnected("neis-public", mapOf(
+                                            "officeCode" to school.officeCode,
+                                            "schoolCode" to school.schoolCode,
+                                            "schoolName" to school.name,
+                                            "address" to school.address,
+                                            "level" to school.level,
+                                        ))
+                                        if (saved) {
+                                            SourceSyncScheduler.enqueue(context, SourceIds.NEIS_PUBLIC, SourceRunTrigger.CONNECTION_READY)
+                                            refreshSourceSnapshots()
+                                            message = "${school.name} 학교정보를 연결했어요."
+                                        } else {
+                                            message = "연결 상태를 저장하지 못했어요."
+                                        }
+                                    }
+                                    is NeisResult.Failure -> message = found.message
+                                }
+                            } finally { busy = false }
+                        }
+                    },
+                    onDisconnectNeis = { command({
+                        val disconnected = connectorRepository.disconnect("neis-public")
+                        if (disconnected) {
+                            SourceSyncScheduler.cancel(context, SourceIds.NEIS_PUBLIC)
+                            suspendAutomaticTasksForSources(setOf(SourceIds.NEIS_PUBLIC))
+                            sourceStateStore.bumpGeneration(SourceIds.NEIS_PUBLIC)
+                            repository.clearSourceRecords(setOf(SourceIds.NEIS_PUBLIC))
+                        }
+                        disconnected
+                    }) { neisEvents = emptyList(); refreshSourceSnapshots(); message = "학교정보 연결을 해제했어요." } },
+                    neisSampleMode = neisClient.isSampleMode,
                     sourceSnapshots = sourceSnapshots,
                     onRefreshSource = { sourceId ->
                         SourceSyncScheduler.enqueue(context, sourceId, SourceRunTrigger.MANUAL)
                         refreshSourceSnapshots()
                         message = "출처 확인을 시작했어요."
-                    },
-                    onToggleWebsite = { siteId, enabled ->
-                        val definition = ConnectorCatalog.site(siteId)
-                        if (definition == null) message = "연결 정보를 찾지 못했어요."
-                        else if (enabled) {
-                            command({ connectorRepository.markConnecting(siteId) }) {
-                                pendingWebsiteId = siteId
-                                websiteLogin.launch(Intent(context, WebsiteLoginActivity::class.java)
-                                    .putExtra(WebsiteLoginActivity.EXTRA_SITE_ID, siteId))
-                            }
-                        } else {
-                            resetWebsites = true
-                        }
                     },
                     onRecommendApp = { app ->
                         val market = android.net.Uri.parse("market://details?id=${app.packageName}")
@@ -508,6 +588,35 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             catch (_: Exception) { message = "설치 페이지를 열지 못했어요." }
                         }
                     },
+                    listenerAccess = access,
+                    appPopupOn = installed.associate { it.packageName to kr.mom.probe.data.AppNotificationAccess.canPostNotifications(context, it.packageName) },
+                    onOpenAppNotifications = { packageName ->
+                        if (!kr.mom.probe.data.AppNotificationAccess.openNotificationSettings(context, packageName)) {
+                            message = "알림 설정 화면을 열지 못했어요. 휴대폰 설정에서 앱 알림을 확인해주세요."
+                        }
+                    },
+                    onOpenWebsite = { siteId ->
+                        val url = when (siteId) {
+                            SourceIds.SCHOOL_WEBSITE -> "https://snjj-e.goesn.kr/snjj-e/main.do"
+                            else -> ConnectorCatalog.site(siteId)?.startUrl
+                        }
+                        if (url == null) {
+                            message = "열 주소를 찾지 못했어요."
+                        } else {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                            }.onFailure { message = "브라우저를 열지 못했어요." }
+                        }
+                    },
+                    postingHints = buildMap {
+                        listOf(SourceIds.SCHOOL_WEBSITE, SourceIds.EALIMI_WEB).forEach { sourceId ->
+                            kr.mom.probe.sync.PostingTimeStore.describeLearnedWindow(context, sourceId)?.let { put(sourceId, it) }
+                        }
+                    },
+                    hiddenPackages = settings.hiddenSourcePackages,
+                    onToggleHideOriginal = { packageName, hidden ->
+                        command({ repository.saveHiddenSourcePackage(packageName, hidden) })
+                    },
                 )
                 "child" -> ChildProfileScreen(settings, busy, { name, school, grade, level ->
                     command({
@@ -517,14 +626,17 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         val saved = repository.saveChild(name, school, grade, level)
                         if (saved && changedScope) {
                             SourceSyncScheduler.cancelAll(context)
-                            suspendAutomaticTasksForSources(setOf(SourceIds.SCHOOL_WEBSITE, SourceIds.EALIMI_WEB))
+                            suspendAutomaticTasksForSources(setOf(SourceIds.SCHOOL_WEBSITE, SourceIds.NEIS_PUBLIC, SourceIds.EALIMI_WEB))
                         }
                         if (saved && changedSchool) {
                             sourceStateStore.bumpGeneration(SourceIds.SCHOOL_WEBSITE)
+                            sourceStateStore.bumpGeneration(SourceIds.NEIS_PUBLIC)
                             sourceStateStore.bumpGeneration(SourceIds.EALIMI_WEB)
-                            repository.clearSourceRecords(setOf(SourceIds.SCHOOL_WEBSITE, SourceIds.EALIMI_WEB))
+                            kr.mom.probe.sync.PostingTimeStore.reset(context, SourceIds.SCHOOL_WEBSITE)
+                            kr.mom.probe.sync.PostingTimeStore.reset(context, SourceIds.EALIMI_WEB)
+                            repository.clearSourceRecords(setOf(SourceIds.SCHOOL_WEBSITE, SourceIds.NEIS_PUBLIC, SourceIds.EALIMI_WEB))
                         }
-                        saved
+                        if (saved && changedSchool) connectorRepository.disconnect("neis-public") else saved
                     }) {
                         SourceSyncScheduler.enqueueActive(context, SourceRunTrigger.CONNECTION_READY)
                         refreshSourceSnapshots()
@@ -532,48 +644,73 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     }
                 }, ::back)
                 "home" -> {
+                    LaunchedEffect(screen) { nowTick = System.currentTimeMillis() }
                     val activeSourceScopes = SourceScopeFactory.activeScopes(context, SourceRunTrigger.MANUAL)
                     val homeRecords = SourceRecordSelectors.activeRecords(records, activeSourceScopes)
-                    val sourceStatusMessage = SourceStatusPresentation.message(sourceSnapshots.values)
-                    HomeScreen(settings, homeRecords, access, connected, ::proceedSetup, { screen = "inbox" }, {
-                    selectedId = it.id; previous = "home"; screen = "detail"
-                }, connectedSiteCount = connectorState.sites.values.count {
-                    it.status == ConnectionStatus.CONNECTED
-                } + activeSourceScopes
-                    .count { it.sourceId == SourceIds.SCHOOL_WEBSITE },
-                    sourceAgenda = SourceRecordSelectors.agenda(
-                        records,
-                        kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings),
-                        activeSourceScopes,
-                        institution = kr.mom.probe.data.NoticeGrouping.institution(settings),
-                    ),
-                    sourceStatusMessage = sourceStatusMessage,
-                    onAgenda = { screen = "inbox" },
-                    schoolEventsLimited = sourceStatusMessage != null,
-                    pendingTaskCount = kr.mom.probe.reminder.BriefingReminders.briefingTasks(assistantTasks).size,
-                    briefingReady = notificationsAllowed && kr.mom.probe.reminder.BriefingReminders.hasEnabledBriefing(context),
-                    rememberedGroupKeys = assistantTasks
-                        .map { it.noticeGroupKeys + listOfNotNull(it.sourceNotificationId) }
-                        .filter { it.isNotEmpty() }
-                        .toSet(),
-                    onEnableBriefings = {
-                        if (notificationsAllowed) {
-                            assistantAlertsEnabled = kr.mom.probe.reminder.AssistantAlertNotifier.setEnabled(context, true)
-                            val briefingsEnabled = kr.mom.probe.reminder.BriefingReminders.enableDefaults(context)
-                            message = if (assistantAlertsEnabled && briefingsEnabled) "아침·저녁 브리핑과 긴급 알림을 켰어요." else "비서 알림 설정을 저장하지 못했어요."
-                        } else {
-                            pendingNotificationTest = false
-                            pendingAssistantAlertEnable = true
-                            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                    },
-                    onAssistant = {
-                    context.startActivity(Intent(context, kr.mom.probe.task.AssistantTasksActivity::class.java))
-                })
+                    TodayScreen(
+                        settings = settings,
+                        tasks = assistantTasks,
+                        records = homeRecords,
+                        unreadCount = homeRecords.count { it.id !in readIds },
+                        configured = settings.onboardingDone,
+                        notificationsAllowed = notificationsAllowed,
+                        sourceAgenda = SourceRecordSelectors.agenda(
+                            records,
+                            kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings),
+                            activeSourceScopes,
+                            institution = kr.mom.probe.data.NoticeGrouping.institution(settings),
+                        ),
+                        sourceStatusMessage = SourceStatusPresentation.message(sourceSnapshots.values),
+                        busy = busy,
+                        now = nowTick,
+                        onSetup = ::proceedSetup,
+                        onToggle = { task -> taskOperation { assistantStore.setCompleted(task.id, !task.completed) } },
+                        onToggleItem = { task, itemId ->
+                            taskOperation {
+                                assistantStore.setChecklistItem(
+                                    task.id, itemId,
+                                    !(task.checklist.firstOrNull { it.id == itemId }?.done ?: false),
+                                )
+                            }
+                        },
+                        onSnooze = { task, at -> taskOperation { assistantStore.snoozeTask(task.id, at) } },
+                        onEdit = { task, text, due -> taskOperation { assistantStore.editTask(task.id, text, due) } },
+                        onExclude = { task -> taskOperation { assistantStore.setExcluded(task.id, !task.excluded) } },
+                        onOpenTodo = { screen = "todo" },
+                        onOpenNews = { screen = "news" },
+                        onOpenSettings = { previous = "home"; screen = "settings" },
+                        onRecord = ::openRecord,
+                        onEnableNotifications = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                    )
                 }
-                "inbox" -> InboxScreen(records, { selectedId = it.id; previous = "inbox"; screen = "detail" }, {
-                    session.exportSnapshot = records; previous = "inbox"; screen = "export"
-                })
+                "todo" -> {
+                    LaunchedEffect(screen) { nowTick = System.currentTimeMillis() }
+                    TodoScreen(
+                        tasks = assistantTasks,
+                        busy = busy,
+                        now = nowTick,
+                        onToggle = { task -> taskOperation { assistantStore.setCompleted(task.id, !task.completed) } },
+                        onToggleItem = { task, itemId ->
+                            taskOperation {
+                                assistantStore.setChecklistItem(
+                                    task.id, itemId,
+                                    !(task.checklist.firstOrNull { it.id == itemId }?.done ?: false),
+                                )
+                            }
+                        },
+                        onSnooze = { task, at -> taskOperation { assistantStore.snoozeTask(task.id, at) } },
+                        onEdit = { task, text, due -> taskOperation { assistantStore.editTask(task.id, text, due) } },
+                        onExclude = { task -> taskOperation { assistantStore.setExcluded(task.id, !task.excluded) } },
+                        onAddTask = { text, due ->
+                            taskOperation {
+                                if (!assistantStore.add(text, dueAt = due)) message = "할 일을 저장하지 못했어요."
+                            }
+                        },
+                    )
+                }
+                "news" -> NewsScreen(records, readIds, ::openRecord, {
+                    session.exportSnapshot = records; previous = "news"; screen = "export"
+                }, institution = kr.mom.probe.data.NoticeGrouping.institution(settings))
                 "detail" -> {
                     val record = records.find { it.id == selectedId }
                     if (record == null) Page { BackHeading("받은 알림", ::back); EmptyCard("삭제되었거나 보관 기간이 끝났어요", "현재 남아 있는 알림을 확인해주세요.") }
@@ -582,12 +719,14 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         val sourceNotificationId = kr.mom.probe.data.NoticeGrouping.groupId(record, institution)
                         val recordKeys = kr.mom.probe.data.NoticeGrouping.keys(record, institution)
                         DetailScreen(record, assistantTasks.any { task ->
-                            task.sourceNotificationId == sourceNotificationId ||
-                                kr.mom.probe.data.NoticeGrouping.matches(
-                                    recordKeys,
-                                    task.noticeGroupKeys + listOfNotNull(task.sourceNotificationId),
-                                )
-                        }, kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings), ::back, { deleteTarget = record.id }, {
+                            kr.mom.probe.data.NoticeGrouping.matches(
+                                recordKeys,
+                                task.noticeGroupKeys + listOfNotNull(task.sourceNotificationId),
+                            )
+                        }, kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings), ::back, { deleteTarget = record.id },
+                            linkedTasks = kr.mom.probe.task.TodoSelectors.linkedTo(assistantTasks, recordKeys),
+                            onOpenTodo = { screen = "todo" },
+                            onSource = {
                         val intent = context.packageManager.getLaunchIntentForPackage(record.packageName)
                         if (intent == null) message = "원래 앱을 찾지 못했어요. 휴대폰에서 직접 확인해주세요."
                         else try { context.startActivity(intent) } catch (_: Exception) { message = "원래 앱을 열지 못했어요. 직접 확인해주세요." }
@@ -674,7 +813,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     if (resetWebsites) AlertDialog(
         onDismissRequest = { if (!busy) resetWebsites = false },
         title = { Text("웹 로그인 데이터를 지울까요?") },
-        text = { Text("이 시험 버전은 웹 저장소를 함께 사용해 e알리미·하이클래스 웹 로그인을 모두 지워요. 원래 앱의 로그인은 유지돼요.") },
+        text = { Text("이 시험 버전은 웹 저장소를 함께 사용해 e알리미·하이클래스 웹 로그인을 모두 지워요. 원래 앱의 로그인과 나이스 공개 학교정보는 유지돼요.") },
         confirmButton = { TextButton(enabled = !busy, onClick = {
             command({
                 val cleared = WebsiteSessionManager.clearAll() && connectorRepository.disconnectWebsites()
@@ -682,6 +821,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     SourceSyncScheduler.cancel(context, SourceIds.EALIMI_WEB)
                     suspendAutomaticTasksForSources(setOf(SourceIds.EALIMI_WEB))
                     sourceStateStore.bumpGeneration(SourceIds.EALIMI_WEB)
+                    kr.mom.probe.sync.PostingTimeStore.reset(context, SourceIds.EALIMI_WEB)
                     repository.clearSourceRecords(setOf(SourceIds.EALIMI_WEB))
                 }
                 cleared
@@ -705,6 +845,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                     // deleteAll closes the in-memory capture gate before its first fallible disk operation.
                     runCatching { repository.deleteAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
                     runCatching { kr.mom.probe.reminder.BriefingReminders.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+                    runCatching { kr.mom.probe.data.NoticeReadStore.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
                     runCatching { kr.mom.probe.reminder.AssistantAlertNotifier.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
                     runCatching { kr.mom.probe.calendar.CalendarPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
                     runCatching { kr.mom.probe.calendar.CalendarAppPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }

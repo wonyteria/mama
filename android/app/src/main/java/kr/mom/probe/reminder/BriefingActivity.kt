@@ -11,7 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import java.util.Locale
 import kr.mom.probe.BuildConfig
-import kr.mom.probe.task.AssistantTasksActivity
+import kr.mom.probe.MainActivity
 import kr.mom.probe.task.AssistantTaskStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -306,7 +306,11 @@ class BriefingActivity : ComponentActivity() {
         }
         pendingAskMomo.cancel()
         stopAlarm()
-        startActivity(Intent(this, AssistantTasksActivity::class.java))
+        startActivity(
+            Intent(this, MainActivity::class.java)
+                .putExtra(kr.mom.probe.widget.AssistantWidgetProvider.EXTRA_OPEN_TODO, true)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        )
         finish()
     }
 
@@ -314,7 +318,11 @@ class BriefingActivity : ComponentActivity() {
         if (isFinishing || isDestroyed || !resumed || !hasWindowFocus) return
         pendingAskMomo.runIfUnlocked(::isUnlockedNow) {
             stopAlarm()
-            startActivity(Intent(this, AssistantTasksActivity::class.java))
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .putExtra(kr.mom.probe.widget.AssistantWidgetProvider.EXTRA_OPEN_TODO, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            )
             finish()
         }
     }

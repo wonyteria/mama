@@ -35,8 +35,22 @@ class ProbeNotificationListener : NotificationListenerService() {
             if (!ProbeRules.canCapture(repository.settings.value, sbn.packageName, packageName,
                     true, sbn.isOngoing, sbn.notification.flags and android.app.Notification.FLAG_GROUP_SUMMARY != 0)) return@launch
             repository.capture(sbn, epoch)
-            if (NotificationHidingPolicy.mayHideOriginal()) cancelNotification(sbn.key)
+            // The original is cancelled only after capture + analysis + unified
+            // alert posting all succeeded and the app is opted into hiding.
+            // NotificationHidingPolicy keeps the whole path off until physical-device
+            // evidence covers capture, delivery, consent revocation, and fallback.
+            if (NotificationHidingPolicy.mayHideOriginal() && repository.shouldHideOriginal(sbn)) {
+                runCatching { cancelNotification(sbn.key) }
+            }
         }
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        // A dismissed unified alert must not let later originals be hidden.
+        if (sbn != null && sbn.packageName == packageName) {
+            kr.mom.probe.reminder.AssistantAlertNotifier.markAlertGone(this, sbn.id)
+        }
+        super.onNotificationRemoved(sbn)
     }
 
     override fun onDestroy() {

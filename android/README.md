@@ -67,7 +67,7 @@ Warm Agentic Clay와 Bento 구조를 적용한 Android 설치형 **엄마 로컬
 Windows PowerShell에서:
 
 ```powershell
-cd D:\Codex\mom-agent\android
+cd D:\플랫폼\mama\project\android
 .\scripts\bootstrap.ps1
 .\scripts\build.ps1
 ```
@@ -105,7 +105,7 @@ APK 직접 설치 경로에 따라 Android의 ‘제한된 설정’ 안내가 �
 
 G0는 실제 엄마 5~10명, 7~14일, 중요 공지와 대조한 알림 300건 이상을 모아야 끝납니다. 0.6의 검토 내보내기에 후보 종류와 해석한 기한이 자동 포함되어 제품팀이 원문과 대조할 수 있습니다. 정상 빌드나 합성 알림 테스트만으로 학교 앱 연동/사업 가능성을 입증하지 않습니다.
 
-나이스 공개 API 연동은 제거했습니다. 인증키를 APK에 넣을 수 없고 안전한 서버 프록시가 없어서, 학사일정은 확인된 학교 홈페이지 게시판 lane에서만 가져옵니다. 나이스 연동을 되살리려면 서버 측 프록시와 사용 제한을 먼저 만들어야 합니다.
+나이스 공개 API는 인증키 없이 제한된 공개 조회만 사용합니다. 운영 인증키를 APK에 넣을 수 없고 안전한 서버 프록시가 아직 없어서, 앱은 이 lane을 항상 제한 모드로 표시하고 전체 범위 운영 조회는 제공하지 않습니다. 정식 연동을 되살리려면 서버 측 프록시와 사용 제한을 먼저 만들어야 합니다.
 
 release 빌드는 서명 자격 증명이 없으면 실패합니다. `MAMA_RELEASE_STORE_FILE`, `MAMA_RELEASE_STORE_PASSWORD`, `MAMA_RELEASE_KEY_ALIAS`, `MAMA_RELEASE_KEY_PASSWORD`를 Gradle property 또는 환경변수로 설정해야 `assembleRelease`가 진행되며, debug 서명으로의 대체는 없습니다.
 

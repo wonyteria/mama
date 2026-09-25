@@ -21,6 +21,7 @@ import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -30,8 +31,9 @@ import androidx.compose.ui.unit.Density
 import java.io.File
 import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.data.ProbeRecord
-import kr.mom.probe.data.NoticeGrouping
+import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.data.NotificationCandidateParser
+import kr.mom.probe.connector.ConnectorState
 import kr.mom.probe.sync.SourceAgendaItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -59,8 +61,52 @@ import org.robolectric.annotation.LooperMode
 class ProbeScreensRenderTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    private val NOW = System.currentTimeMillis()
+
+    @Composable
+    private fun today(
+        settings: ProbeSettings = ProbeSettings(consent = true, onboardingDone = true),
+        tasks: List<kr.mom.probe.task.AssistantTask> = emptyList(),
+        records: List<ProbeRecord> = emptyList(),
+        unreadCount: Int = records.size,
+        configured: Boolean = true,
+        notificationsAllowed: Boolean = true,
+        sourceAgenda: List<SourceAgendaItem> = emptyList(),
+        sourceStatusMessage: String? = null,
+        busy: Boolean = false,
+        onSetup: () -> Unit = {},
+        onRecord: (ProbeRecord) -> Unit = {},
+        onOpenTodo: () -> Unit = {},
+        onOpenNews: () -> Unit = {},
+        onOpenSettings: () -> Unit = {},
+    ) {
+        TodayScreen(
+            settings = settings,
+            tasks = tasks,
+            records = records,
+            unreadCount = unreadCount,
+            configured = configured,
+            notificationsAllowed = notificationsAllowed,
+            sourceAgenda = sourceAgenda,
+            sourceStatusMessage = sourceStatusMessage,
+            busy = busy,
+            now = NOW,
+            onSetup = onSetup,
+            onToggle = {},
+            onToggleItem = { _, _ -> },
+            onSnooze = { _, _ -> },
+            onEdit = { _, _, _ -> },
+            onExclude = {},
+            onOpenTodo = onOpenTodo,
+            onOpenNews = onOpenNews,
+            onOpenSettings = onOpenSettings,
+            onRecord = onRecord,
+            onEnableNotifications = {},
+        )
+    }
+
     @Test
-    fun homeWithoutSetupShowsRecoveryAndNoInventedRecords() {
+    fun todayWithoutSetupShowsRecoveryAndNoInventedRecords() {
         var setupRequests = 0
         render {
             Scaffold(
@@ -68,69 +114,166 @@ class ProbeScreensRenderTest {
                 containerColor = Clay.Background,
             ) { padding ->
                 Box(Modifier.fillMaxSize().padding(padding)) {
-                    HomeScreen(
-                        settings = ProbeSettings(consent = true, onboardingDone = true),
-                        records = emptyList(),
-                        access = false,
-                        connected = false,
-                        onSetup = { setupRequests++ },
-                        onInbox = {},
-                        onRecord = {},
-                    )
+                    today(configured = false, onSetup = { setupRequests++ })
                 }
             }
         }
-        compose.onNodeWithText("마지막 준비를 도와드릴게요").assertIsDisplayed()
+        compose.onNodeWithText("마지막 준비를 도와드릴게요").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("resume-setup").assertIsEnabled()
-        screenshot("home-setup")
+        screenshot("today-setup")
         compose.onNodeWithTag("resume-setup").performClick()
         compose.runOnIdle { assertEquals(1, setupRequests) }
         compose.onNodeWithText("마지막 준비를 도와드릴게요").assertIsDisplayed()
     }
 
     @Test
-    fun homeAcceptsAWebsiteOnlyConnection() {
+    fun todayShowsOpenTodoCountAndListLink() {
+        var todoOpens = 0
         render {
-            HomeScreen(
-                settings = ProbeSettings(consent = true, childName = "검증 아이", schoolName = "검증초등학교", schoolGrade = 2, onboardingDone = true),
-                records = emptyList(), access = false, connected = false,
-                onSetup = {}, onInbox = {}, onRecord = {}, connectedSiteCount = 1,
+            today(
+                tasks = listOf(
+                    task(id = "t1", text = "체험학습 도시락 싸기"),
+                    task(id = "t2", text = "가정통신문 회신", completed = true),
+                ),
+                onOpenTodo = { todoOpens++ },
             )
         }
-        compose.onAllNodesWithText("설정 이어하기").assertCountEquals(0)
-        compose.onNodeWithText("연결한 곳 1개").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("남은 할 일\n1개", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("체험학습 도시락 싸기").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("가정통신문 회신").assertCountEquals(0)
+        compose.onNodeWithTag("open-todo-all").performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(1, todoOpens) }
+        screenshot("today-open-count")
+    }
+
+    @Test
+    fun todoShowsChecklistProgress() {
+        render {
+            TodoScreen(
+                tasks = listOf(
+                    task(
+                        id = "prep-1",
+                        text = "현장체험학습 준비물",
+                        checklist = listOf(
+                            kr.mom.probe.task.TaskChecklistItem("c1", "도시락", done = true),
+                            kr.mom.probe.task.TaskChecklistItem("c2", "물통", done = true),
+                            kr.mom.probe.task.TaskChecklistItem("c3", "모자"),
+                            kr.mom.probe.task.TaskChecklistItem("c4", "돗자리"),
+                        ),
+                    ),
+                ),
+                busy = false,
+                now = NOW,
+                onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
+                onEdit = { _, _, _ -> }, onExclude = {}, onAddTask = { _, _ -> },
+            )
+        }
+        compose.onNodeWithText("2/4 준비").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("할 일 1개").assertIsDisplayed()
+        screenshot("todo-checklist-progress")
+    }
+
+    @Test
+    fun todoCompletedTasksFoldBehindToggle() {
+        render {
+            TodoScreen(
+                tasks = listOf(
+                    task(id = "done-1", text = "끝낸 일", completed = true),
+                ),
+                busy = false,
+                now = NOW,
+                onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
+                onEdit = { _, _, _ -> }, onExclude = {}, onAddTask = { _, _ -> },
+            )
+        }
+        compose.onNodeWithText("할 일 0개").assertIsDisplayed()
+        compose.onNodeWithText("완료한 일 1개 보기").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("끝낸 일").assertIsDisplayed()
+    }
+
+    @Test
+    fun newsSeparatesReadStateFromTodoCompletion() {
+        val record = candidateRecord()
+        val readIds = androidx.compose.runtime.mutableStateOf(emptySet<String>())
+        render {
+            NewsScreen(
+                records = listOf(record),
+                readIds = readIds.value,
+                onRecord = {},
+                onExport = {},
+            )
+        }
+        compose.onNodeWithTag("unread-dot", useUnmergedTree = true).assertExists()
+        screenshot("news-unread")
+        compose.runOnIdle { readIds.value = setOf(record.id) }
+        compose.onAllNodesWithTag("unread-dot", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun connectionsShowAppsOnlyWhenTheSameServiceAlsoHasAWebsite() {
+        render {
+            ConnectionsScreen(
+                settings = ProbeSettings(
+                    consent = true,
+                    childName = "QA",
+                    schoolName = "성남정자초등학교",
+                    schoolGrade = 2,
+                    onboardingDone = true,
+                ),
+                installedApps = listOf(
+                    SourceApp("com.ewut.allealimi", "e알리미", "학교 소식", "e"),
+                    SourceApp("com.iscreammedia.app.hiclass.android", "하이클래스", "학교 소식", "Hi"),
+                ),
+                missingApps = emptyList(),
+                verifiedAppPackages = emptySet(),
+                connectorState = ConnectorState(),
+                busy = false,
+                onBack = {},
+                onToggleApp = { _, _ -> },
+                onConnectNeis = {},
+                onDisconnectNeis = {},
+                onRecommendApp = {},
+            )
+        }
+
+        compose.onNodeWithText("e알리미").assertIsDisplayed()
+        compose.onNodeWithText("하이클래스").assertIsDisplayed()
+        compose.onAllNodesWithText("e알리미 웹").assertCountEquals(0)
+        compose.onAllNodesWithText("하이클래스 웹").assertCountEquals(0)
+        compose.onAllNodesWithText("e알리미 사이트 열기").assertCountEquals(0)
+        compose.onAllNodesWithText("하이클래스 사이트 열기").assertCountEquals(0)
+        screenshot("connections-apps-only")
+    }
+
+    @Test
+    fun todayShowsUnreadNewsCount() {
+        render {
+            today(unreadCount = 3)
+        }
+        compose.onNodeWithText("새 소식").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("3개").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("읽지 않은 소식").performScrollTo().assertIsDisplayed()
     }
 
 
     @Test
-    fun homeScheduleUsesStoredAgenda() {
-        var agendaOpens = 0
+    fun todayScheduleUsesStoredAgenda() {
         val sourceRecord = candidateRecord().copy(id = "source-agenda-record", title = "QA 학교 일정", appLabel = "성남정자초 공식 홈페이지")
         render {
-            HomeScreen(
-                settings = ProbeSettings(consent = true, childName = "QA", schoolName = "성남정자초등학교", schoolGrade = 2, onboardingDone = true),
-                records = emptyList(), access = false, connected = false,
-                onSetup = {}, onInbox = {}, onRecord = {}, connectedSiteCount = 1,
+            today(
+                unreadCount = 0,
                 sourceAgenda = listOf(SourceAgendaItem(sourceRecord, "Stored agenda", "2026-09-16", "성남정자초 공식 홈페이지")),
-                onAgenda = { agendaOpens++ },
             )
         }
 
-        compose.onNodeWithText("1개").assertIsDisplayed()
+        compose.onNodeWithText("1개").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("09월 16일 Stored agenda").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("일정 보기").performScrollTo().assertIsDisplayed().performClick()
-        compose.runOnIdle { assertEquals(1, agendaOpens) }
     }
 
     @Test
-    fun homeScheduleShowsEmptyStateWhenStoredAgendaIsEmpty() {
+    fun todayShowsEmptyAgendaInsteadOfInventedSchedule() {
         render {
-            HomeScreen(
-                settings = ProbeSettings(consent = true, childName = "QA", schoolName = "성남정자초등학교", schoolGrade = 2, onboardingDone = true),
-                records = emptyList(), access = false, connected = false,
-                onSetup = {}, onInbox = {}, onRecord = {}, connectedSiteCount = 1,
-                sourceAgenda = emptyList(),
-            )
+            today(unreadCount = 0, sourceAgenda = emptyList())
         }
 
         compose.onAllNodesWithText("0개", useUnmergedTree = true).assertCountEquals(2)
@@ -207,24 +350,19 @@ class ProbeScreensRenderTest {
     }
 
     @Test
-    fun homePrioritizesActionCandidateInAgentBento() {
+    fun todaySurfacesActionCandidateForReview() {
         val record = candidateRecord()
         var opened: String? = null
         render {
-            HomeScreen(
-                settings = ProbeSettings(
-                    consent = true, childName = "민서", selectedPackages = setOf("school.app"),
-                    collectionEnabled = true, onboardingDone = true,
-                ),
-                records = listOf(record), access = true, connected = true,
-                onSetup = {}, onInbox = {}, onRecord = { opened = it.id },
-                pendingTaskCount = 0, briefingReady = true, onAssistant = {},
+            today(
+                records = listOf(record),
+                onRecord = { opened = it.id },
             )
         }
-        compose.onNodeWithText("곧 챙길 일 1개").assertIsDisplayed()
-        compose.onNodeWithText("내용 보기").assertIsDisplayed().performClick()
+        compose.onNodeWithText("확인할 소식").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("체험학습 준비물").performScrollTo().assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(record.id, opened) }
-        screenshot("home-agent-bento")
+        screenshot("today-review-candidate")
     }
 
     @Test
@@ -237,7 +375,7 @@ class ProbeScreensRenderTest {
                 onRemember = { _, _, _ -> },
             )
         }
-        compose.onNodeWithText("날짜 확인하고 모모에게 맡기기").performScrollTo().assertIsEnabled()
+        compose.onNodeWithText("날짜 확인하고 할 일로 추가").performScrollTo().assertIsEnabled()
         compose.runOnIdle {
             val task = candidateTaskText(record, NotificationCandidateParser.parse(record)!!)
             assertTrue(task.contains("체험학습 준비물"))
@@ -247,59 +385,49 @@ class ProbeScreensRenderTest {
     }
 
     @Test
-    fun homeDoesNotCountRememberedCandidateTwice() {
+    fun todaySkipsCandidateAlreadySavedAsTask() {
         val record = candidateRecord()
         render {
-            HomeScreen(
-                settings = ProbeSettings(
-                    consent = true, childName = "민서", selectedPackages = setOf("school.app"),
-                    collectionEnabled = true, onboardingDone = true,
+            today(
+                tasks = listOf(
+                    task(
+                        id = "linked-1",
+                        text = "체험학습 준비물 챙기기",
+                        sourceNotificationId = ProbeRules.recordIdentity(record),
+                    ),
                 ),
-                records = listOf(record), access = true, connected = true,
-                onSetup = {}, onInbox = {}, onRecord = {}, pendingTaskCount = 1,
-                rememberedGroupKeys = setOf(NoticeGrouping.keys(record, NoticeGrouping.institution(ProbeSettings()))), onAssistant = {},
+                records = listOf(record),
             )
         }
-        compose.onNodeWithText("곧 챙길 일 1개").assertIsDisplayed()
-        compose.onNodeWithText("부탁 확인하기").assertIsDisplayed()
+        compose.onAllNodesWithText("확인할 소식").assertCountEquals(0)
     }
 
     @Test
-    fun homeGroupsUpdatedRevisionsOfSameNotification() {
+    fun todayGroupsUpdatedRevisionsOfSameNotification() {
         val first = candidateRecord()
         val updated = first.copy(id = "candidate-2", rawHash = "updated", receivedAt = first.receivedAt + 1)
         render {
-            HomeScreen(
-                settings = ProbeSettings(
-                    consent = true, childName = "민서", selectedPackages = setOf("school.app"),
-                    collectionEnabled = true, onboardingDone = true,
-                ),
-                records = listOf(updated, first), access = true, connected = true,
-                onSetup = {}, onInbox = {}, onRecord = {}, onAssistant = {},
+            today(
+                records = listOf(updated, first),
             )
         }
-        compose.onNodeWithText("곧 챙길 일 1개").assertIsDisplayed()
-        compose.onNodeWithText("후보 1 · 부탁 0").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("확인할 소식").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("체험학습 준비물").assertCountEquals(1)
     }
 
     @Test
     @Config(qualifiers = "ko-rKR-w320dp-h640dp-xhdpi")
-    fun agentHomeRemainsUsableAtLargeText() {
+    fun todayRemainsUsableAtSmallWidthAndLargeText() {
         val record = candidateRecord()
         render(fontScale = 1.5f) {
-            HomeScreen(
-                settings = ProbeSettings(
-                    consent = true, childName = "민서", selectedPackages = setOf("school.app"),
-                    collectionEnabled = true, onboardingDone = true,
-                ),
-                records = listOf(record), access = true, connected = true,
-                onSetup = {}, onInbox = {}, onRecord = {}, briefingReady = true,
-                onAssistant = {},
+            today(
+                tasks = listOf(task(id = "t1", text = "체험학습 도시락 싸기")),
+                records = listOf(record),
             )
         }
-        compose.onNodeWithText("내용 보기").performScrollTo().assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithText("챙길 일").performScrollTo().assertIsDisplayed()
-        screenshot("home-agent-large-text")
+        compose.onNodeWithTag("open-todo-all").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("확인할 소식").performScrollTo().assertIsDisplayed()
+        screenshot("today-large-text")
     }
 
     private fun candidateRecord() = ProbeRecord(
@@ -309,6 +437,21 @@ class ProbeScreensRenderTest {
         bigText = "", textLines = emptyList(), subText = null, summaryText = null,
         category = null, channelId = null, notificationId = 1, notificationKey = "key",
         isOngoing = false, isGroupSummary = false, rawHash = "hash",
+    )
+
+    private fun task(
+        id: String,
+        text: String,
+        completed: Boolean = false,
+        sourceNotificationId: String? = null,
+        checklist: List<kr.mom.probe.task.TaskChecklistItem> = emptyList(),
+    ) = kr.mom.probe.task.AssistantTask(
+        id = id,
+        text = text,
+        completed = completed,
+        createdAt = NOW,
+        sourceNotificationId = sourceNotificationId,
+        checklist = checklist,
     )
 
     private fun render(fontScale: Float = 1f, content: @Composable () -> Unit) {

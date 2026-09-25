@@ -35,8 +35,21 @@ jobs:
 
       - name: Release assembly fails without signing credentials
         run: |
-          if ./gradlew :app:assembleRelease; then
+          set +e
+          ./gradlew :app:assembleRelease > release-build.log 2>&1
+          status=$?
+          set -e
+          cat release-build.log
+          if [ "$status" -eq 0 ]; then
             echo "::error::assembleRelease succeeded without MAMA_RELEASE_* credentials"
+            exit 1
+          fi
+          if ! grep -q "Release signing is not configured. Set MAMA_RELEASE_STORE_FILE" release-build.log; then
+            echo "::error::assembleRelease failed for a reason other than missing signing credentials"
+            exit 1
+          fi
+          if ! grep -q "Debug signing is never used for release builds." release-build.log; then
+            echo "::error::expected fail-closed signing message missing from output"
             exit 1
           fi
 

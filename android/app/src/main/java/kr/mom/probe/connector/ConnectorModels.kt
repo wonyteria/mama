@@ -38,7 +38,30 @@ data class SiteDefinition(
 )
 
 object ConnectorCatalog {
+    private val appPreferredWebsites = mapOf(
+        "ealimi-web" to "com.ewut.allealimi",
+        "hiclass-web" to "com.iscreammedia.app.hiclass.android",
+    )
+
     val sites = listOf(
+        SiteDefinition(
+            id = "neis-public",
+            name = "나이스 학교정보",
+            description = "공식 OpenAPI · 학사일정·급식·시간표",
+            startUrl = "https://open.neis.go.kr/",
+            allowedHostSuffixes = setOf("open.neis.go.kr"),
+            mark = "N",
+            available = true,
+        ),
+        SiteDefinition(
+            id = "neis-parent",
+            name = "나이스 학부모서비스",
+            description = "성적·출결·학교생활 · 공식 위임 연동 준비 중",
+            startUrl = "https://parents.neis.go.kr/csp-prnt/#/prn-main/intro",
+            allowedHostSuffixes = setOf("neis.go.kr"),
+            mark = "N",
+            available = false,
+        ),
         SiteDefinition(
             id = "ealimi-web",
             name = "e알리미 웹",
@@ -60,6 +83,11 @@ object ConnectorCatalog {
     )
 
     fun site(id: String): SiteDefinition? = sites.firstOrNull { it.id == id }
+
+    /** A service with an Android app is represented by the app only in product UI and sync. */
+    fun preferredAppPackage(siteId: String): String? = appPreferredWebsites[siteId]
+
+    fun shouldShowWebsite(siteId: String): Boolean = preferredAppPackage(siteId) == null
 
     fun isAllowedHttps(definition: SiteDefinition, rawUrl: String): Boolean {
         val uri = runCatching { URI(rawUrl) }.getOrNull() ?: return false

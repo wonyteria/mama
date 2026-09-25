@@ -8,7 +8,7 @@ import kr.mom.probe.data.SchoolLevel
 
 enum class SourceKind {
     ANDROID_NOTIFICATION,
-    // Kept so records persisted by older builds still decode; no lane produces it anymore.
+    // Kept so records persisted by older builds still decode; the lane runs keyless-limited only.
     NEIS_PUBLIC,
     SCHOOL_WEBSITE,
     EALIMI_WEB,
@@ -63,6 +63,7 @@ enum class SourceRunTrigger {
     PERIODIC,
     FOREGROUND_STALE,
     BRIEFING_STALE,
+    POSTING_WINDOW,
 }
 
 enum class SourceRecordState {
@@ -278,12 +279,19 @@ interface RecordSourcePolicy {
 }
 
 object SourceIds {
+    const val NEIS_PUBLIC = "neis-public"
     const val SCHOOL_WEBSITE = "school-website-snjj"
     const val EALIMI_WEB = "ealimi-web"
 }
 
 object SourceConfigs {
     val all = listOf(
+        SourceConfig(
+            sourceId = SourceIds.NEIS_PUBLIC,
+            kind = SourceKind.NEIS_PUBLIC,
+            label = "나이스 학교정보",
+            description = "공개 학사일정",
+        ),
         SourceConfig(
             sourceId = SourceIds.SCHOOL_WEBSITE,
             kind = SourceKind.SCHOOL_WEBSITE,
@@ -312,4 +320,6 @@ object SourceSyncLimits {
     const val RUN_BYTES = 5_242_880
     const val SCHOOL_BOARD_PAGE_LIMIT = 5
     const val SCHOOL_BOARD_DETAIL_LIMIT = 30
+    const val NEIS_PAGE_LIMIT = 10
+    const val NEIS_ROW_LIMIT = 1_000
 }

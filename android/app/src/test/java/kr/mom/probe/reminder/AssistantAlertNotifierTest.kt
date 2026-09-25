@@ -67,6 +67,41 @@ class AssistantAlertNotifierTest {
         assertEquals(fingerprint, AssistantAlertNotifier.storedAlertFingerprintForTest(context, sourceId))
     }
 
+    @Test fun `posted flag tracks the unified alert lifecycle`() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        AssistantAlertNotifier.reset(context)
+        val record = record("준비물 안내", "준비물: 물통. 오늘 오전 10시까지")
+        val sourceId = ProbeRules.notificationIdentity(record.packageName, record.notificationKey)
+
+        assertFalse(AssistantAlertNotifier.isAlertPosted(context, sourceId))
+        AssistantAlertNotifier.markAlertPostedForTest(context, sourceId, record.id, 4242)
+        assertTrue(AssistantAlertNotifier.isAlertPosted(context, sourceId))
+        assertEquals(record.id, AssistantAlertNotifier.linkedRecordId(context, sourceId))
+
+        AssistantAlertNotifier.cancel(context, record)
+        assertFalse(AssistantAlertNotifier.isAlertPosted(context, sourceId))
+        assertEquals(null, AssistantAlertNotifier.linkedRecordId(context, sourceId))
+    }
+
+    @Test fun `dismissed unified alert makes future originals stay visible`() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        AssistantAlertNotifier.reset(context)
+        val record = record("준비물 안내", "준비물: 물통. 오늘 오전 10시까지")
+        val sourceId = ProbeRules.notificationIdentity(record.packageName, record.notificationKey)
+        val alertId = ProbeRules.recordIdentity(record).hashCode()
+
+        AssistantAlertNotifier.markAlertPostedForTest(context, sourceId, record.id, alertId)
+        assertTrue(AssistantAlertNotifier.isAlertPosted(context, sourceId))
+
+        AssistantAlertNotifier.markAlertGone(context, alertId)
+        assertFalse(AssistantAlertNotifier.isAlertPosted(context, sourceId))
+        assertEquals(null, AssistantAlertNotifier.linkedRecordId(context, sourceId))
+        // An unknown notification id must not disturb other posted alerts.
+        AssistantAlertNotifier.markAlertPostedForTest(context, sourceId, record.id, alertId)
+        AssistantAlertNotifier.markAlertGone(context, alertId + 1)
+        assertTrue(AssistantAlertNotifier.isAlertPosted(context, sourceId))
+    }
+
     private fun decision(title: String, text: String, child: ChildNoticeProfile) = NoticeDecisionEngine.decide(
         record(title, text),
         child,

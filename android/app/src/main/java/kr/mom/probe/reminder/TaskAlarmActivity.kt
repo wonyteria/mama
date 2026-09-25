@@ -19,11 +19,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kr.mom.probe.BuildConfig
+import kr.mom.probe.MainActivity
 import kr.mom.probe.data.ProbeRepository
 import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.task.AssistantTask
 import kr.mom.probe.task.AssistantTaskStore
-import kr.mom.probe.task.AssistantTasksActivity
 import kr.mom.probe.task.TaskAlarmSnoozeResult
 import kr.mom.probe.task.TaskReminderScheduler
 import kr.mom.probe.ui.MomTheme
@@ -179,7 +179,11 @@ class TaskAlarmActivity : ComponentActivity() {
                     },
                     onShowDetails = {
                         if (isUnlockedNow()) {
-                            startActivity(Intent(this@TaskAlarmActivity, AssistantTasksActivity::class.java))
+                            startActivity(
+                                Intent(this@TaskAlarmActivity, MainActivity::class.java)
+                                    .putExtra(kr.mom.probe.widget.AssistantWidgetProvider.EXTRA_OPEN_TODO, true)
+                                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                            )
                         } else {
                             unlocked = false
                         }
@@ -270,7 +274,11 @@ class TaskAlarmActivity : ComponentActivity() {
         }
         pendingAskMomo.cancel()
         stopOwnNotification()
-        startActivity(Intent(this, AssistantTasksActivity::class.java))
+        startActivity(
+            Intent(this, MainActivity::class.java)
+                .putExtra(kr.mom.probe.widget.AssistantWidgetProvider.EXTRA_OPEN_TODO, true)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        )
         finish()
     }
 
@@ -278,7 +286,11 @@ class TaskAlarmActivity : ComponentActivity() {
         if (isFinishing || isDestroyed || !resumed || !hasWindowFocus) return
         pendingAskMomo.runIfUnlocked(::isUnlockedNow) {
             stopOwnNotification()
-            startActivity(Intent(this, AssistantTasksActivity::class.java))
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .putExtra(kr.mom.probe.widget.AssistantWidgetProvider.EXTRA_OPEN_TODO, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            )
             finish()
         }
     }

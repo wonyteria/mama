@@ -25,6 +25,9 @@ object AssistantAlertNotifier {
     private const val PREFS = "assistant-alerts"
     private const val ENABLED = "enabled"
     private const val ALERTED_PREFIX = "alerted:"
+    private const val POSTED_PREFIX = "posted:"
+    private const val LINK_PREFIX = "link:"
+    private const val ALERT_ID_PREFIX = "alertId:"
     private val whitespace = Regex("\\s+")
 
     fun isEnabled(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -39,6 +42,37 @@ object AssistantAlertNotifier {
         val institution = NoticeGrouping.institution(kr.mom.probe.data.ProbeRepository.get(context).settings.value)
         val stableNotificationId = NoticeGrouping.groupId(record, institution).hashCode()
         context.getSystemService(NotificationManager::class.java).cancel(stableNotificationId)
+        val sourceId = ProbeRules.recordIdentity(record)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(postedKey(sourceId), false)
+            .remove(linkKey(sourceId))
+            .apply()
+    }
+
+    /** True only while the unified alert for this notificationKey is posted. */
+    fun isAlertPosted(context: Context, sourceIdentity: String): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(postedKey(sourceIdentity), false)
+
+    /** The revision record currently shown by the unified alert for this key. */
+    fun linkedRecordId(context: Context, sourceIdentity: String): String? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(linkKey(sourceIdentity), null)
+
+    /**
+     * Called by the notification listener when one of our own notifications is
+     * removed, so a dismissed unified alert never causes later originals to be
+     * hidden. Our alert ids are recordIdentity hashCodes; the reverse map lets
+     * removal find the source notificationKey without trusting the hash.
+     */
+    fun markAlertGone(context: Context, notificationId: Int) {
+        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val sourceId = preferences.getString(alertIdKey(notificationId), null) ?: return
+        preferences.edit()
+            .putBoolean(postedKey(sourceId), false)
+            .remove(linkKey(sourceId))
+            .remove(alertIdKey(notificationId))
+            .apply()
     }
 
     fun notify(context: Context, record: ProbeRecord): Boolean {
@@ -105,7 +139,12 @@ object AssistantAlertNotifier {
             .build()
         return try {
             manager.notify(stableNotificationId, privateNotification)
-            preferences.edit().putString(alertedKey(sourceId), fingerprint).apply()
+            preferences.edit()
+                .putString(alertedKey(sourceId), fingerprint)
+                .putBoolean(postedKey(sourceId), true)
+                .putString(linkKey(sourceId), record.id)
+                .putString(alertIdKey(stableNotificationId), sourceId)
+                .apply()
             true
         } catch (_: SecurityException) {
             false
@@ -132,6 +171,13 @@ object AssistantAlertNotifier {
     }
     internal fun storedAlertFingerprintForTest(context: Context, sourceId: String): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(alertedKey(sourceId), null)
+    internal fun markAlertPostedForTest(context: Context, sourceId: String, recordId: String, notificationId: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(postedKey(sourceId), true)
+            .putString(linkKey(sourceId), recordId)
+            .putString(alertIdKey(notificationId), sourceId)
+            .apply()
+    }
 
     private fun alertFingerprint(decision: NoticeDecision): String? {
         val action = decision.action ?: return null
@@ -143,5 +189,8 @@ object AssistantAlertNotifier {
     }
 
     private fun alertedKey(sourceId: String): String = "$ALERTED_PREFIX$sourceId"
+    private fun postedKey(sourceId: String): String = "$POSTED_PREFIX$sourceId"
+    private fun linkKey(sourceId: String): String = "$LINK_PREFIX$sourceId"
+    private fun alertIdKey(notificationId: Int): String = "$ALERT_ID_PREFIX$notificationId"
     private fun String.normalizeForFingerprint(): String = trim().replace(whitespace, " ")
 }
