@@ -16,7 +16,7 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 
 ## A–N 결함 수정 (자동, 신규)
 
-`android/design/DEFECT_TRACKING_1.1.md`가 수락 기준과 테스트 매핑을 추적한다. 각 항목은 재현 테스트(수정 전 실패) → 최소 수정 → 회귀 검증을 거쳤으며, 커밋 `f16380c`(task/data 계층)와 `8846640`(UI/activity 계층)에 나뉘어 있다. 요약:
+`android/design/DEFECT_TRACKING_1.1.md`가 수락 기준과 테스트 매핑을 추적한다. 각 항목은 재현 테스트(수정 전 실패) → 최소 수정 → 회귀 검증을 거쳤으며, 커밋 `f16380c`(task/data 계층), `8846640`(UI/activity 계층), `11a9c86`(기기 QA 안전 경계 + 저널 동기 durable 저장)에 나뉘어 있다. 요약:
 
 - A: 공식 문서 ID가 다른 공지는 fingerprint 앵커가 같아도 병합하지 않는다(disjoint-id·app/web 사본·완료 미승계 테스트).
 - B: 불명확 revision/첨부 실패는 마지막 신뢰 상태를 유지하고 `needsReview`+`수정 공지 확인 필요`로 노출한다.
@@ -68,6 +68,7 @@ CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터
 - `syntheticHwp5AssetReportsEmbeddedBinaryPartialOnDevice`가 저장소 체크인 합성 HWP5 fixture(BinData 포함, sha256 검증)로 내장 바이너리 건너뜀 보고를 기기에서 확인한다 — 공개 fixture 없이도 HWP5 부분 추출 계약을 기기에서 검증.
 - skip 2개는 에뮬레이터와 동일한 opt-in 공개 fixture 테스트다.
 - QA 앱 cold launch 후 프로세스 유지·즉시 crash/ANR 없음을 확인했다.
+- 시점 주의: 이 실기기 실행은 `DeviceQaSafety` 게이트 도입(`11a9c86`) 이전에 수행됐다. 대상은 전용 QA 설치였으므로 `deleteAll`이 사용자 release 데이터를 건드리지 않았지만, 위 안전 경계 문구는 현재 코드의 동작을 설명하는 것이지 당시 실행에 게이트가 있었다는 뜻은 아니다. `11a9c86` 이후에는 실기기가 연결되지 않아 실기기 재실행은 하지 않았다.
 
 남은 실기기 항목(여전히 NOT_RUN):
 
