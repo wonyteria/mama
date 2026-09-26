@@ -29,4 +29,21 @@ class TaskReminderSchedulerTest {
         assertEquals(27_100, TaskReminderScheduler.notificationId(intent))
         assertEquals(TaskReminderReceiver::class.java.name, intent.component?.className)
     }
+
+    @Test fun syncFallsBackToInexactAlarmWhenExactPermissionIsRevoked() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val manager = context.getSystemService(android.app.AlarmManager::class.java)
+        org.robolectric.shadows.ShadowAlarmManager.setCanScheduleExactAlarms(false)
+        val future = System.currentTimeMillis() + 3_600_000L
+        val task = AssistantTask(
+            id = "task-inexact", text = "제출하기", completed = false,
+            createdAt = 0L, remindAt = future,
+        )
+
+        TaskReminderScheduler.sync(context, listOf(task))
+
+        val alarm = org.robolectric.Shadows.shadowOf(manager).nextScheduledAlarm
+        org.junit.Assert.assertNotNull("revoked exact permission must still schedule an inexact alarm", alarm)
+        assertEquals(future, alarm!!.triggerAtTime)
+    }
 }

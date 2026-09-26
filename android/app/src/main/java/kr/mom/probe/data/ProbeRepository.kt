@@ -142,6 +142,7 @@ class ProbeRepository private constructor(context: Context) {
     }
 
     suspend fun acceptConsent() = action {
+        require(!ResetMarker.isPending(app)) { "이전 삭제 정리가 끝날 때까지 다시 가입할 수 없어요." }
         saveLocked(settings.value.copy(consent = true, consentAt = System.currentTimeMillis(), consentVersion = ProbeRules.CONSENT_VERSION))
     }
 
@@ -171,12 +172,14 @@ class ProbeRepository private constructor(context: Context) {
 
     suspend fun completeSetup() = action {
         val current = settings.value
+        require(!ResetMarker.isPending(app)) { "이전 삭제 정리가 끝날 때까지 다시 가입할 수 없어요." }
         require(current.consent && current.consentVersion == ProbeRules.CONSENT_VERSION && current.childName.isNotBlank() && current.selectedPackages.isNotEmpty()) { "최신 설명에 동의하고 챙길 앱과 아이 이름을 설정해 주세요." }
         require(hasNotificationAccess()) { "알림 읽기를 허용한 뒤 다시 시도해 주세요." }
         saveLocked(current.copy(onboardingDone = true, collectionEnabled = true))
     }
 
     suspend fun deferSetup() = action {
+        require(!ResetMarker.isPending(app)) { "이전 삭제 정리가 끝날 때까지 다시 가입할 수 없어요." }
         require(settings.value.consent && settings.value.consentVersion == ProbeRules.CONSENT_VERSION) { "최신 참여 설명에 먼저 동의해 주세요." }
         saveLocked(settings.value.copy(onboardingDone = true, collectionEnabled = false))
     }
@@ -295,6 +298,15 @@ class ProbeRepository private constructor(context: Context) {
         pruneLocked()
         val inserted = dao.insert(StoredRecord(id, record.receivedAt, crypto.encrypt(encodeRecord(record), "record:$id")))
         if (inserted != -1L) {
+            // Journal before reconcile so a crash between the record commit and the
+            // task write below still replays on the next startup or resync.
+            kr.mom.probe.task.ReconcileJournal.markPending(
+                app,
+                kr.mom.probe.data.NoticeGrouping.groupId(
+                    record,
+                    kr.mom.probe.data.NoticeGrouping.institution(settings.value),
+                ),
+            )
             kr.mom.probe.task.AutoActionCoordinator.handle(app, record, settings.value)
             kr.mom.probe.reminder.AssistantAlertNotifier.notify(app, record)
         }
@@ -428,7 +440,14 @@ class ProbeRepository private constructor(context: Context) {
         if (replacedIds.isNotEmpty()) database.withTransaction { dao.deleteIds(replacedIds) }
         mutableRecords.value = dao.currentRecords().filterNot { ProbeRules.isExpired(it.receivedAt, System.currentTimeMillis()) }
             .map { decodeRecord(crypto.decrypt(it.encryptedPayload, "record:${it.id}")) }
+        val ingestInstitution = kr.mom.probe.data.NoticeGrouping.institution(settings.value)
         mutableRecords.value.filter { it.id in storedIds }.forEach { record ->
+            // Same journal-before-reconcile contract as notification capture: a
+            // death between the row commit above and this loop replays later.
+            kr.mom.probe.task.ReconcileJournal.markPending(
+                app,
+                kr.mom.probe.data.NoticeGrouping.groupId(record, ingestInstitution),
+            )
             kr.mom.probe.task.AutoActionCoordinator.handle(app, record, settings.value)
             kr.mom.probe.reminder.AssistantAlertNotifier.notify(app, record)
         }

@@ -2,6 +2,7 @@ package kr.mom.probe.task
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -279,6 +280,239 @@ class AssistantTaskStoreTest {
         assertEquals(snoozed, restored)
         assertEquals(4, restored.snoozeCount)
         assertEquals(1_820_000L, restored.remindAt)
+    }
+
+    @Test fun disjointOfficialIdsWithSameFingerprintProduceSeparateTasks() {
+        // Two official documents share institution/title/date/body fingerprint but carry
+        // different ext/url ids. The shared fp anchor must not reconcile one onto the other.
+        val docAKeys = setOf("fp:shared", "ext:doc-a", "url:doc-a", "nid-a")
+        val (afterA, _) = AssistantTaskStore.applyAutomaticPlansFrom(
+            tasks = emptyList(),
+            sourceNotificationId = "fp:shared",
+            sourceRevisionId = "rev-a1",
+            plans = listOf(AutoTaskPlan("submit", "서류 제출 A", dueAt = 30_000L)),
+            noticeGroupKeys = docAKeys,
+            now = 10_000L,
+            idProvider = { "id-a" },
+        )
+        assertEquals(1, afterA.size)
+
+        val docBKeys = setOf("fp:shared", "ext:doc-b", "url:doc-b", "nid-b")
+        val (afterB, changed) = AssistantTaskStore.applyAutomaticPlansFrom(
+            tasks = afterA,
+            sourceNotificationId = "fp:shared",
+            sourceRevisionId = "rev-b1",
+            plans = listOf(AutoTaskPlan("submit", "서류 제출 B", dueAt = 40_000L)),
+            noticeGroupKeys = docBKeys,
+            now = 20_000L,
+            idProvider = { "id-b" },
+        )
+
+        assertTrue(changed)
+        assertEquals(2, afterB.size)
+        assertEquals("서류 제출 A", afterB.first { it.id == "id-a" }.text)
+        assertEquals("rev-a1", afterB.first { it.id == "id-a" }.sourceRevisionId)
+        assertEquals("서류 제출 B", afterB.first { it.id == "id-b" }.text)
+    }
+
+    @Test fun completionOfOneOfficialNoticeDoesNotCarryToDisjointOfficialNotice() {
+        val doneA = AssistantTask(
+            "task-a", "서류 제출 A", completed = true, createdAt = 10L,
+            sourceNotificationId = "fp:shared", sourceRevisionId = "rev-a1",
+            sourceKind = AssistantTaskSource.AUTO_NOTICE, actionKind = "submit",
+            noticeGroupKeys = setOf("fp:shared", "ext:doc-a", "url:doc-a"),
+        )
+        val openB = doneA.copy(
+            id = "task-b", text = "서류 제출 B", completed = false,
+            sourceRevisionId = "rev-b1",
+            noticeGroupKeys = setOf("fp:shared", "ext:doc-b", "url:doc-b"),
+        )
+        // A third revision of document B must update only task-b.
+        val (after, _) = AssistantTaskStore.applyAutomaticPlansFrom(
+            tasks = listOf(doneA, openB),
+            sourceNotificationId = "fp:shared",
+            sourceRevisionId = "rev-b2",
+            plans = listOf(AutoTaskPlan("submit", "서류 제출 B 정정", dueAt = 50_000L)),
+            noticeGroupKeys = setOf("fp:shared", "ext:doc-b", "url:doc-b"),
+            now = 30_000L,
+        )
+        assertEquals("rev-b2", after.first { it.id == "task-b" }.sourceRevisionId)
+        assertFalse(after.first { it.id == "task-b" }.completed)
+        assertEquals("rev-a1", after.first { it.id == "task-a" }.sourceRevisionId)
+        assertTrue(after.first { it.id == "task-a" }.completed)
+    }
+
+    @Test fun appCopyWithoutOfficialIdsStillMergesIntoOfficialTask() {
+        // The notification lane carries no ext/url keys: a fingerprint-only match must
+        // still bridge the app copy onto the official document's task.
+        val official = AssistantTask(
+            "task-a", "서류 제출", false, 10L,
+            sourceNotificationId = "fp:shared", sourceRevisionId = "rev-a1",
+            sourceKind = AssistantTaskSource.AUTO_NOTICE, actionKind = "submit",
+            noticeGroupKeys = setOf("fp:shared", "ext:doc-a", "url:doc-a"),
+        )
+        val (after, changed) = AssistantTaskStore.applyAutomaticPlansFrom(
+            tasks = listOf(official),
+            sourceNotificationId = "fp:shared",
+            sourceRevisionId = "rev-app-copy",
+            plans = listOf(AutoTaskPlan("submit", "서류 제출 정정", dueAt = 50_000L)),
+            noticeGroupKeys = setOf("fp:shared", "nid-app"),
+            now = 20_000L,
+        )
+        assertEquals(1, after.size)
+        assertEquals("rev-app-copy", after.single().sourceRevisionId)
+        assertTrue(changed)
+    }
+
+    @Test fun suspendingOneOfficialNoticeLeavesDisjointOfficialTaskActive() {
+        val taskA = AssistantTask(
+            "task-a", "서류 제출 A", false, 10L,
+            sourceNotificationId = "fp:shared", sourceRevisionId = "rev-a1",
+            sourceKind = AssistantTaskSource.AUTO_NOTICE, actionKind = "submit",
+            dueAt = 30_000L, remindAt = 20_000L,
+            noticeGroupKeys = setOf("fp:shared", "ext:doc-a", "url:doc-a"),
+        )
+        val taskB = taskA.copy(
+            id = "task-b", text = "서류 제출 B", sourceRevisionId = "rev-b1",
+            noticeGroupKeys = setOf("fp:shared", "ext:doc-b", "url:doc-b"),
+        )
+        val suspended = AssistantTaskStore.reconcileAutomaticRevisionForTest(
+            listOf(taskA, taskB),
+            sourceNotificationId = "fp:shared",
+            sourceRevisionId = "rev-b2",
+            noticeGroupKeys = setOf("fp:shared", "ext:doc-b", "url:doc-b"),
+        )
+        assertTrue(suspended.first { it.id == "task-b" }.suspended)
+        assertFalse(suspended.first { it.id == "task-a" }.suspended)
+        assertEquals(20_000L, suspended.first { it.id == "task-a" }.remindAt)
+    }
+
+    @Test fun unrelatedRevisionPreservesUserSnoozeAndCompletion() {
+        // A user snoozed the automatic task four times; a body-only revision that does
+        // not change the deadline must not reset the reminder or the snooze history.
+        val snoozed = AssistantTask(
+            "task-1", "서류 제출", false, 10L,
+            sourceNotificationId = "fp:shared", sourceRevisionId = "rev-1",
+            sourceKind = AssistantTaskSource.AUTO_NOTICE, actionKind = "submit",
+            dueAt = 100_000L, remindAt = 90_000L,
+            reminderOccurrenceId = "occ-snooze", reminderOccurrenceAt = 90_000L,
+            snoozeCount = 4, snoozeMinutes = 240,
+            noticeGroupKeys = setOf("fp:shared", "ext:doc-a"),
+            userEdited = true,
+        )
+        val (after, changed) = AssistantTaskStore.applyAutomaticPlansFrom(
+            tasks = listOf(snoozed),
+            sourceNotificationId = "fp:shared",
+            sourceRevisionId = "rev-2",
+            plans = listOf(AutoTaskPlan("submit", "서류 제출", dueAt = 100_000L, remindAt = null)),
+            noticeGroupKeys = setOf("fp:shared", "ext:doc-a"),
+            now = 50_000L,
+        )
+        val updated = after.single()
+        assertTrue(changed)
+        assertEquals(90_000L, updated.remindAt)
+        assertEquals("occ-snooze", updated.reminderOccurrenceId)
+        assertEquals(4, updated.snoozeCount)
+        assertTrue(updated.userEdited)
+        assertFalse(updated.completed)
+    }
+
+    @Test fun undatedTaskKeepsUserSnoozeAcrossCrossLaneRevision() {
+        val snoozed = AssistantTask(
+            "task-1", "동의서 제출 안내", false, 10L,
+            sourceNotificationId = "fp:shared", sourceRevisionId = "rev-1",
+            sourceKind = AssistantTaskSource.AUTO_NOTICE, actionKind = "submit",
+            dueAt = null, remindAt = 90_000L,
+            reminderOccurrenceId = "occ-1", reminderOccurrenceAt = 90_000L,
+            snoozeCount = 4, snoozeMinutes = 240,
+            noticeGroupKeys = setOf("fp:shared"),
+        )
+        val (after, _) = AssistantTaskStore.applyAutomaticPlansFrom(
+            tasks = listOf(snoozed),
+            sourceNotificationId = "fp:shared",
+            sourceRevisionId = "rev-web",
+            plans = listOf(AutoTaskPlan("submit", "동의서 제출", dueAt = null, remindAt = null)),
+            noticeGroupKeys = setOf("fp:shared", "ext:doc-a"),
+            now = 50_000L,
+        )
+        assertEquals(90_000L, after.single().remindAt)
+        assertEquals("occ-1", after.single().reminderOccurrenceId)
+        assertEquals(4, after.single().snoozeCount)
+    }
+
+    @Test fun genuineDeadlineChangeRearmsAutomaticReminder() {
+        val existing = AssistantTask(
+            "task-1", "서류 제출", false, 10L,
+            sourceNotificationId = "fp:shared", sourceRevisionId = "rev-1",
+            sourceKind = AssistantTaskSource.AUTO_NOTICE, actionKind = "submit",
+            dueAt = 100_000L, remindAt = 90_000L,
+            reminderOccurrenceId = "occ-1", reminderOccurrenceAt = 90_000L,
+            noticeGroupKeys = setOf("fp:shared"),
+        )
+        val (after, _) = AssistantTaskStore.applyAutomaticPlansFrom(
+            tasks = listOf(existing),
+            sourceNotificationId = "fp:shared",
+            sourceRevisionId = "rev-2",
+            plans = listOf(AutoTaskPlan("submit", "서류 제출", dueAt = 200_000L, remindAt = 180_000L)),
+            noticeGroupKeys = setOf("fp:shared"),
+            now = 50_000L,
+        )
+        val updated = after.single()
+        assertEquals(200_000L, updated.dueAt)
+        assertEquals(180_000L, updated.remindAt)
+        assertTrue(updated.reminderOccurrenceId != "occ-1")
+        assertEquals(0, updated.reminderAttempts)
+        assertNotNull(updated.revisionSummary)
+    }
+
+    @Test fun uncertainRevisionMarksNeedsReviewWithoutHidingObligation() {
+        val task = AssistantTask(
+            "task-1", "서류 제출", false, 10L,
+            sourceNotificationId = "fp:shared", sourceRevisionId = "rev-1",
+            sourceKind = AssistantTaskSource.AUTO_NOTICE, actionKind = "submit",
+            dueAt = 100_000L, remindAt = 90_000L,
+            reminderOccurrenceId = "occ-1", reminderOccurrenceAt = 90_000L,
+            evidenceText = "금요일까지 제출",
+            originalEvidenceText = "금요일까지 제출",
+            noticeGroupKeys = setOf("fp:shared"),
+        )
+        val updated = AssistantTaskStore.markNeedsReviewForTest(
+            listOf(task), "fp:shared", "rev-2", setOf("fp:shared"),
+        ).single()
+
+        assertTrue(updated.needsReview)
+        assertFalse(updated.suspended)
+        assertEquals(100_000L, updated.dueAt)
+        assertEquals(90_000L, updated.remindAt)
+        assertEquals("occ-1", updated.reminderOccurrenceId)
+        assertEquals("금요일까지 제출", updated.evidenceText)
+        assertEquals("rev-2", updated.sourceRevisionId)
+        assertNotNull(updated.revisionSummary)
+    }
+
+    @Test fun needsReviewFlagSurvivesStorageRoundTrip() {
+        val task = AssistantTask("t", "x", false, 1L, needsReview = true)
+        val decoded = decodeTask(encodeTask(task))
+        assertTrue(decoded.needsReview)
+    }
+
+    @Test fun clearRevisionResolvesNeedsReview() {
+        val flagged = AssistantTask(
+            "task-1", "서류 제출", false, 10L,
+            sourceNotificationId = "fp:shared", sourceRevisionId = "rev-2",
+            sourceKind = AssistantTaskSource.AUTO_NOTICE, actionKind = "submit",
+            dueAt = 100_000L, needsReview = true,
+            noticeGroupKeys = setOf("fp:shared"),
+        )
+        val (after, _) = AssistantTaskStore.applyAutomaticPlansFrom(
+            tasks = listOf(flagged),
+            sourceNotificationId = "fp:shared",
+            sourceRevisionId = "rev-3",
+            plans = listOf(AutoTaskPlan("submit", "서류 제출", dueAt = 100_000L)),
+            noticeGroupKeys = setOf("fp:shared"),
+            now = 50_000L,
+        )
+        assertFalse(after.single().needsReview)
     }
 
     @Test fun taskGroupKeysRoundTripThroughStorage() {

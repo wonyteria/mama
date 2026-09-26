@@ -18,6 +18,8 @@ data class SourceLane(
     val capabilities: Set<LaneCapability>,
     val health: LaneHealth,
     val statusText: String,
+    /** User-facing description of what this transport can do ("알림 수신", "본문 확인"). */
+    val capabilityText: String = "",
     val enabled: Boolean = false,
     /** Internal handle used only for wiring (package name, source id). Never shown. */
     val internalKey: String = "",
@@ -63,11 +65,13 @@ object SourceLanes {
             verified -> LaneHealth.READY to "알림 수신 이력 있음"
             else -> LaneHealth.TEMPORARILY_UNCERTAIN to "첫 알림 기다리는 중"
         }
+        val capabilities = setOf(LaneCapability.NOTIFICATION_CAPTURE, LaneCapability.REVISION_DETECTION)
         return SourceLane(
             name = "$serviceName 앱 알림",
-            capabilities = setOf(LaneCapability.NOTIFICATION_CAPTURE, LaneCapability.REVISION_DETECTION),
+            capabilities = capabilities,
             health = health,
             statusText = text,
+            capabilityText = capabilityText(capabilities),
             enabled = enabled,
             internalKey = packageName,
         )
@@ -86,15 +90,17 @@ object SourceLanes {
                 LaneHealth.UNSUPPORTED to "지금은 확인된 학교 홈페이지만 연결해요"
             else -> snapshotHealth(snapshot, ready = "공지·가정통신문을 확인할 수 있어요")
         }
+        val capabilities = setOf(
+            LaneCapability.LISTING_DISCOVERY,
+            LaneCapability.BODY_EXTRACTION,
+            LaneCapability.REVISION_DETECTION,
+        )
         return SourceLane(
             name = "학교 공식 홈페이지",
-            capabilities = setOf(
-                LaneCapability.LISTING_DISCOVERY,
-                LaneCapability.BODY_EXTRACTION,
-                LaneCapability.REVISION_DETECTION,
-            ),
+            capabilities = capabilities,
             health = health,
             statusText = text,
+            capabilityText = capabilityText(capabilities),
             enabled = supported,
             internalKey = SourceIds.SCHOOL_WEBSITE,
         )
@@ -110,11 +116,13 @@ object SourceLanes {
             !connected -> LaneHealth.NEEDS_SETUP to "학교 일정 공개 API · 연결하면 확인해요"
             else -> snapshotHealth(snapshot, ready = "학교 일정을 확인할 수 있어요")
         }
+        val capabilities = setOf(LaneCapability.LISTING_DISCOVERY, LaneCapability.REVISION_DETECTION)
         return SourceLane(
             name = "나이스 학교정보",
-            capabilities = setOf(LaneCapability.LISTING_DISCOVERY, LaneCapability.REVISION_DETECTION),
+            capabilities = capabilities,
             health = health,
             statusText = text,
+            capabilityText = capabilityText(capabilities),
             enabled = connected && productionEnabled,
             internalKey = SourceIds.NEIS_PUBLIC,
         )
@@ -139,6 +147,7 @@ object SourceLanes {
             capabilities = emptySet(),
             health = health,
             statusText = text,
+            capabilityText = "자동 조회 지원 준비 중",
             enabled = session,
             internalKey = sourceId,
         )
@@ -198,8 +207,29 @@ object SourceLanes {
         return services
     }
 
-    private fun snapshotHealth(snapshot: SourceSyncSnapshot?, ready: String): Pair<LaneHealth, String> =
-        when (snapshot?.status) {
+    private fun capabilityText(capabilities: Set<LaneCapability>): String =
+        capabilities.map {
+            when (it) {
+                LaneCapability.NOTIFICATION_CAPTURE -> "알림 수신"
+                LaneCapability.LISTING_DISCOVERY -> "목록 확인"
+                LaneCapability.BODY_EXTRACTION -> "본문 확인"
+                LaneCapability.REVISION_DETECTION -> "변경 감지"
+            }
+        }.joinToString(" · ")
+
+    /**
+     * A past success is evidence, not live health: the last check time is shown so a
+     * stale receipt never reads as a currently working connection.
+     */
+    private fun lastCheckedText(snapshot: SourceSyncSnapshot): String {
+        val at = snapshot.lastSuccessAt ?: snapshot.lastAttemptAt ?: return ""
+        return java.text.SimpleDateFormat(" · 마지막 확인 M/d HH:mm", java.util.Locale.KOREA)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("Asia/Seoul") }
+            .format(java.util.Date(at))
+    }
+
+    private fun snapshotHealth(snapshot: SourceSyncSnapshot?, ready: String): Pair<LaneHealth, String> {
+        val health = when (snapshot?.status) {
             SourceSyncStatus.FETCHED -> LaneHealth.READY to "조회 완료 · 저장 ${snapshot.storedCount}개"
             SourceSyncStatus.SUCCESS_EMPTY -> LaneHealth.READY to "정상 응답 · 새 소식 0개"
             SourceSyncStatus.PARTIAL -> LaneHealth.TEMPORARILY_UNCERTAIN to "일부만 확인했어요 · ${snapshot.message ?: "미확인 범위 있음"}"
@@ -210,4 +240,7 @@ object SourceLanes {
             SourceSyncStatus.RUNNING -> LaneHealth.TEMPORARILY_UNCERTAIN to "확인하는 중이에요"
             SourceSyncStatus.NEVER, null -> LaneHealth.READY to ready
         }
+        if (snapshot == null || snapshot.status == SourceSyncStatus.NEVER) return health
+        return health.first to health.second + lastCheckedText(snapshot)
+    }
 }

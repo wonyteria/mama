@@ -72,6 +72,8 @@ data class AssistantTask(
     val sourceCapturedAt: Long? = null,
     val audienceLabel: String? = null,
     val revisionSummary: String? = null,
+    /** An ambiguous revision could not confirm the obligation; the last trusted state stays active. */
+    val needsReview: Boolean = false,
 )
 
 sealed class TaskAlarmSnoozeResult {
@@ -384,6 +386,11 @@ class AssistantTaskStore private constructor(context: Context) {
     @Synchronized
     fun delete(id: String) {
         val before = mutableTasks.value.firstOrNull { it.id == id }
+        // Retire the source's group keys so a journaled reconcile replay never
+        // resurrects a task the user explicitly deleted.
+        if (before?.sourceKind == AssistantTaskSource.AUTO_NOTICE) {
+            ReconcileJournal.retire(app, before.noticeGroupKeys + listOfNotNull(before.sourceNotificationId))
+        }
         if (before != null) TaskReminderScheduler.cancel(app, before) else TaskReminderScheduler.cancel(app, id)
         save(mutableTasks.value.filterNot { it.id == id })
     }
@@ -418,6 +425,24 @@ class AssistantTaskStore private constructor(context: Context) {
                 taskMatchesGroup(before, sourceNotificationId, incomingKeys) &&
                 next.firstOrNull { it.id == before.id }?.remindAt == null
         }.forEach { TaskReminderScheduler.cancel(app, it) }
+        save(next)
+        return true
+    }
+
+    /**
+     * An ambiguous revision or incomplete content must not hide a known unfinished
+     * obligation. Keeps matching automatic tasks active, preserves the last trusted
+     * due/reminder/evidence state, and flags them for user review.
+     */
+    @Synchronized
+    fun markAutomaticSourcesNeedReview(
+        sourceNotificationId: String,
+        sourceRevisionId: String,
+        noticeGroupKeys: Set<String>,
+    ): Boolean {
+        val incomingKeys = noticeGroupKeys + sourceNotificationId
+        val next = markNeedsReview(mutableTasks.value, sourceNotificationId, sourceRevisionId, incomingKeys)
+        if (next == mutableTasks.value) return false
         save(next)
         return true
     }
@@ -498,6 +523,7 @@ class AssistantTaskStore private constructor(context: Context) {
         check(loaded) { "저장된 부탁을 먼저 불러와주세요." }
         val array = JSONArray().apply { next.forEach { task -> put(encodeTask(task)) } }
         val ciphertext = Base64.encodeToString(ProbeCrypto().encrypt(array.toString(), "assistant_tasks"), Base64.NO_WRAP)
+        saveInterceptor?.invoke()
         if (!preferences.edit().putString("encrypted", ciphertext).commit()) throw IOException("부탁을 저장하지 못했어요. 다시 시도해주세요.")
         mutableTasks.value = next
         if (sync) TaskReminderScheduler.sync(app, next)
@@ -509,6 +535,7 @@ class AssistantTaskStore private constructor(context: Context) {
         loaded = false
         mutableTasks.value = emptyList()
         if (!preferences.edit().clear().commit()) throw IOException("부탁 기록을 삭제하지 못했어요.")
+        ReconcileJournal.reset(app)
         TaskReminderScheduler.sync(app, emptyList())
     }
 
@@ -624,23 +651,28 @@ class AssistantTaskStore private constructor(context: Context) {
                     existing.copy(
                         sourceRevisionId = sourceRevisionId,
                         suspended = false,
+                        needsReview = false,
                         noticeGroupKeys = existing.noticeGroupKeys + incomingKeys,
                     )
                 } else {
-                    val reminderChanged = existing.remindAt != plan.remindAt
+                    // Scheduling is user-owned: an unrelated body revision or cross-lane
+                    // copy must not reset a snooze or chosen reminder. Only a real
+                    // deadline change re-arms the automatic reminder for the new deadline.
+                    val deadlineChanged = existing.dueAt != plan.dueAt
+                    val reminderChanged = deadlineChanged && existing.remindAt != plan.remindAt
                     val revisionChanged = existing.sourceRevisionId != sourceRevisionId
                     val nextEvidence = normalizedEvidence(plan.evidenceText) ?: existing.evidenceText
                     existing.copy(
                         text = if (existing.userEdited) existing.text else normalized,
                         sourceRevisionId = sourceRevisionId,
                         dueAt = plan.dueAt,
-                        remindAt = plan.remindAt,
+                        remindAt = if (deadlineChanged) plan.remindAt else existing.remindAt,
                         reminderOccurrenceId = if (reminderChanged) plan.remindAt?.let { idProvider() } else existing.reminderOccurrenceId,
-                        reminderOccurrenceAt = if (reminderChanged) plan.remindAt else existing.reminderOccurrenceAt,
-                        activeAlarmOccurrenceId = null,
-                        activeAlarmScheduledAt = null,
-                        activeAlarmNotificationId = null,
-                        reminderAttempts = 0,
+                        reminderOccurrenceAt = if (deadlineChanged) plan.remindAt else existing.reminderOccurrenceAt,
+                        activeAlarmOccurrenceId = if (deadlineChanged) null else existing.activeAlarmOccurrenceId,
+                        activeAlarmScheduledAt = if (deadlineChanged) null else existing.activeAlarmScheduledAt,
+                        activeAlarmNotificationId = if (deadlineChanged) null else existing.activeAlarmNotificationId,
+                        reminderAttempts = if (deadlineChanged) 0 else existing.reminderAttempts,
                         suspended = false,
                         checklist = mergeChecklist(existing.checklist, plan.checklist),
                         noticeGroupKeys = existing.noticeGroupKeys + incomingKeys,
@@ -651,6 +683,7 @@ class AssistantTaskStore private constructor(context: Context) {
                         sourceCapturedAt = plan.sourceCapturedAt ?: existing.sourceCapturedAt,
                         audienceLabel = normalizedMetadata(plan.audienceLabel) ?: existing.audienceLabel,
                         revisionSummary = if (revisionChanged) revisionSummary(existing, plan, normalized) else existing.revisionSummary,
+                        needsReview = false,
                     )
                 }
                 if (updated != existing) {
@@ -749,6 +782,9 @@ class AssistantTaskStore private constructor(context: Context) {
             )
             return tasks.map { if (it.id == id) completed else it } to true
         }
+        /** Test seam: injects a failure between encode and commit for replay coverage. */
+        @Volatile internal var saveInterceptor: (() -> Unit)? = null
+
         @Volatile private var instance: AssistantTaskStore? = null
         fun get(context: Context): AssistantTaskStore = instance ?: synchronized(this) {
             instance ?: AssistantTaskStore(context).also { instance = it }
@@ -769,8 +805,15 @@ class AssistantTaskStore private constructor(context: Context) {
             sourceNotificationId: String?,
             incomingKeys: Set<String>,
         ): Boolean {
-            if (sourceNotificationId != null && task.sourceNotificationId == sourceNotificationId) return true
             val storedKeys = task.noticeGroupKeys + listOfNotNull(task.sourceNotificationId)
+            if (sourceNotificationId != null && task.sourceNotificationId == sourceNotificationId) {
+                // The fingerprint anchor can be identical for two different official
+                // documents (same institution/title/date/body start). Anchor equality
+                // must not merge them when both sides carry disjoint official ids.
+                val incomingStrong = incomingKeys.filterTo(mutableSetOf()) { it.startsWith("url:") || it.startsWith("ext:") }
+                val storedStrong = storedKeys.filterTo(mutableSetOf()) { it.startsWith("url:") || it.startsWith("ext:") }
+                return incomingStrong.isEmpty() || storedStrong.isEmpty() || incomingStrong.intersect(storedStrong).isNotEmpty()
+            }
             return storedKeys.isNotEmpty() && kr.mom.probe.data.NoticeGrouping.matches(incomingKeys, storedKeys)
         }
 
@@ -778,6 +821,35 @@ class AssistantTaskStore private constructor(context: Context) {
             tasks: List<AssistantTask>,
             sourceNotificationIds: Set<String>,
         ): List<AssistantTask> = suspendAutomaticSources(tasks, sourceNotificationIds)
+
+        internal fun markNeedsReviewForTest(
+            tasks: List<AssistantTask>,
+            sourceNotificationId: String,
+            sourceRevisionId: String,
+            noticeGroupKeys: Set<String>,
+        ): List<AssistantTask> = markNeedsReview(tasks, sourceNotificationId, sourceRevisionId, noticeGroupKeys + sourceNotificationId)
+
+        private fun markNeedsReview(
+            tasks: List<AssistantTask>,
+            sourceNotificationId: String,
+            sourceRevisionId: String,
+            incomingKeys: Set<String>,
+        ): List<AssistantTask> = tasks.map { task ->
+            if (taskMatchesGroup(task, sourceNotificationId, incomingKeys) &&
+                task.sourceKind == AssistantTaskSource.AUTO_NOTICE && !task.completed &&
+                (task.sourceRevisionId != sourceRevisionId || !task.needsReview || task.suspended)
+            ) {
+                task.copy(
+                    sourceRevisionId = sourceRevisionId,
+                    suspended = false,
+                    needsReview = true,
+                    revisionSummary = "공지가 수정되어 내용 확인이 필요해요",
+                    noticeGroupKeys = task.noticeGroupKeys + incomingKeys,
+                )
+            } else {
+                task
+            }
+        }
 
         private fun suspendAutomaticSources(
             tasks: List<AssistantTask>,
@@ -851,6 +923,7 @@ internal fun encodeTask(task: AssistantTask): JSONObject = JSONObject()
     .put("sourceCapturedAt", task.sourceCapturedAt ?: JSONObject.NULL)
     .put("audienceLabel", task.audienceLabel ?: JSONObject.NULL)
     .put("revisionSummary", task.revisionSummary ?: JSONObject.NULL)
+    .put("needsReview", task.needsReview)
 
 internal fun decodeTask(item: JSONObject): AssistantTask {
     val sourceNotificationId = item.optionalId("sourceNotificationId") ?: item.optionalId("sourceRecordId")
@@ -893,6 +966,7 @@ internal fun decodeTask(item: JSONObject): AssistantTask {
         item.optionalLong("sourceCapturedAt"),
         item.optionalText("audienceLabel", AssistantTaskStore.MAX_ITEM_TEXT),
         item.optionalText("revisionSummary", AssistantTaskStore.MAX_TEXT),
+        item.optBoolean("needsReview", false),
     )
 }
 

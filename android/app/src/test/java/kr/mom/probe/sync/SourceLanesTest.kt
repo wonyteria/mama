@@ -128,6 +128,45 @@ class SourceLanesTest {
         assertTrue(lane.statusText.contains("자동 조회 미지원"))
     }
 
+    @Test fun `lanes describe what each transport can actually do`() {
+        val app = SourceLanes.notificationLane(
+            "com.ewut.allealimi", "e알리미", installed = true,
+            settings = settings.copy(selectedPackages = setOf("com.ewut.allealimi")),
+            verifiedPackages = setOf("com.ewut.allealimi"), notificationAccess = true,
+        )
+        val web = SourceLanes.schoolWebsiteLane(settings, snapshot = null)
+        val unsupported = SourceLanes.webLane("e알리미 웹", SourceIds.EALIMI_WEB, ConnectorState(), null)
+
+        assertTrue(app.capabilityText.contains("알림"))
+        assertTrue(web.capabilityText.contains("본문"))
+        assertTrue(unsupported.capabilityText.contains("지원"))
+        listOf(app, web, unsupported).forEach { lane ->
+            assertFalse(lane.capabilityText.contains("com."))
+            assertFalse(lane.capabilityText.contains("-web"))
+        }
+    }
+
+    @Test fun `snapshot health shows the last successful check instead of implying live health`() {
+        val fetched = SourceSyncSnapshot(
+            sourceId = SourceIds.SCHOOL_WEBSITE, kind = SourceKind.SCHOOL_WEBSITE,
+            status = SourceSyncStatus.FETCHED, storedCount = 3,
+            lastSuccessAt = 1_718_586_000_000L, lastAttemptAt = 1_718_586_000_000L,
+        )
+        val text = SourceLanes.schoolWebsiteLane(settings, fetched).statusText
+
+        assertTrue(text.contains("마지막 확인"))
+        assertFalse(text.contains(SourceIds.SCHOOL_WEBSITE))
+    }
+
+    @Test fun `unsupported school website lane is still displayable with its own status`() {
+        val lane = SourceLanes.schoolWebsiteLane(settings.copy(schoolName = "다른학교"), snapshot = null)
+
+        assertEquals(LaneHealth.UNSUPPORTED, lane.health)
+        assertFalse(lane.enabled)
+        // The row must be renderable with this status rather than hidden silently.
+        assertTrue(lane.statusText.isNotBlank())
+    }
+
     @Test fun `no lane exposes internal identifiers in user-facing text`() {
         val connectors = ConnectorState(
             sites = mapOf(
