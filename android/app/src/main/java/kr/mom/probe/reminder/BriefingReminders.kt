@@ -25,7 +25,6 @@ sealed class BriefingSnoozeResult {
     data class Scheduled(val nextAt: Long) : BriefingSnoozeResult()
     object Stale : BriefingSnoozeResult()
     object Disabled : BriefingSnoozeResult()
-    object LimitReached : BriefingSnoozeResult()
     object Failed : BriefingSnoozeResult()
 }
 
@@ -39,8 +38,6 @@ object BriefingReminders {
     const val OCCURRENCE_ID = "occurrenceId"
     const val GENERATION = "generation"
     private const val SEEN_IDS = "seenIds"
-    private const val MAX_SNOOZES = 3
-    private const val MAX_SNOOZE_MINUTES = 60
     private const val PENDING_GRACE_MS = 15 * 60_000L
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     fun read(context: Context, slot: Int): BriefingTime = prefs(context).let {
@@ -204,17 +201,25 @@ object BriefingReminders {
         val child = kr.mom.probe.data.NoticeDecisionEngine.childProfile(repository.settings.value)
         val since = maxOf(prefs(context).getLong("seen", 0), System.currentTimeMillis() - ProbeRules.RETENTION_MS)
         val seenIds = prefs(context).getStringSet(SEEN_IDS, emptySet()).orEmpty()
-        return activeRecords.filter {
+        val recent = activeRecords.filter {
             it.receivedAt > since && (it.sourceMetadata != null || (repository.settings.value.collectionEnabled && it.packageName in repository.settings.value.selectedPackages))
         }
             .sortedByDescending { it.receivedAt }
-            .distinctBy { ProbeRules.recordIdentity(it) }
+        val institution = kr.mom.probe.data.NoticeGrouping.institution(repository.settings.value)
+        val groupIds = kr.mom.probe.data.NoticeGrouping.groupIds(recent, institution)
+        return recent.distinctBy { groupIds.getValue(it.id) }
             .filter { it.id !in seenIds }
             .filter { kr.mom.probe.data.NoticeDecisionEngine.isBriefingAction(kr.mom.probe.data.NoticeDecisionEngine.decide(it, child), System.currentTimeMillis()) }
     }
     fun unseenRecords(context: Context, repository: ProbeRepository, tasks: List<kr.mom.probe.task.AssistantTask>): List<kr.mom.probe.data.ProbeRecord> {
-        val linked = tasks.mapNotNull { it.sourceNotificationId }.toSet()
-        return unseenRecords(context, repository).filter { ProbeRules.recordIdentity(it) !in linked }
+        val institution = kr.mom.probe.data.NoticeGrouping.institution(repository.settings.value)
+        val taskKeySets = tasks.map { it.noticeGroupKeys + listOfNotNull(it.sourceNotificationId) }
+            .filter { it.isNotEmpty() }
+        if (taskKeySets.isEmpty()) return unseenRecords(context, repository)
+        return unseenRecords(context, repository).filter { record ->
+            val recordKeys = kr.mom.probe.data.NoticeGrouping.keys(record, institution)
+            taskKeySets.none { kr.mom.probe.data.NoticeGrouping.matches(recordKeys, it) }
+        }
     }
     fun briefingTasks(tasks: List<kr.mom.probe.task.AssistantTask>, now: Long = System.currentTimeMillis()): List<kr.mom.probe.task.AssistantTask> =
         kr.mom.probe.task.TodoSelectors.open(tasks)
@@ -233,7 +238,14 @@ object BriefingReminders {
         val targetDate = Instant.ofEpochMilli(now).atZone(ZoneId.of("Asia/Seoul")).toLocalDate()
             .plusDays(if (slot == 1) 1 else 0)
         val sourceScopes = kr.mom.probe.sync.SourceScopeFactory.activeScopes(context, kr.mom.probe.sync.SourceRunTrigger.BRIEFING_STALE)
-        return kr.mom.probe.sync.SourceRecordSelectors.agenda(records, kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings), sourceScopes, now = now, daysAhead = 7)
+        return kr.mom.probe.sync.SourceRecordSelectors.agenda(
+            records,
+            kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings),
+            sourceScopes,
+            now = now,
+            daysAhead = 7,
+            institution = kr.mom.probe.data.NoticeGrouping.institution(settings),
+        )
             .filter { it.dateIso == targetDate.toString() }
     }
     fun seenRevisionIdsFor(records: List<kr.mom.probe.data.ProbeRecord>): Set<String> =
@@ -314,9 +326,8 @@ object BriefingReminders {
         require(minutes in setOf(5, 10, 30))
         if (slot !in 0..2 || expectedGeneration != generation(context) || !read(context, slot).enabled) return BriefingSnoozeResult.Disabled
         if (occurrenceId == null || occurrenceId != activeOccurrenceId(context, slot) || expectedGeneration != activeGeneration(context, slot)) return BriefingSnoozeResult.Stale
-        val currentCount = prefs(context).getInt("snoozeCount$slot", 0).coerceIn(0, MAX_SNOOZES)
-        val currentMinutes = prefs(context).getInt("snoozeMinutes$slot", 0).coerceIn(0, MAX_SNOOZE_MINUTES)
-        if (currentCount >= MAX_SNOOZES || currentMinutes + minutes > MAX_SNOOZE_MINUTES) return BriefingSnoozeResult.LimitReached
+        val currentCount = prefs(context).getInt("snoozeCount$slot", 0).coerceAtLeast(0)
+        val currentMinutes = prefs(context).getInt("snoozeMinutes$slot", 0).coerceAtLeast(0)
         val previousScheduledAt = activeScheduledAt(context, slot)
         val previousNotificationId = activeNotificationId(context, slot)
         val nextAt = System.currentTimeMillis() + minutes * 60_000L

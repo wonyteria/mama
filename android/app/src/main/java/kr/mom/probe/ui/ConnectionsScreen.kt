@@ -21,10 +21,10 @@ import kr.mom.probe.connector.*
 import kr.mom.probe.data.NoticeDecisionEngine
 import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.data.SchoolLevel
-import kr.mom.probe.sync.SourceConfigs
+import kr.mom.probe.service.NotificationHidingPolicy
 import kr.mom.probe.sync.SourceIds
+import kr.mom.probe.sync.SourceLanes
 import kr.mom.probe.sync.SourceSyncSnapshot
-import kr.mom.probe.sync.SourceSyncStatus
 
 @Composable
 fun ChildProfileScreen(settings: ProbeSettings, busy: Boolean,
@@ -109,12 +109,11 @@ fun ConnectionsScreen(
     postingHints: Map<String, String> = emptyMap(),
     hiddenPackages: Set<String> = emptySet(),
     onToggleHideOriginal: (String, Boolean) -> Unit = { _, _ -> },
+    neisSampleMode: Boolean = true,
 ) {
     val publicConnection = connectorState.sites[SourceIds.NEIS_PUBLIC]
-    val schoolLevel = settings.schoolLevel ?: NoticeDecisionEngine.inferLevel(settings.schoolName)
-    val normalizedSchool = settings.schoolName.replace(" ", "")
-    val schoolWebsiteAvailable = normalizedSchool == "성남정자초등학교" &&
-        schoolLevel == SchoolLevel.ELEMENTARY && settings.schoolGrade in 1..6
+    val schoolWebsiteLane = SourceLanes.schoolWebsiteLane(settings, sourceSnapshots[SourceIds.SCHOOL_WEBSITE])
+    val schoolWebsiteAvailable = schoolWebsiteLane.enabled
     Page {
         BackHeading("연결", onBack)
         Text("제가 확인할 곳을\n골라주세요.", style = MaterialTheme.typography.headlineMedium)
@@ -125,26 +124,31 @@ fun ConnectionsScreen(
             installedApps.forEach { app ->
                 val enabled = app.packageName in settings.selectedPackages
                 val popupOn = appPopupOn[app.packageName]
+                val lane = SourceLanes.notificationLane(
+                    app.packageName, app.name,
+                    installed = true,
+                    settings = settings,
+                    verifiedPackages = verifiedAppPackages,
+                    notificationAccess = listenerAccess,
+                )
                 ConnectionSwitchRow(
                     mark = app.mark,
                     name = app.name,
                     status = when {
                         enabled && popupOn == false -> "이 앱의 알림이 꺼져 있어요 · 켜야 가져올 수 있어요"
-                        enabled && !listenerAccess -> "알림 읽기 권한이 꺼져 있어요"
-                        enabled && app.packageName in verifiedAppPackages -> "알림 수신 이력 있음"
-                        enabled -> "첫 알림 기다리는 중"
-                        else -> "꺼짐"
+                        else -> lane.statusText
                     },
-                    checked = enabled,
+                    detail = lane.capabilityText,
+                    checked = lane.enabled,
                     enabled = !busy,
                     onCheckedChange = { onToggleApp(app.packageName, it) },
                 )
                 if (enabled && popupOn == false) {
-                    TextButton(onClick = { onOpenAppNotifications(app.packageName) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = { onOpenAppNotifications(app.packageName) }, enabled = !busy, modifier = Modifier.fillMaxWidth().minTouchTarget()) {
                         Text("${app.name} 알림 설정 열기")
                     }
                 }
-                if (enabled) HideOriginalRow(
+                if (enabled && NotificationHidingPolicy.mayHideOriginal()) HideOriginalRow(
                     hidden = app.packageName in hiddenPackages,
                     enabled = !busy,
                     onToggle = { onToggleHideOriginal(app.packageName, it) },
@@ -162,53 +166,46 @@ fun ConnectionsScreen(
         }
 
         ConnectionSection("사이트") {
+            val neisProductionEnabled = NeisPublicClient.PRODUCTION_SYNC_ENABLED && !neisSampleMode
+            // The school website row is always rendered — an unsupported school shows
+            // its own status instead of silently disappearing from the list.
+            SourceStatusRow(
+                mark = "정",
+                name = schoolWebsiteLane.name,
+                status = schoolWebsiteLane.statusText,
+                detail = schoolWebsiteLane.capabilityText,
+                enabled = !busy && settings.onboardingDone && schoolWebsiteAvailable,
+                onRefresh = { onRefreshSource(SourceIds.SCHOOL_WEBSITE) },
+                hint = postingHints[SourceIds.SCHOOL_WEBSITE],
+            )
             if (schoolWebsiteAvailable) {
-                SourceStatusRow(
-                    mark = "정",
-                    name = SourceConfigs.get(SourceIds.SCHOOL_WEBSITE)?.label ?: "성남정자초 공식 홈페이지",
-                    sourceId = SourceIds.SCHOOL_WEBSITE,
-                    snapshot = sourceSnapshots[SourceIds.SCHOOL_WEBSITE],
-                    enabled = !busy && settings.onboardingDone,
-                    onRefresh = { onRefreshSource(SourceIds.SCHOOL_WEBSITE) },
-                    hint = postingHints[SourceIds.SCHOOL_WEBSITE],
-                )
-                TextButton(onClick = { onOpenWebsite(SourceIds.SCHOOL_WEBSITE) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = { onOpenWebsite(SourceIds.SCHOOL_WEBSITE) }, enabled = !busy, modifier = Modifier.fillMaxWidth().minTouchTarget()) {
                     Text("홈페이지 열기")
                 }
-                HorizontalDivider(color = Color.White.copy(alpha = .8f))
             }
+            HorizontalDivider(color = Color.White.copy(alpha = .8f))
+            val neisLane = SourceLanes.neisLane(connectorState, sourceSnapshots[SourceIds.NEIS_PUBLIC], neisSampleMode)
             ConnectionSwitchRow(
                 mark = "N",
-                name = "나이스 학교정보",
-                status = if (publicConnection?.status == ConnectionStatus.CONNECTED) sourceStatusText(sourceSnapshots[SourceIds.NEIS_PUBLIC]) else "학교 일정 · sourceId ${SourceIds.NEIS_PUBLIC}",
-                checked = publicConnection?.status == ConnectionStatus.CONNECTED,
-                enabled = !busy && settings.schoolName.isNotBlank(),
+                name = neisLane.name,
+                status = neisLane.statusText,
+                detail = neisLane.capabilityText,
+                checked = neisLane.enabled,
+                enabled = !busy && settings.schoolName.isNotBlank() && neisProductionEnabled,
                 onCheckedChange = { checked -> if (checked) onConnectNeis() else onDisconnectNeis() },
             )
-            if (publicConnection?.status == ConnectionStatus.CONNECTED) {
-                TextButton(onClick = { onRefreshSource(SourceIds.NEIS_PUBLIC) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+            if (neisProductionEnabled && publicConnection?.status == ConnectionStatus.CONNECTED) {
+                TextButton(onClick = { onRefreshSource(SourceIds.NEIS_PUBLIC) }, enabled = !busy, modifier = Modifier.fillMaxWidth().minTouchTarget()) {
                     Text("나이스 지금 확인")
                 }
             }
             HorizontalDivider(color = Color.White.copy(alpha = .8f))
-            ConnectionSwitchRow("N+", "나이스 학부모서비스", "개인 공지 조회 연동 미지원", false, false) { }
+            ConnectionSwitchRow("N+", "나이스 학부모서비스", "개인 공지 조회 연동 미지원", "로그인 필요 · 자동 조회 준비 중", false, false) { }
             HorizontalDivider(color = Color.White.copy(alpha = .8f))
         }
         Text("앱과 웹이 같은 서비스이면 앱만 표시해요. 학교 공식 홈페이지와 나이스처럼 앱과 역할이 다른 사이트만 따로 보여줘요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
-        if (!settings.onboardingDone) TextButton(onClick = onSkip, enabled = !busy) { Text("연결은 나중에 · 비서 만나기") }
+        if (!settings.onboardingDone) TextButton(onClick = onSkip, enabled = !busy, modifier = Modifier.minTouchTarget()) { Text("연결은 나중에 · 비서 만나기") }
     }
-}
-
-private fun sourceStatusText(snapshot: SourceSyncSnapshot?): String = when (snapshot?.status) {
-    SourceSyncStatus.FETCHED -> "조회 완료 · 저장 ${snapshot.storedCount}개"
-    SourceSyncStatus.SUCCESS_EMPTY -> "정상 응답 · 새 소식 0개"
-    SourceSyncStatus.PARTIAL -> "일부 확인 · ${snapshot.message ?: "미확인 범위 있음"}"
-    SourceSyncStatus.AUTH_REQUIRED -> "다시 로그인 필요"
-    SourceSyncStatus.UNSUPPORTED -> "조회 구현 연결 전"
-    SourceSyncStatus.OFFLINE -> "오프라인 · 마지막 자료 유지"
-    SourceSyncStatus.ERROR -> "확인 필요 · ${snapshot.message ?: "오류"}"
-    SourceSyncStatus.RUNNING -> "확인 중"
-    SourceSyncStatus.NEVER, null -> "아직 확인 전"
 }
 
 @Composable
@@ -220,13 +217,14 @@ private fun ConnectionSection(title: String, content: @Composable ColumnScope.()
 }
 
 @Composable
-private fun ConnectionSwitchRow(mark: String, name: String, status: String, checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun ConnectionSwitchRow(mark: String, name: String, status: String, detail: String = "", checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 70.dp).toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         ConnectorMark(mark, if (checked) Clay.Sage else Clay.Background)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(name, style = MaterialTheme.typography.titleMedium)
             Text(status, style = MaterialTheme.typography.bodySmall, color = if (checked) Clay.Green else Clay.Muted)
+            if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
         }
         Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
@@ -247,16 +245,17 @@ private fun HideOriginalRow(hidden: Boolean, enabled: Boolean, onToggle: (Boolea
 }
 
 @Composable
-private fun SourceStatusRow(mark: String, name: String, sourceId: String, snapshot: SourceSyncSnapshot?, enabled: Boolean, onRefresh: () -> Unit, hint: String? = null) {
+private fun SourceStatusRow(mark: String, name: String, status: String, detail: String = "", enabled: Boolean, onRefresh: () -> Unit, hint: String? = null) {
     Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         ConnectorMark(mark, Clay.Sage)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(name, style = MaterialTheme.typography.titleMedium)
-            Text("${sourceStatusText(snapshot)} · sourceId $sourceId", style = MaterialTheme.typography.bodySmall, color = Clay.Green)
+            Text(status, style = MaterialTheme.typography.bodySmall, color = if (enabled) Clay.Green else Clay.Muted)
+            if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
             if (hint != null) Text(hint, style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
         }
-        TextButton(onClick = onRefresh, enabled = enabled) { Text("지금") }
+        if (enabled) TextButton(onClick = onRefresh, enabled = true, modifier = Modifier.minTouchTarget()) { Text("지금") }
     }
 }
 

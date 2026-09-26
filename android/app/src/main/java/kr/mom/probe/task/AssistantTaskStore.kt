@@ -32,6 +32,11 @@ data class AutoTaskPlan(
     val checklist: List<String> = emptyList(),
     val dueAt: Long? = null,
     val remindAt: Long? = null,
+    val evidenceText: String? = null,
+    val sourceTitle: String? = null,
+    val sourceLabel: String? = null,
+    val sourceCapturedAt: Long? = null,
+    val audienceLabel: String? = null,
 )
 
 data class AssistantTask(
@@ -59,12 +64,21 @@ data class AssistantTask(
     val completedAt: Long? = null,
     val checklistBeforeCompletion: List<TaskChecklistItem>? = null,
     val userEdited: Boolean = false,
+    val noticeGroupKeys: Set<String> = emptySet(),
+    val evidenceText: String? = null,
+    val originalEvidenceText: String? = null,
+    val sourceTitle: String? = null,
+    val sourceLabel: String? = null,
+    val sourceCapturedAt: Long? = null,
+    val audienceLabel: String? = null,
+    val revisionSummary: String? = null,
+    /** An ambiguous revision could not confirm the obligation; the last trusted state stays active. */
+    val needsReview: Boolean = false,
 )
 
 sealed class TaskAlarmSnoozeResult {
     data class Scheduled(val task: AssistantTask, val nextAt: Long) : TaskAlarmSnoozeResult()
     object Stale : TaskAlarmSnoozeResult()
-    object LimitReached : TaskAlarmSnoozeResult()
     object Failed : TaskAlarmSnoozeResult()
 }
 
@@ -91,38 +105,7 @@ class AssistantTaskStore private constructor(context: Context) {
         val encoded = preferences.getString("encrypted", null)
         val result = if (encoded == null) emptyList() else {
             val array = JSONArray(ProbeCrypto().decrypt(Base64.decode(encoded, Base64.NO_WRAP), "assistant_tasks"))
-            List(array.length()) { index ->
-                val item = array.getJSONObject(index)
-                val sourceNotificationId = item.optionalId("sourceNotificationId") ?: item.optionalId("sourceRecordId")
-                AssistantTask(
-                    item.getString("id"),
-                    item.getString("text"),
-                    item.getBoolean("completed"),
-                    item.getLong("createdAt"),
-                    sourceNotificationId,
-                    item.optionalId("sourceRevisionId"),
-                    runCatching { AssistantTaskSource.valueOf(item.optString("sourceKind")) }
-                        .getOrDefault(if (sourceNotificationId != null) AssistantTaskSource.LEGACY else AssistantTaskSource.USER_LOCAL),
-                    item.optionalLong("dueAt"),
-                    item.optionalLong("remindAt"),
-                    item.optInt("reminderAttempts", 0).coerceIn(0, 2),
-                    item.optBoolean("suspended", false),
-                    item.optionalId("reminderOccurrenceId"),
-                    item.optionalLong("reminderOccurrenceAt"),
-                    item.optionalId("activeAlarmOccurrenceId"),
-                    item.optionalLong("activeAlarmScheduledAt"),
-                    item.optionalInt("activeAlarmNotificationId"),
-                    item.optInt("snoozeCount", 0).coerceIn(0, MAX_SNOOZES),
-                    item.optInt("snoozeMinutes", 0).coerceIn(0, MAX_SNOOZE_MINUTES),
-                    decodeChecklist(item.optJSONArray("checklist")),
-                    item.optionalId("actionKind"),
-                    item.optBoolean("excluded", false),
-                    item.optionalLong("completedAt"),
-                    if (item.has("checklistBeforeCompletion") && !item.isNull("checklistBeforeCompletion"))
-                        decodeChecklist(item.optJSONArray("checklistBeforeCompletion")) else null,
-                    item.optBoolean("userEdited", false),
-                )
-            }
+            List(array.length()) { index -> decodeTask(array.getJSONObject(index)) }
         }
         mutableTasks.value = result
         loaded = true
@@ -144,6 +127,12 @@ class AssistantTaskStore private constructor(context: Context) {
         sourceKind: AssistantTaskSource = if (sourceNotificationId == null) AssistantTaskSource.USER_LOCAL else AssistantTaskSource.USER_CONFIRMED_NOTICE,
         checklist: List<String> = emptyList(),
         actionKind: String? = null,
+        noticeGroupKeys: Set<String> = emptySet(),
+        evidenceText: String? = null,
+        sourceTitle: String? = null,
+        sourceLabel: String? = null,
+        sourceCapturedAt: Long? = null,
+        audienceLabel: String? = null,
     ): AssistantTask? {
         val normalized = text.trim()
         require(normalized.isNotEmpty() && normalized.length <= MAX_TEXT) { "할 일을 1~300자로 적어주세요." }
@@ -151,15 +140,21 @@ class AssistantTaskStore private constructor(context: Context) {
         require(remindAt == null || remindAt > 0L) { "알림 시간을 다시 확인해주세요." }
         val current = mutableTasks.value
         if (sourceNotificationId != null) {
+            val incomingKeys = noticeGroupKeys + sourceNotificationId
             val sameSource = current.filter {
-                it.sourceNotificationId == sourceNotificationId && it.actionKind == actionKind
+                it.actionKind == actionKind && taskMatchesGroup(it, sourceNotificationId, incomingKeys)
             }
             if (sameSource.any { it.sourceKind != AssistantTaskSource.AUTO_NOTICE || sourceKind != AssistantTaskSource.AUTO_NOTICE }) return null
             val existing = sameSource.firstOrNull { !it.completed && !it.suspended } ?: sameSource.firstOrNull { !it.suspended }
             if (existing != null) {
                 if (existing.completed) {
                     val updated = current.map {
-                        if (it.id == existing.id && sourceRevisionId != null) it.copy(sourceRevisionId = sourceRevisionId) else it
+                        if (it.id == existing.id && sourceRevisionId != null) {
+                            it.copy(
+                                sourceRevisionId = sourceRevisionId,
+                                noticeGroupKeys = it.noticeGroupKeys + incomingKeys,
+                            )
+                        } else it
                     }
                     if (updated != current) save(updated)
                     return null
@@ -179,6 +174,13 @@ class AssistantTaskStore private constructor(context: Context) {
                     snoozeMinutes = 0,
                     suspended = false,
                     checklist = mergeChecklist(existing.checklist, checklist),
+                    noticeGroupKeys = existing.noticeGroupKeys + incomingKeys,
+                    evidenceText = normalizedEvidence(evidenceText) ?: existing.evidenceText,
+                    originalEvidenceText = existing.originalEvidenceText ?: existing.evidenceText ?: normalizedEvidence(evidenceText),
+                    sourceTitle = normalizedMetadata(sourceTitle) ?: existing.sourceTitle,
+                    sourceLabel = normalizedMetadata(sourceLabel) ?: existing.sourceLabel,
+                    sourceCapturedAt = sourceCapturedAt ?: existing.sourceCapturedAt,
+                    audienceLabel = normalizedMetadata(audienceLabel) ?: existing.audienceLabel,
                 )
                 if (updated == existing) return null
                 save(listOf(updated) + current.filterNot { it.id == existing.id })
@@ -203,6 +205,13 @@ class AssistantTaskStore private constructor(context: Context) {
             remindAt,
             checklist = checklist.map { TaskChecklistItem(newOccurrenceId(), it.trim().take(MAX_ITEM_TEXT)) }.filter { it.text.isNotEmpty() },
             actionKind = actionKind,
+            noticeGroupKeys = noticeGroupKeys + listOfNotNull(sourceNotificationId),
+            evidenceText = normalizedEvidence(evidenceText),
+            originalEvidenceText = normalizedEvidence(evidenceText),
+            sourceTitle = normalizedMetadata(sourceTitle),
+            sourceLabel = normalizedMetadata(sourceLabel),
+            sourceCapturedAt = sourceCapturedAt,
+            audienceLabel = normalizedMetadata(audienceLabel),
         )
         save(listOf(task) + current)
         return task
@@ -355,85 +364,20 @@ class AssistantTaskStore private constructor(context: Context) {
      * schedule and arms the new one, while completed tasks keep their completion.
      */
     @Synchronized
-    fun applyAutomaticPlans(sourceNotificationId: String, sourceRevisionId: String, plans: List<AutoTaskPlan>): Boolean {
+    fun applyAutomaticPlans(
+        sourceNotificationId: String,
+        sourceRevisionId: String,
+        plans: List<AutoTaskPlan>,
+        noticeGroupKeys: Set<String> = emptySet(),
+    ): Boolean {
         if (!loaded) load()
-        val current = mutableTasks.value
-        var changed = false
-        val next = current.toMutableList()
-        val reconciledIds = mutableSetOf<String>()
-        plans.forEach { plan ->
-            val normalized = plan.text.trim().take(MAX_TEXT)
-            if (normalized.isEmpty()) return@forEach
-            val existing = next.firstOrNull {
-                it.sourceNotificationId == sourceNotificationId && it.actionKind == plan.actionKind &&
-                    it.sourceKind == AssistantTaskSource.AUTO_NOTICE && !it.suspended
-            } ?: next.firstOrNull {
-                it.sourceNotificationId == sourceNotificationId && it.actionKind == plan.actionKind &&
-                    it.sourceKind == AssistantTaskSource.AUTO_NOTICE
-            } ?: return@forEach run {
-                val occurrenceId = plan.remindAt?.let { newOccurrenceId() }
-                val created = AssistantTask(
-                    UUID.randomUUID().toString(),
-                    normalized,
-                    false,
-                    System.currentTimeMillis(),
-                    sourceNotificationId,
-                    sourceRevisionId,
-                    AssistantTaskSource.AUTO_NOTICE,
-                    plan.dueAt,
-                    plan.remindAt,
-                    reminderOccurrenceId = occurrenceId,
-                    reminderOccurrenceAt = plan.remindAt,
-                    checklist = plan.checklist.map { TaskChecklistItem(newOccurrenceId(), it.trim().take(MAX_ITEM_TEXT)) }
-                        .filter { it.text.isNotEmpty() },
-                    actionKind = plan.actionKind,
-                )
-                next.add(0, created)
-                changed = true
-            }
-            reconciledIds += existing.id
-            val updated = if (existing.completed) {
-                existing.copy(sourceRevisionId = sourceRevisionId, suspended = false)
-            } else {
-                val reminderChanged = existing.remindAt != plan.remindAt
-                existing.copy(
-                    text = if (existing.userEdited) existing.text else normalized,
-                    sourceRevisionId = sourceRevisionId,
-                    dueAt = plan.dueAt,
-                    remindAt = plan.remindAt,
-                    reminderOccurrenceId = if (reminderChanged) plan.remindAt?.let { newOccurrenceId() } else existing.reminderOccurrenceId,
-                    reminderOccurrenceAt = if (reminderChanged) plan.remindAt else existing.reminderOccurrenceAt,
-                    activeAlarmOccurrenceId = null,
-                    activeAlarmScheduledAt = null,
-                    activeAlarmNotificationId = null,
-                    reminderAttempts = 0,
-                    suspended = false,
-                    checklist = mergeChecklist(existing.checklist, plan.checklist),
-                )
-            }
-            if (updated != existing) {
-                next[next.indexOfFirst { it.id == existing.id }] = updated
-                changed = true
-            }
-        }
-        // Suspend automatic tasks whose action kind disappeared from the new revision.
-        val final = next.map {
-            if (it.sourceNotificationId == sourceNotificationId && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
-                !it.completed && it.id !in reconciledIds && !it.suspended) {
-                changed = true
-                it.copy(
-                    suspended = true,
-                    remindAt = null,
-                    reminderOccurrenceId = null,
-                    reminderOccurrenceAt = null,
-                    activeAlarmOccurrenceId = null,
-                    activeAlarmScheduledAt = null,
-                    activeAlarmNotificationId = null,
-                )
-            } else {
-                it
-            }
-        }
+        val (final, changed) = applyAutomaticPlansFrom(
+            mutableTasks.value,
+            sourceNotificationId,
+            sourceRevisionId,
+            plans,
+            noticeGroupKeys,
+        )
         if (!changed) return false
         save(final)
         return true
@@ -442,6 +386,11 @@ class AssistantTaskStore private constructor(context: Context) {
     @Synchronized
     fun delete(id: String) {
         val before = mutableTasks.value.firstOrNull { it.id == id }
+        // Retire the source's group keys so a journaled reconcile replay never
+        // resurrects a task the user explicitly deleted.
+        if (before?.sourceKind == AssistantTaskSource.AUTO_NOTICE) {
+            ReconcileJournal.retire(app, before.noticeGroupKeys + listOfNotNull(before.sourceNotificationId))
+        }
         if (before != null) TaskReminderScheduler.cancel(app, before) else TaskReminderScheduler.cancel(app, id)
         save(mutableTasks.value.filterNot { it.id == id })
     }
@@ -455,7 +404,7 @@ class AssistantTaskStore private constructor(context: Context) {
         if (next == mutableTasks.value) return false
         mutableTasks.value.filter { before ->
             before.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
-                before.sourceNotificationId in sourceNotificationIds &&
+                taskMatchesGroup(before, null, sourceNotificationIds) &&
                 next.firstOrNull { it.id == before.id }?.remindAt == null
         }.forEach { TaskReminderScheduler.cancel(app, it) }
         save(next)
@@ -463,13 +412,37 @@ class AssistantTaskStore private constructor(context: Context) {
     }
 
     @Synchronized
-    fun suspendAutomaticSource(sourceNotificationId: String, sourceRevisionId: String): Boolean {
-        val next = reconcileAutomaticRevision(mutableTasks.value, sourceNotificationId, sourceRevisionId)
+    fun suspendAutomaticSource(
+        sourceNotificationId: String,
+        sourceRevisionId: String,
+        noticeGroupKeys: Set<String> = emptySet(),
+    ): Boolean {
+        val incomingKeys = noticeGroupKeys + sourceNotificationId
+        val next = reconcileAutomaticRevision(mutableTasks.value, sourceNotificationId, sourceRevisionId, incomingKeys)
         if (next == mutableTasks.value) return false
         mutableTasks.value.filter { before ->
-            before.sourceNotificationId == sourceNotificationId && before.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
+            before.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
+                taskMatchesGroup(before, sourceNotificationId, incomingKeys) &&
                 next.firstOrNull { it.id == before.id }?.remindAt == null
         }.forEach { TaskReminderScheduler.cancel(app, it) }
+        save(next)
+        return true
+    }
+
+    /**
+     * An ambiguous revision or incomplete content must not hide a known unfinished
+     * obligation. Keeps matching automatic tasks active, preserves the last trusted
+     * due/reminder/evidence state, and flags them for user review.
+     */
+    @Synchronized
+    fun markAutomaticSourcesNeedReview(
+        sourceNotificationId: String,
+        sourceRevisionId: String,
+        noticeGroupKeys: Set<String>,
+    ): Boolean {
+        val incomingKeys = noticeGroupKeys + sourceNotificationId
+        val next = markNeedsReview(mutableTasks.value, sourceNotificationId, sourceRevisionId, incomingKeys)
+        if (next == mutableTasks.value) return false
         save(next)
         return true
     }
@@ -548,25 +521,9 @@ class AssistantTaskStore private constructor(context: Context) {
     private fun save(next: List<AssistantTask>, sync: Boolean = true) {
         requireConsent()
         check(loaded) { "저장된 부탁을 먼저 불러와주세요." }
-        val array = JSONArray().apply { next.forEach { task -> put(JSONObject()
-            .put("id", task.id).put("text", task.text).put("completed", task.completed).put("createdAt", task.createdAt)
-            .put("sourceNotificationId", task.sourceNotificationId ?: JSONObject.NULL)
-            .put("sourceRevisionId", task.sourceRevisionId ?: JSONObject.NULL).put("sourceKind", task.sourceKind.name)
-            .put("dueAt", task.dueAt ?: JSONObject.NULL).put("remindAt", task.remindAt ?: JSONObject.NULL)
-            .put("reminderAttempts", task.reminderAttempts).put("suspended", task.suspended)
-            .put("reminderOccurrenceId", task.reminderOccurrenceId ?: JSONObject.NULL)
-            .put("reminderOccurrenceAt", task.reminderOccurrenceAt ?: JSONObject.NULL)
-            .put("activeAlarmOccurrenceId", task.activeAlarmOccurrenceId ?: JSONObject.NULL)
-            .put("activeAlarmScheduledAt", task.activeAlarmScheduledAt ?: JSONObject.NULL)
-            .put("activeAlarmNotificationId", task.activeAlarmNotificationId ?: JSONObject.NULL)
-            .put("snoozeCount", task.snoozeCount).put("snoozeMinutes", task.snoozeMinutes)
-            .put("checklist", encodeChecklist(task.checklist))
-            .put("actionKind", task.actionKind ?: JSONObject.NULL)
-            .put("excluded", task.excluded)
-            .put("completedAt", task.completedAt ?: JSONObject.NULL)
-            .put("checklistBeforeCompletion", task.checklistBeforeCompletion?.let { encodeChecklist(it) } ?: JSONObject.NULL)
-            .put("userEdited", task.userEdited)) } }
+        val array = JSONArray().apply { next.forEach { task -> put(encodeTask(task)) } }
         val ciphertext = Base64.encodeToString(ProbeCrypto().encrypt(array.toString(), "assistant_tasks"), Base64.NO_WRAP)
+        saveInterceptor?.invoke()
         if (!preferences.edit().putString("encrypted", ciphertext).commit()) throw IOException("부탁을 저장하지 못했어요. 다시 시도해주세요.")
         mutableTasks.value = next
         if (sync) TaskReminderScheduler.sync(app, next)
@@ -578,15 +535,30 @@ class AssistantTaskStore private constructor(context: Context) {
         loaded = false
         mutableTasks.value = emptyList()
         if (!preferences.edit().clear().commit()) throw IOException("부탁 기록을 삭제하지 못했어요.")
+        ReconcileJournal.reset(app)
         TaskReminderScheduler.sync(app, emptyList())
     }
 
     companion object {
         const val MAX_TEXT = 300
         const val MAX_ITEM_TEXT = 80
+        const val MAX_EVIDENCE_TEXT = 600
         private const val MAX_TASKS = 200
-        internal const val MAX_SNOOZES = 3
-        internal const val MAX_SNOOZE_MINUTES = 60
+
+        private fun normalizedEvidence(value: String?): String? =
+            value?.trim()?.take(MAX_EVIDENCE_TEXT)?.takeIf(String::isNotEmpty)
+
+        private fun normalizedMetadata(value: String?): String? =
+            value?.trim()?.take(MAX_ITEM_TEXT)?.takeIf(String::isNotEmpty)
+
+        private fun revisionSummary(existing: AssistantTask, plan: AutoTaskPlan, normalizedText: String): String? {
+            val changes = buildList {
+                if (!existing.userEdited && existing.text != normalizedText) add("할 일 문구")
+                if (existing.dueAt != plan.dueAt) add("기한")
+                if (existing.evidenceText != normalizedEvidence(plan.evidenceText)) add("근거 문구")
+            }
+            return changes.takeIf { it.isNotEmpty() }?.joinToString(" · ", postfix = " 변경")
+        }
 
         /** Keeps done state of items that survive a revision; matches by normalized text. */
         internal fun mergeChecklist(existing: List<TaskChecklistItem>, revised: List<String>): List<TaskChecklistItem> {
@@ -614,12 +586,132 @@ class AssistantTaskStore private constructor(context: Context) {
             }.filterNotNull()
         }
 
-        private fun encodeChecklist(items: List<TaskChecklistItem>): JSONArray = JSONArray().apply {
+        internal fun encodeChecklist(items: List<TaskChecklistItem>): JSONArray = JSONArray().apply {
             items.forEach { item ->
                 put(JSONObject().put("id", item.id).put("text", item.text).put("done", item.done))
             }
         }
         internal fun newOccurrenceId(): String = UUID.randomUUID().toString()
+
+        internal fun applyAutomaticPlansFrom(
+            tasks: List<AssistantTask>,
+            sourceNotificationId: String,
+            sourceRevisionId: String,
+            plans: List<AutoTaskPlan>,
+            noticeGroupKeys: Set<String> = emptySet(),
+            now: Long = System.currentTimeMillis(),
+            idProvider: () -> String = ::newOccurrenceId,
+        ): Pair<List<AssistantTask>, Boolean> {
+            val incomingKeys = noticeGroupKeys + sourceNotificationId
+            var changed = false
+            val next = tasks.toMutableList()
+            val reconciledIds = mutableSetOf<String>()
+            plans.forEach { plan ->
+                val normalized = plan.text.trim().take(MAX_TEXT)
+                if (normalized.isEmpty()) return@forEach
+                val existing = next.firstOrNull {
+                    it.actionKind == plan.actionKind && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
+                        !it.suspended && taskMatchesGroup(it, sourceNotificationId, incomingKeys)
+                } ?: next.firstOrNull {
+                    it.actionKind == plan.actionKind && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
+                        taskMatchesGroup(it, sourceNotificationId, incomingKeys)
+                }
+                if (existing == null) {
+                    val occurrenceId = plan.remindAt?.let { idProvider() }
+                    val created = AssistantTask(
+                        idProvider(),
+                        normalized,
+                        false,
+                        now,
+                        sourceNotificationId,
+                        sourceRevisionId,
+                        AssistantTaskSource.AUTO_NOTICE,
+                        plan.dueAt,
+                        plan.remindAt,
+                        reminderOccurrenceId = occurrenceId,
+                        reminderOccurrenceAt = plan.remindAt,
+                        checklist = plan.checklist.map { TaskChecklistItem(idProvider(), it.trim().take(MAX_ITEM_TEXT)) }
+                            .filter { it.text.isNotEmpty() },
+                        actionKind = plan.actionKind,
+                        noticeGroupKeys = incomingKeys,
+                        evidenceText = normalizedEvidence(plan.evidenceText),
+                        originalEvidenceText = normalizedEvidence(plan.evidenceText),
+                        sourceTitle = normalizedMetadata(plan.sourceTitle),
+                        sourceLabel = normalizedMetadata(plan.sourceLabel),
+                        sourceCapturedAt = plan.sourceCapturedAt,
+                        audienceLabel = normalizedMetadata(plan.audienceLabel),
+                    )
+                    next.add(0, created)
+                    reconciledIds += created.id
+                    changed = true
+                    return@forEach
+                }
+                reconciledIds += existing.id
+                val updated = if (existing.completed) {
+                    existing.copy(
+                        sourceRevisionId = sourceRevisionId,
+                        suspended = false,
+                        needsReview = false,
+                        noticeGroupKeys = existing.noticeGroupKeys + incomingKeys,
+                    )
+                } else {
+                    // Scheduling is user-owned: an unrelated body revision or cross-lane
+                    // copy must not reset a snooze or chosen reminder. Only a real
+                    // deadline change re-arms the automatic reminder for the new deadline.
+                    val deadlineChanged = existing.dueAt != plan.dueAt
+                    val reminderChanged = deadlineChanged && existing.remindAt != plan.remindAt
+                    val revisionChanged = existing.sourceRevisionId != sourceRevisionId
+                    val nextEvidence = normalizedEvidence(plan.evidenceText) ?: existing.evidenceText
+                    existing.copy(
+                        text = if (existing.userEdited) existing.text else normalized,
+                        sourceRevisionId = sourceRevisionId,
+                        dueAt = plan.dueAt,
+                        remindAt = if (deadlineChanged) plan.remindAt else existing.remindAt,
+                        reminderOccurrenceId = if (reminderChanged) plan.remindAt?.let { idProvider() } else existing.reminderOccurrenceId,
+                        reminderOccurrenceAt = if (deadlineChanged) plan.remindAt else existing.reminderOccurrenceAt,
+                        activeAlarmOccurrenceId = if (deadlineChanged) null else existing.activeAlarmOccurrenceId,
+                        activeAlarmScheduledAt = if (deadlineChanged) null else existing.activeAlarmScheduledAt,
+                        activeAlarmNotificationId = if (deadlineChanged) null else existing.activeAlarmNotificationId,
+                        reminderAttempts = if (deadlineChanged) 0 else existing.reminderAttempts,
+                        suspended = false,
+                        checklist = mergeChecklist(existing.checklist, plan.checklist),
+                        noticeGroupKeys = existing.noticeGroupKeys + incomingKeys,
+                        evidenceText = nextEvidence,
+                        originalEvidenceText = existing.originalEvidenceText ?: existing.evidenceText ?: nextEvidence,
+                        sourceTitle = normalizedMetadata(plan.sourceTitle) ?: existing.sourceTitle,
+                        sourceLabel = normalizedMetadata(plan.sourceLabel) ?: existing.sourceLabel,
+                        sourceCapturedAt = plan.sourceCapturedAt ?: existing.sourceCapturedAt,
+                        audienceLabel = normalizedMetadata(plan.audienceLabel) ?: existing.audienceLabel,
+                        revisionSummary = if (revisionChanged) revisionSummary(existing, plan, normalized) else existing.revisionSummary,
+                        needsReview = false,
+                    )
+                }
+                if (updated != existing) {
+                    next[next.indexOfFirst { it.id == existing.id }] = updated
+                    changed = true
+                }
+            }
+            val final = next.map { task ->
+                if (taskMatchesGroup(task, sourceNotificationId, incomingKeys) &&
+                    task.sourceKind == AssistantTaskSource.AUTO_NOTICE && !task.completed &&
+                    task.id !in reconciledIds && !task.suspended
+                ) {
+                    changed = true
+                    task.copy(
+                        suspended = true,
+                        remindAt = null,
+                        reminderOccurrenceId = null,
+                        reminderOccurrenceAt = null,
+                        activeAlarmOccurrenceId = null,
+                        activeAlarmScheduledAt = null,
+                        activeAlarmNotificationId = null,
+                    )
+                } else {
+                    task
+                }
+            }
+            return final to changed
+        }
         internal fun expectedOccurrenceId(task: AssistantTask): String? =
             task.reminderOccurrenceId ?: task.remindAt?.let { "legacy:${task.id}:$it" }
 
@@ -658,9 +750,6 @@ class AssistantTaskStore private constructor(context: Context) {
             val task = tasks.firstOrNull {
                 it.id == id && !it.completed && !it.suspended && !it.excluded && it.activeAlarmOccurrenceId == occurrenceId
             } ?: return tasks to TaskAlarmSnoozeResult.Stale
-            if (task.snoozeCount >= MAX_SNOOZES || task.snoozeMinutes + minutes > MAX_SNOOZE_MINUTES) {
-                return tasks to TaskAlarmSnoozeResult.LimitReached
-            }
             val snoozed = task.copy(
                 remindAt = nextAt,
                 reminderOccurrenceId = nextOccurrenceId,
@@ -693,6 +782,9 @@ class AssistantTaskStore private constructor(context: Context) {
             )
             return tasks.map { if (it.id == id) completed else it } to true
         }
+        /** Test seam: injects a failure between encode and commit for replay coverage. */
+        @Volatile internal var saveInterceptor: (() -> Unit)? = null
+
         @Volatile private var instance: AssistantTaskStore? = null
         fun get(context: Context): AssistantTaskStore = instance ?: synchronized(this) {
             instance ?: AssistantTaskStore(context).also { instance = it }
@@ -702,19 +794,69 @@ class AssistantTaskStore private constructor(context: Context) {
             tasks: List<AssistantTask>,
             sourceNotificationId: String,
             sourceRevisionId: String,
-        ): List<AssistantTask> = reconcileAutomaticRevision(tasks, sourceNotificationId, sourceRevisionId)
+            noticeGroupKeys: Set<String> = emptySet(),
+        ): List<AssistantTask> = reconcileAutomaticRevision(
+            tasks, sourceNotificationId, sourceRevisionId, noticeGroupKeys + sourceNotificationId,
+        )
+
+        /** Group-aware identity check: lane-local id, or any shared canonical group key. */
+        internal fun taskMatchesGroup(
+            task: AssistantTask,
+            sourceNotificationId: String?,
+            incomingKeys: Set<String>,
+        ): Boolean {
+            val storedKeys = task.noticeGroupKeys + listOfNotNull(task.sourceNotificationId)
+            if (sourceNotificationId != null && task.sourceNotificationId == sourceNotificationId) {
+                // The fingerprint anchor can be identical for two different official
+                // documents (same institution/title/date/body start). Anchor equality
+                // must not merge them when both sides carry disjoint official ids.
+                val incomingStrong = incomingKeys.filterTo(mutableSetOf()) { it.startsWith("url:") || it.startsWith("ext:") }
+                val storedStrong = storedKeys.filterTo(mutableSetOf()) { it.startsWith("url:") || it.startsWith("ext:") }
+                return incomingStrong.isEmpty() || storedStrong.isEmpty() || incomingStrong.intersect(storedStrong).isNotEmpty()
+            }
+            return storedKeys.isNotEmpty() && kr.mom.probe.data.NoticeGrouping.matches(incomingKeys, storedKeys)
+        }
 
         internal fun suspendAutomaticSourcesForTest(
             tasks: List<AssistantTask>,
             sourceNotificationIds: Set<String>,
         ): List<AssistantTask> = suspendAutomaticSources(tasks, sourceNotificationIds)
 
+        internal fun markNeedsReviewForTest(
+            tasks: List<AssistantTask>,
+            sourceNotificationId: String,
+            sourceRevisionId: String,
+            noticeGroupKeys: Set<String>,
+        ): List<AssistantTask> = markNeedsReview(tasks, sourceNotificationId, sourceRevisionId, noticeGroupKeys + sourceNotificationId)
+
+        private fun markNeedsReview(
+            tasks: List<AssistantTask>,
+            sourceNotificationId: String,
+            sourceRevisionId: String,
+            incomingKeys: Set<String>,
+        ): List<AssistantTask> = tasks.map { task ->
+            if (taskMatchesGroup(task, sourceNotificationId, incomingKeys) &&
+                task.sourceKind == AssistantTaskSource.AUTO_NOTICE && !task.completed &&
+                (task.sourceRevisionId != sourceRevisionId || !task.needsReview || task.suspended)
+            ) {
+                task.copy(
+                    sourceRevisionId = sourceRevisionId,
+                    suspended = false,
+                    needsReview = true,
+                    revisionSummary = "공지가 수정되어 내용 확인이 필요해요",
+                    noticeGroupKeys = task.noticeGroupKeys + incomingKeys,
+                )
+            } else {
+                task
+            }
+        }
+
         private fun suspendAutomaticSources(
             tasks: List<AssistantTask>,
             sourceNotificationIds: Set<String>,
         ): List<AssistantTask> = tasks.map { task ->
             if (task.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
-                task.sourceNotificationId in sourceNotificationIds &&
+                taskMatchesGroup(task, null, sourceNotificationIds) &&
                 !task.completed && !task.suspended
             ) {
                 task.copy(
@@ -735,10 +877,12 @@ class AssistantTaskStore private constructor(context: Context) {
             tasks: List<AssistantTask>,
             sourceNotificationId: String,
             sourceRevisionId: String,
+            incomingKeys: Set<String>,
         ): List<AssistantTask> = tasks.map {
-            if (it.sourceNotificationId == sourceNotificationId && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
+            if (taskMatchesGroup(it, sourceNotificationId, incomingKeys) && it.sourceKind == AssistantTaskSource.AUTO_NOTICE &&
                 !it.completed && (it.sourceRevisionId == null || it.sourceRevisionId != sourceRevisionId || !it.suspended)
             ) it.copy(
+                noticeGroupKeys = it.noticeGroupKeys + incomingKeys,
                 sourceRevisionId = sourceRevisionId,
                 remindAt = null,
                 reminderOccurrenceId = null,
@@ -753,6 +897,79 @@ class AssistantTaskStore private constructor(context: Context) {
     }
 }
 
+internal fun encodeTask(task: AssistantTask): JSONObject = JSONObject()
+    .put("id", task.id).put("text", task.text).put("completed", task.completed).put("createdAt", task.createdAt)
+    .put("sourceNotificationId", task.sourceNotificationId ?: JSONObject.NULL)
+    .put("sourceRevisionId", task.sourceRevisionId ?: JSONObject.NULL).put("sourceKind", task.sourceKind.name)
+    .put("dueAt", task.dueAt ?: JSONObject.NULL).put("remindAt", task.remindAt ?: JSONObject.NULL)
+    .put("reminderAttempts", task.reminderAttempts).put("suspended", task.suspended)
+    .put("reminderOccurrenceId", task.reminderOccurrenceId ?: JSONObject.NULL)
+    .put("reminderOccurrenceAt", task.reminderOccurrenceAt ?: JSONObject.NULL)
+    .put("activeAlarmOccurrenceId", task.activeAlarmOccurrenceId ?: JSONObject.NULL)
+    .put("activeAlarmScheduledAt", task.activeAlarmScheduledAt ?: JSONObject.NULL)
+    .put("activeAlarmNotificationId", task.activeAlarmNotificationId ?: JSONObject.NULL)
+    .put("snoozeCount", task.snoozeCount).put("snoozeMinutes", task.snoozeMinutes)
+    .put("checklist", AssistantTaskStore.encodeChecklist(task.checklist))
+    .put("actionKind", task.actionKind ?: JSONObject.NULL)
+    .put("excluded", task.excluded)
+    .put("completedAt", task.completedAt ?: JSONObject.NULL)
+    .put("checklistBeforeCompletion", task.checklistBeforeCompletion?.let { AssistantTaskStore.encodeChecklist(it) } ?: JSONObject.NULL)
+    .put("userEdited", task.userEdited)
+    .put("noticeGroupKeys", JSONArray(task.noticeGroupKeys))
+    .put("evidenceText", task.evidenceText ?: JSONObject.NULL)
+    .put("originalEvidenceText", task.originalEvidenceText ?: JSONObject.NULL)
+    .put("sourceTitle", task.sourceTitle ?: JSONObject.NULL)
+    .put("sourceLabel", task.sourceLabel ?: JSONObject.NULL)
+    .put("sourceCapturedAt", task.sourceCapturedAt ?: JSONObject.NULL)
+    .put("audienceLabel", task.audienceLabel ?: JSONObject.NULL)
+    .put("revisionSummary", task.revisionSummary ?: JSONObject.NULL)
+    .put("needsReview", task.needsReview)
+
+internal fun decodeTask(item: JSONObject): AssistantTask {
+    val sourceNotificationId = item.optionalId("sourceNotificationId") ?: item.optionalId("sourceRecordId")
+    return AssistantTask(
+        item.getString("id"),
+        item.getString("text"),
+        item.getBoolean("completed"),
+        item.getLong("createdAt"),
+        sourceNotificationId,
+        item.optionalId("sourceRevisionId"),
+        runCatching { AssistantTaskSource.valueOf(item.optString("sourceKind")) }
+            .getOrDefault(if (sourceNotificationId != null) AssistantTaskSource.LEGACY else AssistantTaskSource.USER_LOCAL),
+        item.optionalLong("dueAt"),
+        item.optionalLong("remindAt"),
+        item.optInt("reminderAttempts", 0).coerceIn(0, 2),
+        item.optBoolean("suspended", false),
+        item.optionalId("reminderOccurrenceId"),
+        item.optionalLong("reminderOccurrenceAt"),
+        item.optionalId("activeAlarmOccurrenceId"),
+        item.optionalLong("activeAlarmScheduledAt"),
+        item.optionalInt("activeAlarmNotificationId"),
+        item.optInt("snoozeCount", 0).coerceAtLeast(0),
+        item.optInt("snoozeMinutes", 0).coerceAtLeast(0),
+        AssistantTaskStore.decodeChecklist(item.optJSONArray("checklist")),
+        item.optionalId("actionKind"),
+        item.optBoolean("excluded", false),
+        item.optionalLong("completedAt"),
+        if (item.has("checklistBeforeCompletion") && !item.isNull("checklistBeforeCompletion"))
+            AssistantTaskStore.decodeChecklist(item.optJSONArray("checklistBeforeCompletion")) else null,
+        item.optBoolean("userEdited", false),
+        item.optJSONArray("noticeGroupKeys")?.let { array ->
+            (0 until array.length())
+                .mapNotNull { array.optString(it).takeUnless(String::isBlank) }
+                .toSet()
+        } ?: listOfNotNull(sourceNotificationId).toSet(),
+        item.optionalText("evidenceText", AssistantTaskStore.MAX_EVIDENCE_TEXT),
+        item.optionalText("originalEvidenceText", AssistantTaskStore.MAX_EVIDENCE_TEXT),
+        item.optionalText("sourceTitle", AssistantTaskStore.MAX_ITEM_TEXT),
+        item.optionalText("sourceLabel", AssistantTaskStore.MAX_ITEM_TEXT),
+        item.optionalLong("sourceCapturedAt"),
+        item.optionalText("audienceLabel", AssistantTaskStore.MAX_ITEM_TEXT),
+        item.optionalText("revisionSummary", AssistantTaskStore.MAX_TEXT),
+        item.optBoolean("needsReview", false),
+    )
+}
+
 private fun JSONObject.optionalLong(name: String): Long? =
     if (!has(name) || isNull(name)) null else optLong(name).takeIf { it > 0L }
 
@@ -765,3 +982,6 @@ internal fun JSONObject.optionalId(name: String): String? =
     } else {
         optString(name).trim().takeUnless { it.isEmpty() || it == "null" }
     }
+
+private fun JSONObject.optionalText(name: String, maxLength: Int): String? =
+    optionalId(name)?.take(maxLength)

@@ -183,20 +183,19 @@ class SourceIngestFlowTest {
         assertFalse(repository.settings.value.collectionEnabled)
     }
 
-    @Test fun emptyPartialMissingKeyDoesNotAdvanceSuccessOrCheckpoint() {
+    @Test fun emptyPartialDoesNotAdvanceSuccessOrCheckpoint() {
         val scope = schoolScope()
         val partial = SourceFetchResult(
-            sourceId = SourceIds.NEIS_PUBLIC,
+            sourceId = scope.sourceId,
             status = SourceSyncStatus.PARTIAL,
             fetchedAt = fixedNow(),
             coverage = SourceCoverageWindow(complete = false),
             checkpoint = SourceCheckpoint(cursor = "should-not-commit"),
-            issues = listOf(SourceIssue(SourceIssueCode.MISSING_API_KEY, "NEIS key absent")),
+            issues = listOf(SourceIssue(SourceIssueCode.NETWORK_UNAVAILABLE, "network down")),
         )
-        val neisScope = scope.copy(sourceId = SourceIds.NEIS_PUBLIC, kind = SourceKind.NEIS_PUBLIC, school = scope.school.copy(officeCode = "J10", schoolCode = "7530167"))
 
-        stateStore.markRunning(neisScope, fixedNow() - 1)
-        val snapshot = stateStore.recordResult(neisScope, partial, null)
+        stateStore.markRunning(scope, fixedNow() - 1)
+        val snapshot = stateStore.recordResult(scope, partial, null)
 
         assertFalse(partial.canCommitRecords)
         assertNull(snapshot.lastSuccessAt)

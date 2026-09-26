@@ -6,7 +6,6 @@ import java.time.Instant
 import kr.mom.probe.data.ChildNoticeProfile
 import kr.mom.probe.data.NoticeDecisionEngine
 import kr.mom.probe.data.ProbeRecord
-import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.data.SchoolLevel
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -58,7 +57,7 @@ class AssistantAlertNotifierTest {
         AssistantAlertNotifier.reset(context)
         val record = record("준비물 안내", "준비물: 물통. 오늘 오전 10시까지")
         val decision = NoticeDecisionEngine.decide(record, ChildNoticeProfile())
-        val sourceId = ProbeRules.notificationIdentity(record.packageName, record.notificationKey)
+        val sourceId = AssistantAlertNotifier.sourceIdentity(context, record)
         val fingerprint = AssistantAlertNotifier.alertFingerprintForTest(decision)!!
 
         AssistantAlertNotifier.recordAlertedForTest(context, sourceId, fingerprint)
@@ -71,7 +70,7 @@ class AssistantAlertNotifierTest {
         val context = ApplicationProvider.getApplicationContext<Application>()
         AssistantAlertNotifier.reset(context)
         val record = record("준비물 안내", "준비물: 물통. 오늘 오전 10시까지")
-        val sourceId = ProbeRules.notificationIdentity(record.packageName, record.notificationKey)
+        val sourceId = AssistantAlertNotifier.sourceIdentity(context, record)
 
         assertFalse(AssistantAlertNotifier.isAlertPosted(context, sourceId))
         AssistantAlertNotifier.markAlertPostedForTest(context, sourceId, record.id, 4242)
@@ -87,8 +86,8 @@ class AssistantAlertNotifierTest {
         val context = ApplicationProvider.getApplicationContext<Application>()
         AssistantAlertNotifier.reset(context)
         val record = record("준비물 안내", "준비물: 물통. 오늘 오전 10시까지")
-        val sourceId = ProbeRules.notificationIdentity(record.packageName, record.notificationKey)
-        val alertId = ProbeRules.recordIdentity(record).hashCode()
+        val sourceId = AssistantAlertNotifier.sourceIdentity(context, record)
+        val alertId = sourceId.hashCode()
 
         AssistantAlertNotifier.markAlertPostedForTest(context, sourceId, record.id, alertId)
         assertTrue(AssistantAlertNotifier.isAlertPosted(context, sourceId))

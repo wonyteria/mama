@@ -8,6 +8,7 @@ import kr.mom.probe.data.SchoolLevel
 
 enum class SourceKind {
     ANDROID_NOTIFICATION,
+    // Kept so records persisted by older builds still decode; the lane runs keyless-limited only.
     NEIS_PUBLIC,
     SCHOOL_WEBSITE,
     EALIMI_WEB,

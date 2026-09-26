@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kr.mom.probe.ui.BellMascot
 import kr.mom.probe.ui.Clay
+import kr.mom.probe.ui.minTouchTarget
 
 data class AlarmContentState(
     val title: String,
@@ -224,13 +225,14 @@ fun AlarmContent(
                     }
                 }
                 if (!state.locked && state.showSpeak && onSpeak != null) {
-                    TextButton(onClick = onSpeak, modifier = Modifier.testTag("alarm-speak")) { Text("소리로 듣기") }
+                    TextButton(onClick = onSpeak, modifier = Modifier.minTouchTarget().testTag("alarm-speak")) { Text("소리로 듣기") }
                 }
             }
             if (onAskMomo != null) {
                 TextButton(
                     onClick = onAskMomo,
                     modifier = Modifier
+                        .minTouchTarget()
                         .semantics { contentDescription = "할 일 열기" }
                         .testTag("alarm-ask-momo"),
                 ) { Text("할 일 열기") }

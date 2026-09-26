@@ -46,6 +46,28 @@ class DocumentTextExtractorDeviceTest {
         assertTrue(result.text.contains("學校 공개수업 자료"))
     }
 
+    /**
+     * Always-on HWP5 coverage on device: the checked-in synthetic fixture under
+     * androidTest/assets is generated deterministically by
+     * [kr.mom.probe.document.SyntheticHwp5] in the unit-test source set, so no
+     * external document or network download is needed. It reproduces the same
+     * contract the opt-in public fixture verifies (PARTIAL + embedded binary
+     * skipped) without depending on that file being pushed to the device.
+     */
+    @Test
+    fun syntheticHwp5AssetReportsEmbeddedBinaryPartialOnDevice() {
+        val bytes = InstrumentationRegistry.getInstrumentation().context.assets
+            .open("synthetic-parent-notice.hwp").use { it.readBytes() }
+        assertEquals(SYNTHETIC_HWP5_SHA256, sha256(bytes))
+
+        val result = DocumentTextExtractor.extract(bytes, filename = "synthetic-parent-notice.hwp")
+
+        assertEquals(DocumentFormat.HWP5, result.format)
+        assertEquals(DocumentCompleteness.PARTIAL, result.completeness)
+        assertTrue(result.text.contains("2학년"))
+        assertTrue(result.issues.any { it.code == DocumentIssueCode.EMBEDDED_BINARY_SKIPPED })
+    }
+
     @Test
     fun optInPublicHwpFixtureExtractsSecondGradeRowsAndReportsBinDataPartial() {
         val fixture = publicFixture()
@@ -109,7 +131,14 @@ class DocumentTextExtractorDeviceTest {
         return digest.digest().joinToString("") { "%02X".format(it) }
     }
 
+    private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
+        .digest(bytes).joinToString("") { "%02X".format(it) }
+
     private companion object {
+        // sha256 of the deterministic fixture produced by SyntheticHwp5.hwp5WithBinData
+        // with flags=1 and the notice text used in DocumentTextExtractorTest; guards
+        // against accidental binary drift of the checked-in asset.
+        const val SYNTHETIC_HWP5_SHA256 = "5B15F41014DCD9FD0FF8313B21812A9A6631FBBE089632406078149ED53D12A2"
         const val PUBLIC_FIXTURE_SHA256 = "0CAAADECFCB2FAF9439EB8EE4E158C01497540C7948673BD42093EC629F2C77B"
         const val PUBLIC_HWPX_SHA256 = "D4BB3CB6A7FE9301EBB38093BC6911B9809415048CEAD0E8CB54ECABF27350B8"
     }

@@ -151,6 +151,17 @@ class TaskAlarmActivity : ComponentActivity() {
                     state = screenState.copy(snoozeEnabled = screenState.snoozeEnabled && !busy),
                     onStopSound = {
                         pendingAskMomo.cancel()
+                        if (id != null && occurrence != null) {
+                            sendBroadcast(
+                                TaskReminderScheduler.stopIntent(
+                                    this@TaskAlarmActivity,
+                                    id,
+                                    occurrence,
+                                    notificationId,
+                                    scheduledAt,
+                                ),
+                            )
+                        }
                         stopOwnNotification()
                         finish()
                     },
@@ -171,7 +182,6 @@ class TaskAlarmActivity : ComponentActivity() {
                                         snoozedUntil = result.nextAt
                                         status = "${displayTime(result.nextAt)} 무렵 다시 알려드릴게요."
                                     }
-                                    TaskAlarmSnoozeResult.LimitReached -> status = "이 알림은 다시 알림 한도에 닿았어요."
                                     TaskAlarmSnoozeResult.Stale, TaskAlarmSnoozeResult.Failed, null -> status = "다시 알리지 못했어요. 앱에서 부탁을 확인해주세요."
                                 }
                                 busy = false
@@ -373,7 +383,7 @@ internal fun taskAlarmState(
             detailLines = listOfNotNull(
                 "부탁: ${task.text}",
                 task.dueAt?.let { "기한: ${displayTime(it)}" },
-                "다시 알림: ${task.snoozeCount}/3회, ${task.snoozeMinutes}/60분",
+                "다시 알림: ${task.snoozeCount}회",
             ),
             completeEnabled = true,
             showComplete = true,

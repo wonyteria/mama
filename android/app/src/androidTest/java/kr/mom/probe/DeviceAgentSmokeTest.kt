@@ -3,19 +3,15 @@ package kr.mom.probe
 import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextClearance
-import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.io.FileOutputStream
-import kr.mom.probe.agent.AgentActivity
 import kr.mom.probe.calendar.CalendarAppPreferences
 import kr.mom.probe.calendar.CalendarCommandStore
 import kr.mom.probe.calendar.CalendarPreferences
@@ -39,7 +35,7 @@ import org.junit.runner.Description
 import org.junit.runner.RunWith
 
 /**
- * Real-device QA harness for the local AgentActivity command lane.
+ * Real-device QA harness for the task alarm lane.
  *
  * These tests run only against the debug application id (`kr.mom.probe.qa`). They create a
  * synthetic local consent/profile with deferred setup, avoid CalendarProvider writes, and stop
@@ -110,62 +106,6 @@ class DeviceAgentSmokeTest {
         store.delete(original.id)
     }
 
-    @Test
-    fun localTaskCommandSavesAndUndoesWithScreenshots() {
-        initializeQaRepository()
-        launchAgent()
-
-        sendToAgent("물티슈 챙겨줘")
-
-        waitForText("부탁 목록에 저장했어요")
-        compose.onNodeWithText("방금 저장한 부탁").assertIsDisplayed()
-        captureScreenshot("01-local-task-saved")
-
-        compose.onNodeWithText("취소").performClick()
-
-        waitForText("방금 저장한 부탁을 취소했어요")
-        captureScreenshot("02-local-task-undone")
-    }
-
-    @Test
-    fun ambiguousCalendarCommandAsksForAmPmWithoutExternalInsertPath() {
-        initializeQaRepository()
-        launchAgent()
-
-        sendToAgent("내일 7시 상담 일정 저장해줘")
-
-        waitForText("오전인지 오후인지 알려주세요")
-        compose.onNodeWithText("시간 확인").assertIsDisplayed()
-        compose.onNodeWithText("오전").assertIsDisplayed()
-        compose.onNodeWithText("오후").assertIsDisplayed()
-        compose.onNodeWithText("저장할 캘린더").assertDoesNotExist()
-        compose.onNodeWithText("입력 화면을 열 앱").assertDoesNotExist()
-        captureScreenshot("03-calendar-ambiguous-clarification")
-    }
-
-    @Test
-    fun datedAlarmCommandShowsSafeFallbackBeforeExternalDispatch() {
-        initializeQaRepository()
-        val handlers = ExternalAlarmGateway(context).handlers()
-        if (handlers.isNotEmpty()) {
-            assertTrue(ExternalAlarmGateway(context).saveSelectedHandler(handlers.first()))
-        }
-        launchAgent()
-
-        sendToAgent("모레 오전 7시 알람 맞춰줘")
-
-        if (handlers.isEmpty()) {
-            waitForText("시계 앱을 찾지 못했어요")
-            captureScreenshot("04-alarm-no-set-alarm-handler")
-        } else {
-            waitForText("날짜 있는 알림")
-            compose.onNodeWithText("모모에서 알리기").assertIsDisplayed()
-            compose.onNodeWithText("캘린더에 저장").assertIsDisplayed()
-            compose.onNodeWithText("시계 앱 알람 설정 화면을 열었어요").assertDoesNotExist()
-            captureScreenshot("04-alarm-dated-fallback")
-        }
-    }
-
     private fun initializeQaRepository() = runBlocking {
         check(context.packageName.endsWith(".qa")) {
             "DeviceAgentSmokeTest must target the debug QA application id, not release user data."
@@ -181,17 +121,6 @@ class DeviceAgentSmokeTest {
         assertTrue(repository.saveSourceSelection(setOf("kr.mom.synthetic.school")))
         assertTrue(repository.deferSetup())
         AssistantTaskStore.reset(context)
-    }
-
-    private fun launchAgent() {
-        scenario = ActivityScenario.launch(AgentActivity::class.java)
-        waitForText("모모에게 묻기")
-    }
-
-    private fun sendToAgent(text: String) {
-        compose.onNode(hasSetTextAction()).performTextClearance()
-        compose.onNode(hasSetTextAction()).performTextInput(text)
-        compose.onNodeWithText("모모에게 보내기").performClick()
     }
 
     private fun waitForText(text: String) {

@@ -116,14 +116,54 @@ object TaskReminderScheduler {
             val store = AssistantTaskStore.get(context)
             store.load()
             sync(context, store.tasks.value)
+            recoverActiveAlarms(context, store)
+            runCatching { AutoActionCoordinator.replayPending(context) }
         }
+    }
+
+    /** Tasks whose alarm occurrence was consumed but whose delivery is still pending. */
+    internal fun alarmsPendingRecovery(tasks: List<AssistantTask>): List<AssistantTask> =
+        tasks.filter { it.activeAlarmOccurrenceId != null && !it.completed && !it.suspended && !it.excluded }
+
+    /**
+     * A process can die between consuming a reminder and posting its
+     * notification. On restore, re-deliver pending occurrences under their
+     * stable notification id (a repost replaces in place, never duplicates),
+     * fall back to a scheduled retry while attempts remain, or drop the
+     * occurrence. Completed and excluded tasks never recover.
+     */
+    private fun recoverActiveAlarms(context: Context, store: AssistantTaskStore) {
+        alarmsPendingRecovery(store.tasks.value).forEach { task ->
+            val occurrenceId = task.activeAlarmOccurrenceId ?: return@forEach
+            if (canDeliver(context)) {
+                if (notificationVisible(context, task.activeAlarmNotificationId)) return@forEach
+                val delivered = notify(context, task)
+                if (!delivered && task.reminderAttempts < 2) {
+                    runCatching { store.rescheduleReminder(task.id, System.currentTimeMillis() + 15 * 60_000L) }
+                } else if (!delivered) {
+                    store.clearActiveAlarmAfterFailedNotification(task.id, occurrenceId)
+                }
+            } else if (task.reminderAttempts < 2) {
+                runCatching { store.rescheduleReminder(task.id, System.currentTimeMillis() + 15 * 60_000L) }
+            } else {
+                store.clearActiveAlarmAfterFailedNotification(task.id, occurrenceId)
+            }
+        }
+    }
+
+    private fun notificationVisible(context: Context, notificationId: Int?): Boolean {
+        if (notificationId == null) return false
+        return runCatching {
+            context.getSystemService(NotificationManager::class.java)
+                .activeNotifications.any { it.id == notificationId }
+        }.getOrDefault(false)
     }
 
     internal fun notify(context: Context, task: AssistantTask): Boolean {
         val occurrenceId = task.activeAlarmOccurrenceId ?: return false
         val notificationId = task.activeAlarmNotificationId ?: notificationId(task.id, occurrenceId)
         val scheduledAt = task.activeAlarmScheduledAt ?: return false
-        if (task.completed || task.suspended) return false
+        if (task.completed || task.suspended || task.excluded) return false
         if (!canDeliver(context)) return false
         val manager = context.getSystemService(NotificationManager::class.java)
         val ringing = BriefingReminders.alarmMode(context) && BriefingReminders.alarmPermissions(context)
@@ -278,11 +318,23 @@ object TaskReminderScheduler {
     internal fun taskId(intent: Intent): String? = intent.getStringExtra(EXTRA_TASK_ID)
     internal fun occurrenceId(intent: Intent): String? = intent.getStringExtra(EXTRA_OCCURRENCE_ID)
     internal fun notificationId(intent: Intent): Int = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
+    internal fun stopIntent(
+        context: Context,
+        taskId: String,
+        occurrenceId: String,
+        notificationId: Int,
+        scheduledAt: Long,
+    ): Intent = alarmActionIntent(context, ACTION_STOP, taskId, occurrenceId, notificationId, scheduledAt)
 }
 
 class TaskReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+        // Boot and re-granted exact-alarm permission both re-arm every outstanding
+        // task reminder; schedule() falls back to inexact alarms when the
+        // permission is still unavailable.
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED ||
+            intent.action == AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
+        ) {
             val result = goAsync()
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                 try {

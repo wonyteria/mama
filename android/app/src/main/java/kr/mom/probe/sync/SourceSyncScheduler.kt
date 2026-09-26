@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit
 import kr.mom.probe.connector.ConnectionStatus
 import kr.mom.probe.connector.ConnectorCatalog
 import kr.mom.probe.connector.ConnectorRepository
+import kr.mom.probe.connector.NeisPublicClient
 import kr.mom.probe.data.NoticeDecisionEngine
 import kr.mom.probe.data.ProbeRepository
 import kr.mom.probe.data.ProbeRules
@@ -198,7 +199,11 @@ object SourceScopeFactory {
             } else {
                 null
             }
-            SourceIds.NEIS_PUBLIC -> neisScope(app, child, consentEpoch, authorizationToken, trigger, base)
+            SourceIds.NEIS_PUBLIC -> if (NeisPublicClient.PRODUCTION_SYNC_ENABLED) {
+                neisScope(app, child, consentEpoch, authorizationToken, trigger, base)
+            } else {
+                null
+            }
             SourceIds.EALIMI_WEB -> if (ConnectorCatalog.shouldShowWebsite(SourceIds.EALIMI_WEB)) {
                 privateScope(app, child, consentEpoch, authorizationToken, trigger, base)
             } else {
@@ -212,7 +217,9 @@ object SourceScopeFactory {
         val connectors = ConnectorRepository.get(context.applicationContext).state.value.sites
         val ids = mutableSetOf<String>()
         if (isSeongnamJeongjaElementaryFromSettings(context)) ids += SourceIds.SCHOOL_WEBSITE
-        if (connectors[SourceIds.NEIS_PUBLIC]?.status == ConnectionStatus.CONNECTED) ids += SourceIds.NEIS_PUBLIC
+        if (NeisPublicClient.PRODUCTION_SYNC_ENABLED &&
+            connectors[SourceIds.NEIS_PUBLIC]?.status == ConnectionStatus.CONNECTED
+        ) ids += SourceIds.NEIS_PUBLIC
         if (ConnectorCatalog.shouldShowWebsite(SourceIds.EALIMI_WEB) &&
             connectors[SourceIds.EALIMI_WEB]?.status in setOf(ConnectionStatus.SESSION_READY, ConnectionStatus.CONNECTED)
         ) ids += SourceIds.EALIMI_WEB

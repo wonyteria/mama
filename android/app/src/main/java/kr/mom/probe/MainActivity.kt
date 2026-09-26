@@ -75,6 +75,12 @@ private data class PendingTaskSave(
     val sourceRevisionId: String,
     val dueAt: Long?,
     val remindAt: Long?,
+    val noticeGroupKeys: Set<String> = emptySet(),
+    val evidenceText: String? = null,
+    val sourceTitle: String? = null,
+    val sourceLabel: String? = null,
+    val sourceCapturedAt: Long? = null,
+    val audienceLabel: String? = null,
 )
 
 @Composable
@@ -82,9 +88,9 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     val context = LocalContext.current
     val repository = remember { ProbeRepository.get(context) }
     val connectorRepository = remember { ConnectorRepository.get(context) }
+    val neisClient = remember { NeisPublicClient() }
     val sourceStateStore = remember { SourceSyncStateStore.get(context) }
     val connectorState by connectorRepository.state.collectAsStateWithLifecycle()
-    val neisClient = remember { NeisPublicClient() }
     val settings by repository.settings.collectAsStateWithLifecycle()
     val records by repository.records.collectAsStateWithLifecycle()
     val assistantStore = remember { kr.mom.probe.task.AssistantTaskStore.get(context) }
@@ -131,16 +137,19 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     }
 
 
-    fun taskOperation(action: () -> Unit) {
-        if (busy) return
+    fun taskOperation(onDone: (Boolean) -> Unit = {}, action: () -> Unit) {
+        if (busy) { onDone(false); return }
         scope.launch {
             busy = true
+            var succeeded = true
             try {
                 withContext(Dispatchers.IO) { action() }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
+                succeeded = false
                 message = error.message ?: "할 일을 저장하지 못했어요. 다시 시도해주세요."
             } finally { busy = false }
+            onDone(succeeded)
         }
     }
 
@@ -156,10 +165,11 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     }
 
     suspend fun suspendAutomaticTasksForSources(sourceIds: Set<String>) {
-        val identities = records.mapNotNull { record ->
-            record.sourceMetadata?.takeIf { it.sourceId in sourceIds }?.let { metadata ->
-                kr.mom.probe.data.ProbeRules.sourceItemIdentity(metadata.sourceId, metadata.itemId)
-            }
+        val institution = kr.mom.probe.data.NoticeGrouping.institution(repository.settings.value)
+        val identities = records.flatMap { record ->
+            record.sourceMetadata?.takeIf { it.sourceId in sourceIds }?.let {
+                kr.mom.probe.data.NoticeGrouping.keys(record, institution)
+            }.orEmpty()
         }.toSet()
         if (identities.isNotEmpty()) {
             withContext(Dispatchers.IO) {
@@ -178,6 +188,29 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                 message = "작업을 마치지 못했어요. 다시 시도해주세요."
             } finally { busy = false }
         }
+    }
+
+    // deleteAll closes the in-memory capture gate before its first fallible disk
+    // operation. The chain is shared between the confirm dialog and the startup
+    // resume path so a half-finished reset always runs to completion.
+    suspend fun runFullReset(): Boolean {
+        var deleted = true
+        runCatching { context.getSystemService(NotificationManager::class.java).cancelAll() }.onFailure { deleted = false }
+        runCatching { repository.beginReset() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { repository.deleteAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.reminder.BriefingReminders.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.data.NoticeReadStore.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.reminder.AssistantAlertNotifier.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.calendar.CalendarPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.calendar.CalendarAppPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.calendar.CalendarCommandStore.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.reminder.ExternalAlarmGateway.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { withContext(Dispatchers.IO) { kr.mom.probe.task.AssistantTaskStore.reset(context) } }.onFailure { deleted = false }
+        runCatching { WebsiteSessionManager.clearAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { connectorRepository.deleteAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { SourceSyncScheduler.cancelAll(context) }.onFailure { deleted = false }
+        runCatching { sourceStateStore.reset() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        return deleted
     }
 
     fun proceedSetup() {
@@ -209,6 +242,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     }
 
     fun refreshNeisEvents(connection: SiteConnection?) {
+        if (!NeisPublicClient.PRODUCTION_SYNC_ENABLED) { neisEvents = emptyList(); return }
         if (connection?.status != ConnectionStatus.CONNECTED) { neisEvents = emptyList(); return }
         val school = NeisSchool(
             officeCode = connection.metadata["officeCode"].orEmpty(),
@@ -271,6 +305,12 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         request.remindAt,
                         sourceRevisionId = request.sourceRevisionId,
                         sourceKind = kr.mom.probe.task.AssistantTaskSource.USER_CONFIRMED_NOTICE,
+                        noticeGroupKeys = request.noticeGroupKeys,
+                        evidenceText = request.evidenceText,
+                        sourceTitle = request.sourceTitle,
+                        sourceLabel = request.sourceLabel,
+                        sourceCapturedAt = request.sourceCapturedAt,
+                        audienceLabel = request.audienceLabel,
                     ) != null
                 }
                 message = if (added) "모모가 부탁과 알림을 기억해뒀어요." else "이미 모모가 기억하고 있어요."
@@ -380,9 +420,22 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
             message = "앱이 다시 시작되어 자료 검토를 다시 열어주세요."
         }
     }
+    // A pending reset marker means a previous delete-all died mid-chain: replay
+    // the remaining cleanup before anything else. Consent and setup refuse to
+    // proceed while it is armed, so re-enrollment cannot meet a half-wiped store.
+    LaunchedEffect(ready) {
+        if (ready && kr.mom.probe.data.ResetMarker.isPending(context)) {
+            val finished = runCatching { withContext(Dispatchers.IO) { runFullReset() } }.getOrDefault(false)
+            if (finished) kr.mom.probe.data.ResetMarker.finish(context)
+            screen = "welcome"
+        }
+    }
     LaunchedEffect(ready, validConsent, settings.onboardingDone) {
-        if (ready && validConsent && settings.onboardingDone) {
+        if (ready && validConsent && settings.onboardingDone && !kr.mom.probe.data.ResetMarker.isPending(context)) {
             runCatching { withContext(Dispatchers.IO) { assistantStore.load() } }
+            // A captured notice whose task save failed is replayed exactly once
+            // logically; retired or vanished sources drop out of the journal.
+            runCatching { withContext(Dispatchers.IO) { kr.mom.probe.task.AutoActionCoordinator.replayPending(context) } }
         }
     }
     LaunchedEffect(validConsent, settings.onboardingDone, notificationsAllowed) {
@@ -569,6 +622,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         }
                         disconnected
                     }) { neisEvents = emptyList(); refreshSourceSnapshots(); message = "학교정보 연결을 해제했어요." } },
+                    neisSampleMode = neisClient.isSampleMode,
                     sourceSnapshots = sourceSnapshots,
                     onRefreshSource = { sourceId ->
                         SourceSyncScheduler.enqueue(context, sourceId, SourceRunTrigger.MANUAL)
@@ -654,6 +708,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             records,
                             kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings),
                             activeSourceScopes,
+                            institution = kr.mom.probe.data.NoticeGrouping.institution(settings),
                         ),
                         sourceStatusMessage = SourceStatusPresentation.message(sourceSnapshots.values),
                         busy = busy,
@@ -669,7 +724,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             }
                         },
                         onSnooze = { task, at -> taskOperation { assistantStore.snoozeTask(task.id, at) } },
-                        onEdit = { task, text, due -> taskOperation { assistantStore.editTask(task.id, text, due) } },
+                        onEdit = { task, text, due, done -> taskOperation(done) { assistantStore.editTask(task.id, text, due) } },
                         onExclude = { task -> taskOperation { assistantStore.setExcluded(task.id, !task.excluded) } },
                         onOpenTodo = { screen = "todo" },
                         onOpenNews = { screen = "news" },
@@ -694,10 +749,10 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             }
                         },
                         onSnooze = { task, at -> taskOperation { assistantStore.snoozeTask(task.id, at) } },
-                        onEdit = { task, text, due -> taskOperation { assistantStore.editTask(task.id, text, due) } },
+                        onEdit = { task, text, due, done -> taskOperation(done) { assistantStore.editTask(task.id, text, due) } },
                         onExclude = { task -> taskOperation { assistantStore.setExcluded(task.id, !task.excluded) } },
-                        onAddTask = { text, due ->
-                            taskOperation {
+                        onAddTask = { text, due, done ->
+                            taskOperation(done) {
                                 if (!assistantStore.add(text, dueAt = due)) message = "할 일을 저장하지 못했어요."
                             }
                         },
@@ -705,21 +760,45 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                 }
                 "news" -> NewsScreen(records, readIds, ::openRecord, {
                     session.exportSnapshot = records; previous = "news"; screen = "export"
-                })
+                }, institution = kr.mom.probe.data.NoticeGrouping.institution(settings))
                 "detail" -> {
                     val record = records.find { it.id == selectedId }
                     if (record == null) Page { BackHeading("받은 알림", ::back); EmptyCard("삭제되었거나 보관 기간이 끝났어요", "현재 남아 있는 알림을 확인해주세요.") }
                     else {
-                        val sourceNotificationId = kr.mom.probe.data.ProbeRules.recordIdentity(record)
-                        DetailScreen(record, assistantTasks.any { it.sourceNotificationId == sourceNotificationId }, kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings), ::back, { deleteTarget = record.id },
-                            linkedTasks = kr.mom.probe.task.TodoSelectors.linkedTo(assistantTasks, sourceNotificationId),
+                        val institution = kr.mom.probe.data.NoticeGrouping.institution(settings)
+                        val sourceNotificationId = kr.mom.probe.data.NoticeGrouping.groupId(record, institution)
+                        val recordKeys = kr.mom.probe.data.NoticeGrouping.keys(record, institution)
+                        DetailScreen(record, assistantTasks.any { task ->
+                            kr.mom.probe.data.NoticeGrouping.matches(
+                                recordKeys,
+                                task.noticeGroupKeys + listOfNotNull(task.sourceNotificationId),
+                            )
+                        }, kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings), ::back, { deleteTarget = record.id },
+                            linkedTasks = kr.mom.probe.task.TodoSelectors.linkedTo(assistantTasks, recordKeys),
                             onOpenTodo = { screen = "todo" },
                             onSource = {
                         val intent = context.packageManager.getLaunchIntentForPackage(record.packageName)
                         if (intent == null) message = "원래 앱을 찾지 못했어요. 휴대폰에서 직접 확인해주세요."
                         else try { context.startActivity(intent) } catch (_: Exception) { message = "원래 앱을 열지 못했어요. 직접 확인해주세요." }
                     }, onRemember = { taskText, dueAt, remindAt ->
-                        val request = PendingTaskSave(taskText, sourceNotificationId, record.id, dueAt, remindAt)
+                        val childProfile = kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings)
+                        val evidence = kr.mom.probe.data.NoticeDecisionEngine.decide(record, childProfile)
+                            .action?.evidence?.quote?.trim()?.takeIf(String::isNotEmpty)
+                            ?: record.bigText.ifBlank { record.text }.trim().takeIf(String::isNotEmpty)
+                        val audience = childProfile.grade?.let { "${childProfile.schoolLevel.label} ${it}학년" } ?: "자녀 대상"
+                        val request = PendingTaskSave(
+                            taskText,
+                            sourceNotificationId,
+                            record.id,
+                            dueAt,
+                            remindAt,
+                            recordKeys,
+                            evidence,
+                            record.title.ifBlank { "제목 없는 공지" },
+                            record.appLabel.ifBlank { "학교·학원 소식" },
+                            record.receivedAt,
+                            audience,
+                        )
                         if (remindAt != null && !kr.mom.probe.task.TaskReminderScheduler.canDeliver(context)) {
                             pendingTaskSave = request
                             pendingNotificationTest = false
@@ -827,24 +906,14 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
             confirmButton = { TextButton(enabled = !busy, onClick = {
                 val target = deleteTarget!!
                 command({ if (all) {
-                    var deleted = true
-                    runCatching { context.getSystemService(NotificationManager::class.java).cancelAll() }.onFailure { deleted = false }
-                    runCatching { repository.beginReset() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    // deleteAll closes the in-memory capture gate before its first fallible disk operation.
-                    runCatching { repository.deleteAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.reminder.BriefingReminders.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.data.NoticeReadStore.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.reminder.AssistantAlertNotifier.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.calendar.CalendarPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.calendar.CalendarAppPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.calendar.CalendarCommandStore.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.reminder.ExternalAlarmGateway.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { withContext(Dispatchers.IO) { kr.mom.probe.task.AssistantTaskStore.reset(context) } }.onFailure { deleted = false }
-                    runCatching { WebsiteSessionManager.clearAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { connectorRepository.deleteAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { SourceSyncScheduler.cancelAll(context) }.onFailure { deleted = false }
-                    runCatching { sourceStateStore.reset() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    deleted
+                    // The marker is armed before the shared key can be destroyed;
+                    // it is cleared only when every cleanup step has completed, so
+                    // a mid-reset death resumes cleanup on the next launch.
+                    kr.mom.probe.data.ResetMarker.begin(context)
+                    if (runFullReset()) {
+                        kr.mom.probe.data.ResetMarker.finish(context)
+                        true
+                    } else false
                 } else {
                     records.find { it.id == target }?.let { kr.mom.probe.reminder.AssistantAlertNotifier.cancel(context, it) }
                     repository.deleteRecord(target)

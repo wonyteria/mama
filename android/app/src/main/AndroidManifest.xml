@@ -42,7 +42,6 @@
         <activity android:name=".reminder.BriefingActivity" android:exported="false" />
         <activity android:name=".reminder.TaskAlarmActivity" android:exported="false" />
         <activity android:name=".task.AssistantTasksActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".agent.AgentActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <receiver android:name=".reminder.BriefingReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -56,7 +55,10 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/assistant_widget_info" />
         </receiver>
         <receiver android:name=".task.TaskReminderReceiver" android:exported="false">
-            <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
         </receiver>
         <service
             android:name=".service.ProbeNotificationListener"

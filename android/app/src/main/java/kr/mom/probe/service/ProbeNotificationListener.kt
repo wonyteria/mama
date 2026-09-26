@@ -37,7 +37,11 @@ class ProbeNotificationListener : NotificationListenerService() {
             repository.capture(sbn, epoch)
             // The original is cancelled only after capture + analysis + unified
             // alert posting all succeeded and the app is opted into hiding.
-            if (repository.shouldHideOriginal(sbn)) runCatching { cancelNotification(sbn.key) }
+            // NotificationHidingPolicy keeps the whole path off until physical-device
+            // evidence covers capture, delivery, consent revocation, and fallback.
+            if (NotificationHidingPolicy.mayHideOriginal() && repository.shouldHideOriginal(sbn)) {
+                runCatching { cancelNotification(sbn.key) }
+            }
         }
     }
 

@@ -12,9 +12,10 @@ import kr.mom.probe.data.NotificationCandidateParser
 import kr.mom.probe.data.NoticeApplicability
 import kr.mom.probe.data.NoticeDecision
 import kr.mom.probe.data.NoticeDecisionEngine
+import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.NoticeObligation
 import kr.mom.probe.data.ProbeRecord
-import kr.mom.probe.data.ProbeRules
+import kr.mom.probe.reminder.ExternalAlarmHandler
 import kr.mom.probe.sync.SourceRecordSelectors
 import kr.mom.probe.sync.SourceScope
 import kr.mom.probe.task.AssistantTask
@@ -26,6 +27,7 @@ data class LocalAgentContext(
     val childProfile: ChildNoticeProfile = ChildNoticeProfile(),
     val sourceScopes: List<SourceScope> = emptyList(),
     val sourceStatusMessage: String? = null,
+    val institution: String = "",
 )
 
 data class LocalAgentReply(
@@ -78,18 +80,20 @@ class LocalAgentEngine(
         }
 
         val pendingTasks = context.tasks.filter { !it.completed && !it.suspended }.sortedByDescending { it.createdAt }
-        val linkedNotificationIds = context.tasks.mapNotNull { it.sourceNotificationId }.toSet()
+        val linkedKeySets = context.tasks.map { it.noticeGroupKeys + listOfNotNull(it.sourceNotificationId) }
+            .filter { it.isNotEmpty() }
         val policyRecords = SourceRecordSelectors.activeRecords(context.notifications, context.sourceScopes, now = nowMillis())
+        val groupIds = NoticeGrouping.groupIds(policyRecords, context.institution)
         val notices = policyRecords.sortedByDescending { maxOf(it.postedAt, it.receivedAt) }
-            .distinctBy { ProbeRules.recordIdentity(it) }
+            .distinctBy { groupIds.getValue(it.id) }
         val decisions = notices.map { it to NoticeDecisionEngine.decide(it, context.childProfile) }
         val candidates = notices.mapNotNull { record ->
-            val identity = ProbeRules.recordIdentity(record)
-            if (identity in linkedNotificationIds) return@mapNotNull null
+            val recordKeys = NoticeGrouping.keys(record, context.institution)
+            if (linkedKeySets.any { NoticeGrouping.matches(recordKeys, it) }) return@mapNotNull null
             val decision = NoticeDecisionEngine.decide(record, context.childProfile)
             NotificationCandidateParser.parse(record, context.childProfile)?.let { CandidateNotice(record, it, decision) }
         }
-        val agenda = SourceRecordSelectors.agenda(context.notifications, context.childProfile, context.sourceScopes, now = nowMillis(), daysAhead = 7)
+        val agenda = SourceRecordSelectors.agenda(context.notifications, context.childProfile, context.sourceScopes, now = nowMillis(), daysAhead = 7, institution = context.institution)
         val name = context.childName.trim().ifBlank { "아이" }
 
         val reply = when {
@@ -373,3 +377,8 @@ class LocalAgentEngine(
         private val dueWords = listOf("오늘", "내일", "모레", "이번 주", "다음 주")
     }
 }
+
+internal fun resolveExternalAlarmHandlerForPrepare(
+    explicit: ExternalAlarmHandler?,
+    selectedHandler: () -> ExternalAlarmHandler?,
+): ExternalAlarmHandler? = explicit ?: selectedHandler()
