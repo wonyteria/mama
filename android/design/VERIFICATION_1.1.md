@@ -6,17 +6,36 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 
 `cd android && ./gradlew clean :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest`
 
-- 단위 테스트 XML 합계(testsuite 속성): tests=270, failures=0, errors=0, skipped=2 — 268 통과 + 2 skip. skip은 외부 공개 fixture opt-in 테스트다. Robolectric 화면 테스트는 프로덕션 Composable을 실제 렌더한다.
-- `AccessibilityLayoutTest` 16/16 통과, `ProbeScreensRenderTest` 19/19 통과.
+- 단위 테스트 XML 합계(testsuite 속성): tests=304, failures=0, errors=0, skipped=2 — 302 통과 + 2 skip. skip은 외부 공개 fixture opt-in 테스트다. Robolectric 화면 테스트는 프로덕션 Composable을 실제 렌더한다.
+- `AccessibilityLayoutTest` 21/21 통과, `ProbeScreensRenderTest` 22/22 통과.
 - lint 오류 0. debug APK·androidTest APK 조립 성공.
 - release 조립은 서명 정보 없이 실행하면 지정된 fail-closed 메시지로 실패한다.
   - `Release signing is not configured. Set MAMA_RELEASE_STORE_FILE, ...`
   - `Debug signing is never used for release builds.`
 - release `BuildConfig.java`에 `NEIS_API_KEY` 필드가 없다(grep 0건). APK에 운영 비밀 키를 싣지 않는다.
 
+## A–N 결함 수정 (자동, 신규)
+
+`android/design/DEFECT_TRACKING_1.1.md`가 수락 기준과 테스트 매핑을 추적한다. 각 항목은 재현 테스트(수정 전 실패) → 최소 수정 → 회귀 검증을 거쳤으며, 커밋 `f16380c`(task/data 계층)와 `8846640`(UI/activity 계층)에 나뉘어 있다. 요약:
+
+- A: 공식 문서 ID가 다른 공지는 fingerprint 앵커가 같아도 병합하지 않는다(disjoint-id·app/web 사본·완료 미승계 테스트).
+- B: 불명확 revision/첨부 실패는 마지막 신뢰 상태를 유지하고 `needsReview`+`수정 공지 확인 필요`로 노출한다.
+- C: 마감 임박·경과 공지도 required Todo를 만들어 overdue로 노출한다(과거 알람은 예약하지 않음).
+- D: 무관한 revision은 사용자 snooze/reminder를 보존하고, 실제 기한 변경만 재예약한다.
+- E: `ReconcileJournal`이 capture→task 사이를 내구화해 startup replay로 정확히 1회 복구한다.
+- F: consume 후 notify 전 중단 상태(`activeAlarmOccurrenceId`)를 `restoreNow`가 복구한다.
+- G: 오늘 헤드라인이 미수집/실패/확인된 일 없음/실제 완료를 구분한다.
+- H: 연결 레인이 지원 범위·마지막 성공·미지원 이유를 표시하고 미지원 웹 행을 유지한다.
+- I: UNKNOWN 대상 공지는 '엄마 확인 필요' 카드로 명시 확인 후 근거 연결 Todo를 만든다.
+- J: 자동 생성/확정 문구를 실제 기능으로 통일하고 미구현 챗봇 문구를 제거했다.
+- K: 저장 결과를 기다려 성공 시에만 대화상자를 닫는다(실패 시 입력·재시도 유지).
+- L: exact alarm 재허용 브로드캐스트가 Todo reminder도 재스케줄한다.
+- M: `ResetMarker`가 reset을 재시작 가능하게 하고 미완료 상태의 재가입을 거부한다.
+- N: `ChildProfileScreen`·needs-review·오류 화면을 실제로 검증하고, 무이름 컨트롤(실제 Checkbox 결함 수정)과 상향/좌향 traversal 역행을 허용하지 않는다.
+
 ## 접근성·소형 화면 회귀 (자동, 신규)
 
-`AccessibilityLayoutTest` 16개: 360dp 너비·글꼴 200%·가로 방향에서 온보딩(시작/자녀/앱 선택/알림 허용), 오늘, 할 일, 연결, 근거·수정내역 대화상자, 알람의 핵심 조작이 스크롤로 도달 가능하고 표시되는지 확인한다. 모든 클릭 가능 노드는 TalkBack 이름(역할·문구·설명·상태), 최소 48dp 터치영역, 시각 순서와 일치하는 traversal 순서를 검사한다.
+`AccessibilityLayoutTest` 21개: 360dp 너비·글꼴 200%·가로 방향에서 온보딩(시작/자녀/앱 선택/알림 허용/자녀 프로필), 오늘(오류 상태 포함), 할 일(needs-review 포함), 연결, 근거·수정내역 대화상자, 불확실 공지 확인 카드, 알람의 핵심 조작이 스크롤로 도달 가능하고 표시되는지 확인한다. 모든 클릭 가능 노드는 TalkBack 이름(문구·설명·상태 — 역할/토글 단독은 인정하지 않음), 최소 48dp 터치영역, 시각 순서와 일치하는 traversal 순서(표시된 컨트롤 기준 상향/좌향 역행 금지)를 검사한다.
 
 이 회귀에서 실제 결함을 찾아 최소 변경으로 고쳤다.
 
@@ -25,6 +44,7 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 - 본문 수준의 `TextButton`/`OutlinedButton`이 40dp였다 → 공통 `Modifier.minTouchTarget()`으로 48dp 보장.
 - 하단 탭이 선택 상태를 TalkBack에 알리지 않았다 → `selectable`의 `Selected` 의미 부여.
 - 읽지 않은 소식이 색 점으로만 표시돼 TalkBack이 읽지 못했다 → 카드에 `읽지 않은 소식` stateDescription 추가.
+- 할 일 완료 Checkbox가 이름 없는 클릭 가능 노드였다 → `${task.text} 완료` contentDescription 추가.
 
 ## 에뮬레이터 계측 (실행됨)
 
