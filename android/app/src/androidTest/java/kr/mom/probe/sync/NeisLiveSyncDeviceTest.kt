@@ -24,6 +24,7 @@ class NeisLiveSyncDeviceTest {
     @Test
     fun keylessProductionSyncStaysDisabledUntilProxyExists() = runBlocking {
         check(context.packageName.endsWith(".qa")) { "Source QA must never target the release app." }
+        kr.mom.probe.DeviceQaSafety.requireDestructibleState(context, "NeisLiveSyncDeviceTest")
         val repository = ProbeRepository.get(context)
         repository.isReady.first { it }
         assertTrue(repository.deleteAll())

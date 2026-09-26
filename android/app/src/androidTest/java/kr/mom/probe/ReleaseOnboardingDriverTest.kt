@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.fail
 import org.junit.Test
@@ -26,6 +27,14 @@ class ReleaseOnboardingDriverTest {
 
     @Test
     fun driveReleaseOnboarding() {
+        // The driver types a synthetic child profile through the real UI, which
+        // overwrites QA onboarding state. Skip on a physical device that still
+        // holds prior QA data rather than silently mutating it.
+        runBlocking {
+            kr.mom.probe.DeviceQaSafety.requireDestructibleState(
+                instrumentation.targetContext, "ReleaseOnboardingDriverTest"
+            )
+        }
         automation.serviceInfo = automation.serviceInfo.apply {
             flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }

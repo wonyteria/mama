@@ -2,7 +2,9 @@ package kr.mom.probe.task
 
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
+import java.io.IOException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,6 +25,30 @@ class ReconcileJournalTest {
 
         ReconcileJournal.clearPending(context, "fp:one")
         assertEquals(setOf("ext:two"), ReconcileJournal.pending(context))
+    }
+
+    @Test fun failedCommitPropagatesAndLeavesJournalUntouched() {
+        ReconcileJournal.reset(context)
+        ReconcileJournal.markPending(context, "fp:kept")
+
+        val previous = ReconcileJournal.committer
+        ReconcileJournal.committer = { false }
+        try {
+            assertThrows(IOException::class.java) {
+                ReconcileJournal.markPending(context, "fp:lost")
+            }
+            // The failed write neither mutates the durable set nor pretends to persist.
+            assertEquals(setOf("fp:kept"), ReconcileJournal.pending(context))
+            assertThrows(IOException::class.java) {
+                ReconcileJournal.clearPending(context, "fp:kept")
+            }
+            assertThrows(IOException::class.java) {
+                ReconcileJournal.retire(context, setOf("fp:x"))
+            }
+        } finally {
+            ReconcileJournal.committer = previous
+            ReconcileJournal.reset(context)
+        }
     }
 
     @Test fun retiredKeysAccumulateAcrossDeletes() {

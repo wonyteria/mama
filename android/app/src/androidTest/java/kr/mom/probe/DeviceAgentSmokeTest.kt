@@ -110,6 +110,7 @@ class DeviceAgentSmokeTest {
         check(context.packageName.endsWith(".qa")) {
             "DeviceAgentSmokeTest must target the debug QA application id, not release user data."
         }
+        DeviceQaSafety.requireDestructibleState(context, "DeviceAgentSmokeTest")
         val repository = ProbeRepository.get(context)
         repository.deleteAll()
         CalendarCommandStore.reset(context)

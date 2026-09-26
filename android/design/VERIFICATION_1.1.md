@@ -63,6 +63,8 @@ CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터
 
 - JUnit XML(권위) 기준: tests=21, failures=0, errors=0, skipped=2 — 즉 19 통과 + 2 skip. 콘솔은 `Finished 23 tests`로 표시됐다(위와 동일한 UTP 집계 문제; 21+2=23).
 - 통과에는 OS 경유 E2E가 포함된다: `cmd notification post`로 com.android.shell 패키지의 합성 알림을 실제 게시 → 알림 청취자 콜백 → 암호화 레코드 저장 → 후보 분석 → 자동 할 일 생성까지 확인했다(`postedSyntheticNotificationIsCapturedThroughSystemListenerIntoTaskStore`). 또 다른 테스트는 `ProbeRepository.capture`에 합성 StatusBarNotification을 직접 주입해 동일 저장소·플래너 경로를 검증한다. QA/debug 패키지와 합성 알림만 사용하며 사용자 알림이나 정식 앱 데이터는 읽지 않는다.
+- 안전 경계(현재 구현): 합성 source allowlist를 listener 권한 부여보다 먼저 설정·검증하고(`assertAllowlistBeforeListenerAccess`), 원래 `enabled_notification_listeners` 값을 캡처해 `finally`에서 그대로 복원한다. 정리는 테스트가 만든 정확한 record id·task id·notification key에만 한정되며, 게시된 합성 알림은 저장된 key로 listener를 통해 취소돼 트레이 잔존물을 남기지 않는다. 전역 알림 열거·cancel-all·사용자 알림 삭제는 없다.
+- 파괴적 초기화 보호: `DeviceQaSafety.requireDestructibleState`가 모든 androidTest의 `deleteAll`/`reset` 계열을 감싼다. 에뮬레이터 또는 완전히 비어 있는 QA 설치에서만 wipe을 허용하고, 기존 QA record/task/onboarding이 남은 물리 기기에서는 해당 테스트가 사유와 함께 skip된다(`mama_qa` XML에 honest skip으로 기록).
 - `syntheticHwp5AssetReportsEmbeddedBinaryPartialOnDevice`가 저장소 체크인 합성 HWP5 fixture(BinData 포함, sha256 검증)로 내장 바이너리 건너뜀 보고를 기기에서 확인한다 — 공개 fixture 없이도 HWP5 부분 추출 계약을 기기에서 검증.
 - skip 2개는 에뮬레이터와 동일한 opt-in 공개 fixture 테스트다.
 - QA 앱 cold launch 후 프로세스 유지·즉시 crash/ANR 없음을 확인했다.
@@ -93,7 +95,7 @@ CI/개발 에뮬레이터에서 알림 청취자 권한의 자동 부여가 항�
 2. 권한 부여(자동): `adb shell cmd notification allow_listener kr.mom.probe.qa/kr.mom.probe.service.ProbeNotificationListener`.
    - 자동 부여가 거부되는 기기/빌드에서는: 설정 → 알림 → 특수 앱 접근 → 알림 접근 → MAMA(QA) 허용.
 3. 계측 실행: `ANDROID_SERIAL=<id> ./gradlew :app:connectedDebugAndroidTest`.
-4. `NotificationPipelineDeviceTest`가 청취자 부여를 자체적으로 시도하고, 실패 시 정직하게 skip한다. 테스트가 post한 합성 알림(`회신안내`)은 `cmd notification post`에 취소 명령이 없어 트레이에 남을 수 있다 — 손으로 밀어 제거하면 된다(QA 기기 전용).
+4. `NotificationPipelineDeviceTest`가 청취자 부여를 자체적으로 시도하고, 실패 시 정직하게 skip한다. 테스트가 post한 합성 알림(`회신안내`)은 캡처된 record의 `notificationKey`로 listener가 정확히 취소해 트레이에 남지 않는다. listener grant는 원래 설정값을 캡처해 복원하므로 테스트 후 기기는 이전 상태로 돌아간다.
 5. 실서비스 알림(학교 앱 등)으로의 수집 검증은 별도 실기기 절차로, 여전히 NOT_RUN이다.
 
 ## HWP/HWPX fixture 커버리지

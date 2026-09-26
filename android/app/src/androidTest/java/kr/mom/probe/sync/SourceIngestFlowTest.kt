@@ -38,6 +38,7 @@ class SourceIngestFlowTest {
         check(context.packageName.endsWith(".qa")) { "SourceIngestFlowTest must run only in the QA app." }
         repository = ProbeRepository.get(context)
         repository.isReady.first { it }
+        kr.mom.probe.DeviceQaSafety.requireDestructibleState(context, "SourceIngestFlowTest")
         assertTrue(repository.deleteAll())
         stateStore = SourceSyncStateStore.get(context)
         assertTrue(stateStore.reset())

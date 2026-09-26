@@ -17,14 +17,26 @@ class ProbeNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        instance = this
         repository.setListenerConnected(true)
         scope.launch { repository.cleanupExpired() }
         // Deliberately never request activeNotifications: past notifications are not collected.
     }
 
     override fun onListenerDisconnected() {
+        if (instance === this) instance = null
         repository.setListenerConnected(false)
         super.onListenerDisconnected()
+    }
+
+    /**
+     * Cancels exactly one notification by its stored key. QA/debug tests use the
+     * listener's authority to remove the synthetic notification they posted —
+     * never a bulk cancel and never a user notification, since callers pass the
+     * key of the record they themselves created.
+     */
+    internal fun cancelNotificationByKey(key: String) {
+        runCatching { cancelNotification(key) }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -54,8 +66,14 @@ class ProbeNotificationListener : NotificationListenerService() {
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
         repository.setListenerConnected(false)
         scope.cancel()
         super.onDestroy()
+    }
+
+    companion object {
+        /** Bound instance for QA instrumentation; null on release code paths. */
+        @Volatile internal var instance: ProbeNotificationListener? = null
     }
 }

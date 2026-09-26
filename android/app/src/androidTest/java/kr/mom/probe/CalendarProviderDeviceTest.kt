@@ -93,6 +93,7 @@ class CalendarProviderDeviceTest {
         check(context.packageName.endsWith(".qa")) {
             "CalendarProviderDeviceTest must target the debug QA application id, not release user data."
         }
+        DeviceQaSafety.requireDestructibleState(context, "CalendarProviderDeviceTest")
         val repository = ProbeRepository.get(context)
         repository.deleteAll()
         CalendarCommandStore.reset(context)
