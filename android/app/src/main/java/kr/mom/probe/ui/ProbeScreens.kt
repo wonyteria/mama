@@ -102,7 +102,7 @@ fun WelcomeScreen(busy: Boolean, onStart: () -> Unit, onPolicy: () -> Unit) {
             Text("아이 이름만으로 시작하고, 필요한 앱·사이트를 골라요.\n계정 비밀번호를 우리 앱에 저장하지 않아요.", color = Clay.Muted)
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("선택한 앱의 새 알림을 모모가 기기 안에서 정리해요. 날짜와 행동이 분명한 일은 자동으로 부탁과 알림을 만들어요.", style = MaterialTheme.typography.bodyMedium, color = Clay.Muted)
+            Text("선택한 앱의 새 알림을 모모가 기기 안에서 정리해요. 날짜와 행동이 분명한 일은 할 일과 알림이 자동으로 만들어지고, 애매한 소식은 엄마가 직접 확인할 때까지 저장하지 않아요.", style = MaterialTheme.typography.bodyMedium, color = Clay.Muted)
             Text("선택한 앱의 알림과 자녀 정보는 이 기기에 암호화해 보관해요. 학교명은 나이스 공식 OpenAPI에서 학교를 찾을 때만 전송해요. 알림 원문은 14일 뒤 삭제하며 재설치하면 복구할 수 없어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
             TextButton(onClick = onPolicy, modifier = Modifier.minTouchTarget()) { Text("수집·보관·삭제 설명 보기") }
             ConsentRow(agreed, { agreed = it }, "설명을 확인했고, 이 기기에서 알림을 모아 챙길 후보를 찾는 데 동의해요. (필수)")
@@ -362,6 +362,19 @@ fun DetailScreen(record: ProbeRecord, alreadyRemembered: Boolean = false, childP
                 }
             }
         }
+        // Uncertain audience or obligation never auto-approves, but the parent can
+        // still confirm the target themselves and save an evidence-linked task.
+        if (decision.action == null &&
+            (decision.applicability == NoticeApplicability.UNKNOWN || decision.obligation == NoticeObligation.UNKNOWN)) {
+            AgentCard {
+                StatusPill(if (alreadyRemembered) "할 일 있음" else "엄마 확인 필요")
+                Text("누구에게 필요한 일인지 엄마가 정해요", style = MaterialTheme.typography.titleMedium)
+                Text(decision.applicabilityReason.ifBlank { "무엇을 해야 하는지 원문에서 분명하지 않았어요." }, color = Clay.Muted)
+                if (decision.issues.isNotEmpty()) Text(decision.issues.joinToString("\n"), style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+                Text("자동으로 할 일을 만들지 않았어요. 원문을 확인하고 필요하면 엄마가 직접 기한을 골라 저장할 수 있어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+                AgentButton(if (alreadyRemembered) "이미 할 일에 있어요" else "확인하고 할 일로 추가", enabled = !alreadyRemembered, onClick = ::chooseDueTime)
+            }
+        }
         ClayButton("원래 앱에서 확인", primary = false, onClick = onSource)
         TextButton(onClick = { fields = !fields }, modifier = Modifier.minTouchTarget()) { Text(if (fields) "수집 내용 접기" else "수집한 내용 모두 보기") }
         if (fields) {
@@ -464,7 +477,7 @@ fun PolicyContent(onDelete: (() -> Unit)? = null) {
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(13.dp)) {
         Text("선택한 앱의 소식을 모아 확인하고, 기기 안의 규칙으로 준비물·제출·마감 후보를 찾는 비서 시험판입니다.")
         Text("웹 연결: 직접 입력한 로그인 정보는 공식 사이트에 전송됩니다. 쿠키와 웹 저장소는 이 앱의 WebView에 남을 수 있어요. 인증 갱신·개인 공지 자동 조회는 아직 지원 전입니다.")
-        Text("모모와 부탁: 질문은 이 기기에 저장된 알림·부탁 안에서만 답합니다. 명확하고 되돌릴 수 있는 저장 명령은 바로 암호화 저장하고 화면에서 취소할 수 있습니다. 정한 기한과 다시 알릴 시각도 이 기기에만 저장합니다.")
+        Text("할 일: 분명한 소식은 할 일이 자동으로 만들어지고, 대상이나 행동이 애매한 소식은 엄마가 확인해 저장합니다. 만들어진 할 일과 다시 알릴 시각은 이 기기에만 암호화해 저장하며 화면에서 수정·취소할 수 있습니다.")
         Text("캘린더: 엄마가 직접 고른 쓰기 가능한 캘린더 ID와 계정 이름을 이 기기에 암호화해 보관합니다. 일정 저장 성공은 휴대폰 CalendarProvider에서 다시 읽어 확인한 결과이며, 계정 서버 동기화나 다른 기기 반영 완료를 뜻하지 않습니다.")
         Text("브리핑과 음성: 알림 시간은 이 기기에 저장합니다. 소리로 듣기를 누르면 휴대폰의 음성 엔진에 부탁 문장을 전달하며, 엔진 설정에 따라 네트워크를 사용할 수 있어요.")
         onDelete?.let { delete -> TextButton(onClick = delete, modifier = Modifier.minTouchTarget()) { Text("참여 종료 · 전체 데이터 삭제", color = Clay.Error) } }

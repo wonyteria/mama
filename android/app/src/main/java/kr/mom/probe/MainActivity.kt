@@ -137,16 +137,19 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
     }
 
 
-    fun taskOperation(action: () -> Unit) {
-        if (busy) return
+    fun taskOperation(onDone: (Boolean) -> Unit = {}, action: () -> Unit) {
+        if (busy) { onDone(false); return }
         scope.launch {
             busy = true
+            var succeeded = true
             try {
                 withContext(Dispatchers.IO) { action() }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
+                succeeded = false
                 message = error.message ?: "할 일을 저장하지 못했어요. 다시 시도해주세요."
             } finally { busy = false }
+            onDone(succeeded)
         }
     }
 
@@ -185,6 +188,29 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                 message = "작업을 마치지 못했어요. 다시 시도해주세요."
             } finally { busy = false }
         }
+    }
+
+    // deleteAll closes the in-memory capture gate before its first fallible disk
+    // operation. The chain is shared between the confirm dialog and the startup
+    // resume path so a half-finished reset always runs to completion.
+    suspend fun runFullReset(): Boolean {
+        var deleted = true
+        runCatching { context.getSystemService(NotificationManager::class.java).cancelAll() }.onFailure { deleted = false }
+        runCatching { repository.beginReset() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { repository.deleteAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.reminder.BriefingReminders.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.data.NoticeReadStore.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.reminder.AssistantAlertNotifier.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.calendar.CalendarPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.calendar.CalendarAppPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.calendar.CalendarCommandStore.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.reminder.ExternalAlarmGateway.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { withContext(Dispatchers.IO) { kr.mom.probe.task.AssistantTaskStore.reset(context) } }.onFailure { deleted = false }
+        runCatching { WebsiteSessionManager.clearAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { connectorRepository.deleteAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        runCatching { SourceSyncScheduler.cancelAll(context) }.onFailure { deleted = false }
+        runCatching { sourceStateStore.reset() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
+        return deleted
     }
 
     fun proceedSetup() {
@@ -394,9 +420,22 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
             message = "앱이 다시 시작되어 자료 검토를 다시 열어주세요."
         }
     }
+    // A pending reset marker means a previous delete-all died mid-chain: replay
+    // the remaining cleanup before anything else. Consent and setup refuse to
+    // proceed while it is armed, so re-enrollment cannot meet a half-wiped store.
+    LaunchedEffect(ready) {
+        if (ready && kr.mom.probe.data.ResetMarker.isPending(context)) {
+            val finished = runCatching { withContext(Dispatchers.IO) { runFullReset() } }.getOrDefault(false)
+            if (finished) kr.mom.probe.data.ResetMarker.finish(context)
+            screen = "welcome"
+        }
+    }
     LaunchedEffect(ready, validConsent, settings.onboardingDone) {
-        if (ready && validConsent && settings.onboardingDone) {
+        if (ready && validConsent && settings.onboardingDone && !kr.mom.probe.data.ResetMarker.isPending(context)) {
             runCatching { withContext(Dispatchers.IO) { assistantStore.load() } }
+            // A captured notice whose task save failed is replayed exactly once
+            // logically; retired or vanished sources drop out of the journal.
+            runCatching { withContext(Dispatchers.IO) { kr.mom.probe.task.AutoActionCoordinator.replayPending(context) } }
         }
     }
     LaunchedEffect(validConsent, settings.onboardingDone, notificationsAllowed) {
@@ -685,7 +724,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             }
                         },
                         onSnooze = { task, at -> taskOperation { assistantStore.snoozeTask(task.id, at) } },
-                        onEdit = { task, text, due -> taskOperation { assistantStore.editTask(task.id, text, due) } },
+                        onEdit = { task, text, due, done -> taskOperation(done) { assistantStore.editTask(task.id, text, due) } },
                         onExclude = { task -> taskOperation { assistantStore.setExcluded(task.id, !task.excluded) } },
                         onOpenTodo = { screen = "todo" },
                         onOpenNews = { screen = "news" },
@@ -710,10 +749,10 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             }
                         },
                         onSnooze = { task, at -> taskOperation { assistantStore.snoozeTask(task.id, at) } },
-                        onEdit = { task, text, due -> taskOperation { assistantStore.editTask(task.id, text, due) } },
+                        onEdit = { task, text, due, done -> taskOperation(done) { assistantStore.editTask(task.id, text, due) } },
                         onExclude = { task -> taskOperation { assistantStore.setExcluded(task.id, !task.excluded) } },
-                        onAddTask = { text, due ->
-                            taskOperation {
+                        onAddTask = { text, due, done ->
+                            taskOperation(done) {
                                 if (!assistantStore.add(text, dueAt = due)) message = "할 일을 저장하지 못했어요."
                             }
                         },
@@ -867,24 +906,14 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
             confirmButton = { TextButton(enabled = !busy, onClick = {
                 val target = deleteTarget!!
                 command({ if (all) {
-                    var deleted = true
-                    runCatching { context.getSystemService(NotificationManager::class.java).cancelAll() }.onFailure { deleted = false }
-                    runCatching { repository.beginReset() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    // deleteAll closes the in-memory capture gate before its first fallible disk operation.
-                    runCatching { repository.deleteAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.reminder.BriefingReminders.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.data.NoticeReadStore.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.reminder.AssistantAlertNotifier.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.calendar.CalendarPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.calendar.CalendarAppPreferences.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.calendar.CalendarCommandStore.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { kr.mom.probe.reminder.ExternalAlarmGateway.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { withContext(Dispatchers.IO) { kr.mom.probe.task.AssistantTaskStore.reset(context) } }.onFailure { deleted = false }
-                    runCatching { WebsiteSessionManager.clearAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { connectorRepository.deleteAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    runCatching { SourceSyncScheduler.cancelAll(context) }.onFailure { deleted = false }
-                    runCatching { sourceStateStore.reset() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
-                    deleted
+                    // The marker is armed before the shared key can be destroyed;
+                    // it is cleared only when every cleanup step has completed, so
+                    // a mid-reset death resumes cleanup on the next launch.
+                    kr.mom.probe.data.ResetMarker.begin(context)
+                    if (runFullReset()) {
+                        kr.mom.probe.data.ResetMarker.finish(context)
+                        true
+                    } else false
                 } else {
                     records.find { it.id == target }?.let { kr.mom.probe.reminder.AssistantAlertNotifier.cancel(context, it) }
                     repository.deleteRecord(target)

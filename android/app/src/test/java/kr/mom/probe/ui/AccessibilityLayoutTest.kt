@@ -90,6 +90,35 @@ class AccessibilityLayoutTest {
     }
 
     @Test
+    fun childProfileStaysUsable() {
+        render(fontScale = 2f) {
+            ChildProfileScreen(
+                settings = ProbeSettings(childName = "우리 아이", schoolName = "성남정자초등학교", schoolGrade = 2),
+                busy = false, onSave = { _, _, _, _ -> }, onBack = {},
+            )
+        }
+        compose.onNodeWithText("아이 이름 또는 별칭").performScrollTo().assertIsDisplayed()
+        // schoolName infers ELEMENTARY, so the level selector shows its label.
+        compose.onNodeWithText("초등학교", substring = true).performScrollTo().assertIsDisplayed()
+        screenshot("a11y-child-profile-360-2x")
+        assertAccessibleControls()
+    }
+
+    @Test
+    @Config(qualifiers = "ko-rKR-w892dp-h411dp-land-xhdpi")
+    fun childProfileLandscapeStaysUsable() {
+        render {
+            ChildProfileScreen(
+                settings = ProbeSettings(childName = "우리 아이"),
+                busy = false, onSave = { _, _, _, _ -> }, onBack = {},
+            )
+        }
+        compose.onNodeWithText("아이 이름 또는 별칭").assertIsDisplayed()
+        screenshot("a11y-child-profile-landscape")
+        assertAccessibleControls()
+    }
+
+    @Test
     fun sourceSelectionStaysUsable() {
         val apps = listOf(
             SourceApp("test.fixture.school", "테스트 학교 앱", "화면 테스트용 · 설치 확인 아님", "학"),
@@ -156,13 +185,60 @@ class AccessibilityLayoutTest {
                 ),
                 busy = false, now = NOW,
                 onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
-                onEdit = { _, _, _ -> }, onExclude = {}, onAddTask = { _, _ -> },
+                onEdit = { _, _, _, _ -> }, onExclude = {}, onAddTask = { _, _, _ -> },
             )
         }
         compose.onNodeWithTag("add-task").performScrollTo().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithTag("task-check-prep-1").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("현장체험학습 준비물").performScrollTo().assertIsDisplayed()
         screenshot("a11y-todo-360-2x")
+        assertAccessibleControls()
+    }
+
+    @Test
+    fun todoNeedsReviewTaskStaysReachable() {
+        render(fontScale = 2f) {
+            TodoScreen(
+                tasks = listOf(
+                    kr.mom.probe.task.AssistantTask(
+                        id = "review-1", text = "동의서 금요일 제출", completed = false,
+                        createdAt = NOW, dueAt = NOW + 86_400_000L, remindAt = NOW + 86_000_000L,
+                        sourceNotificationId = "group-1", sourceRevisionId = "r3",
+                        sourceKind = kr.mom.probe.task.AssistantTaskSource.AUTO_NOTICE,
+                        needsReview = true, revisionSummary = "근거 문구 변경",
+                        evidenceText = "동의서는 금요일까지 제출해 주세요.",
+                    ),
+                ),
+                busy = false, now = NOW,
+                onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
+                onEdit = { _, _, _, _ -> }, onExclude = {}, onAddTask = { _, _, _ -> },
+            )
+        }
+        compose.onNodeWithText("동의서 금요일 제출").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("수정 공지 확인 필요", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("동의서 금요일 제출").performScrollTo().performClick()
+        compose.onNodeWithText("근거 보기").assertIsDisplayed()
+        screenshot("a11y-todo-needs-review-360-2x")
+        assertAccessibleControls()
+    }
+
+    @Test
+    fun detailUncertainNoticeKeepsConfirmReachable() {
+        // A bare grade without a school-level context produces UNKNOWN
+        // applicability, so the explicit parent-confirm card must stay usable.
+        val uncertain = candidateRecord().copy(
+            title = "가정통신문", text = "3학년 학부모님께 안내드립니다.",
+        )
+        render(fontScale = 2f) {
+            DetailScreen(
+                record = uncertain,
+                onBack = {}, onDelete = {}, onSource = {},
+                onRemember = { _, _, _ -> },
+            )
+        }
+        compose.onNodeWithText("엄마 확인 필요").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("확인하고 할 일로 추가").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        screenshot("a11y-detail-uncertain-360-2x")
         assertAccessibleControls()
     }
 
@@ -184,7 +260,7 @@ class AccessibilityLayoutTest {
                 ),
                 busy = false, now = NOW,
                 onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
-                onEdit = { _, _, _ -> }, onExclude = {}, onAddTask = { _, _ -> },
+                onEdit = { _, _, _, _ -> }, onExclude = {}, onAddTask = { _, _, _ -> },
             )
         }
         compose.onNodeWithText("동의서 월요일 제출").performScrollTo().performClick()
@@ -257,6 +333,26 @@ class AccessibilityLayoutTest {
     }
 
     @Test
+    fun todaySourceErrorKeepsStatusHonest() {
+        render(fontScale = 2f) {
+            Scaffold(
+                bottomBar = { ProbeBottomBar(current = "home", onSelect = {}) },
+                containerColor = Clay.Background,
+            ) { padding ->
+                Box(Modifier.fillMaxSize().padding(padding)) {
+                    today(
+                        sourceStatusMessage = "학교 앱 알림 연결에 실패했어요.",
+                    )
+                }
+            }
+        }
+        compose.onNodeWithText("학교 앱 알림 연결에 실패했어요.", substring = true)
+            .performScrollTo().assertIsDisplayed()
+        screenshot("a11y-today-source-error-360-2x")
+        assertAccessibleControls()
+    }
+
+    @Test
     @Config(qualifiers = "ko-rKR-w892dp-h411dp-land-xhdpi")
     fun todayLandscapeKeepsControlsReachable() {
         render {
@@ -282,7 +378,7 @@ class AccessibilityLayoutTest {
                 tasks = listOf(task(id = "t1", text = "체험학습 도시락 싸기")),
                 busy = false, now = NOW,
                 onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
-                onEdit = { _, _, _ -> }, onExclude = {}, onAddTask = { _, _ -> },
+                onEdit = { _, _, _, _ -> }, onExclude = {}, onAddTask = { _, _, _ -> },
             )
         }
         compose.onNodeWithTag("add-task").performScrollTo().assertIsDisplayed()
@@ -356,12 +452,21 @@ class AccessibilityLayoutTest {
         assertTrue("Expected at least one clickable element", initial.isNotEmpty())
         var previousTop = Float.NEGATIVE_INFINITY
         var previousLeft = Float.NEGATIVE_INFINITY
-        initial.forEach { node ->
+        initial.forEachIndexed { index, node ->
+            // Scroll containers keep off-screen children in the semantics tree at
+            // their pre-scroll positions; TalkBack reaches them by scrolling, so
+            // only controls actually rendered in the viewport constrain order.
+            val interaction = compose.onAllNodes(hasClickAction())[index]
+            if (runCatching { interaction.assertIsDisplayed() }.isFailure) return@forEachIndexed
             val top = node.positionInRoot.y
             val left = node.positionInRoot.x
+            // Reading order is strictly top-to-bottom, then left-to-right. A node
+            // above the previous row, or to the left inside the same row, is a
+            // backward jump TalkBack would announce out of order.
+            val sameRow = kotlin.math.abs(top - previousTop) <= 2f
             assertTrue(
                 "Traversal order does not follow the visual layout for ${describe(node)}",
-                top >= previousTop - 2f || left > previousLeft,
+                top > previousTop + 2f || (sameRow && left > previousLeft),
             )
             previousTop = top
             previousLeft = left
@@ -395,12 +500,13 @@ class AccessibilityLayoutTest {
 
     private fun announceable(node: SemanticsNode): Boolean {
         val config = node.config
+        // A role or toggle state alone is not a name: TalkBack reads "버튼"/"스위치"
+        // with nothing to identify what it does. Require text, a content
+        // description, a state description, or a labelled progress range.
         return config.getOrNull(SemanticsProperties.ContentDescription)?.any { it.isNotBlank() } == true ||
             config.getOrNull(SemanticsProperties.Text)?.any { it.text.isNotBlank() } == true ||
-            config.getOrNull(SemanticsProperties.Role)?.let { it != Role.Image } == true ||
-            config.contains(SemanticsProperties.ToggleableState) ||
-            config.contains(SemanticsProperties.ProgressBarRangeInfo) ||
-            config.getOrNull(SemanticsProperties.StateDescription)?.isNotBlank() == true
+            config.getOrNull(SemanticsProperties.StateDescription)?.isNotBlank() == true ||
+            config.contains(SemanticsProperties.ProgressBarRangeInfo)
     }
 
     @Composable
@@ -421,7 +527,7 @@ class AccessibilityLayoutTest {
             sourceAgenda = sourceAgenda, sourceStatusMessage = sourceStatusMessage,
             busy = busy, now = NOW,
             onSetup = {}, onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
-            onEdit = { _, _, _ -> }, onExclude = {}, onOpenTodo = {}, onOpenNews = {},
+            onEdit = { _, _, _, _ -> }, onExclude = {}, onOpenTodo = {}, onOpenNews = {},
             onOpenSettings = {}, onRecord = {}, onEnableNotifications = {},
         )
     }

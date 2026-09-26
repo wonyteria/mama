@@ -19,6 +19,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,7 +65,8 @@ fun TaskRow(
                 checked = task.completed,
                 onCheckedChange = { onToggle(task) },
                 enabled = !busy && !task.excluded,
-                modifier = Modifier.minTouchTarget().testTag("task-check-${task.id}"),
+                modifier = Modifier.minTouchTarget().testTag("task-check-${task.id}")
+                    .semantics { contentDescription = "${task.text} 완료" },
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
@@ -78,6 +81,7 @@ fun TaskRow(
                     task.excluded -> "제외됨"
                     task.completed -> "완료"
                     task.suspended -> "공지 변경 확인 필요"
+                    task.needsReview -> "수정 공지 확인 필요"
                     else -> "진행 중"
                 }
                 val metadata = buildList {
@@ -221,6 +225,7 @@ private fun TaskEditDialog(
     task: AssistantTask?,
     initialText: String,
     busy: Boolean,
+    saveError: String?,
     onSave: (String, Long?) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -264,12 +269,13 @@ private fun TaskEditDialog(
                     TextButton(onClick = ::pickDue, modifier = Modifier.minTouchTarget()) { Text("기한 정하기") }
                     if (dueAt != null) TextButton(onClick = { dueAt = null }, modifier = Modifier.minTouchTarget()) { Text("지우기") }
                 }
+                saveError?.let { Text(it, color = Clay.Error, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(text.trim(), dueAt) }, enabled = valid && !busy, modifier = Modifier.minTouchTarget()) { Text("저장") }
+            TextButton(onClick = { onSave(text.trim(), dueAt) }, enabled = valid && !busy, modifier = Modifier.minTouchTarget().testTag("task-save")) { Text("저장") }
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.minTouchTarget()) { Text("취소") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.minTouchTarget().testTag("task-cancel")) { Text("취소") } },
     )
 }
 
@@ -289,7 +295,7 @@ fun TodayScreen(
     onToggle: (AssistantTask) -> Unit,
     onToggleItem: (AssistantTask, String) -> Unit,
     onSnooze: (AssistantTask, Long) -> Unit,
-    onEdit: (AssistantTask, String, Long?) -> Unit,
+    onEdit: (AssistantTask, String, Long?, (Boolean) -> Unit) -> Unit,
     onExclude: (AssistantTask) -> Unit,
     onOpenTodo: () -> Unit,
     onOpenNews: () -> Unit,
@@ -300,6 +306,7 @@ fun TodayScreen(
     var expandedId by rememberSaveable { mutableStateOf<String?>(null) }
     var snoozeTarget by remember { mutableStateOf<AssistantTask?>(null) }
     var editTarget by remember { mutableStateOf<AssistantTask?>(null) }
+    var editSaveError by remember { mutableStateOf<String?>(null) }
     val overdue = remember(tasks, now) { TodoSelectors.overdue(tasks, now) }
     val dueSoon = remember(tasks, now) { TodoSelectors.dueSoon(tasks, now, daysAhead = 1) }
     val undated = remember(tasks) { TodoSelectors.undated(tasks) }
@@ -310,9 +317,10 @@ fun TodayScreen(
             Column(Modifier.weight(1f)) { Brand() }
             TextButton(onClick = onOpenSettings, modifier = Modifier.minTouchTarget().testTag("open-settings")) { Text("설정") }
         }
+        val configuredSources = settings.selectedPackages.isNotEmpty() || records.isNotEmpty()
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (openCount > 0) "남은 할 일\n${openCount}개" else "오늘 챙길 일을\n다 끝냈어요",
+                TodoSelectors.todayHeadline(tasks, configuredSources, settings.collectionEnabled, sourceStatusMessage),
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.headlineMedium,
             )
@@ -346,7 +354,10 @@ fun TodayScreen(
             }
         }
         if (configured && shownTasks.isEmpty()) {
-            EmptyCard("남은 할 일이 없어요", "새 소식에서 확인할 일이 생기면 여기 모여요. 직접 추가할 수도 있어요.")
+            val (emptyTitle, emptyBody) = TodoSelectors.todayEmptyMessage(
+                tasks, configuredSources, settings.collectionEnabled, sourceStatusMessage,
+            )
+            EmptyCard(emptyTitle, emptyBody)
         }
         if (overdue.isNotEmpty()) {
             Eyebrow("기한 지남")
@@ -414,7 +425,12 @@ fun TodayScreen(
         }
     }
     editTarget?.let { target ->
-        TaskEditDialog(target, target.text, busy, { text, due -> editTarget = null; onEdit(target, text, due) }, { editTarget = null })
+        TaskEditDialog(target, target.text, busy, editSaveError, { text, due ->
+            editSaveError = null
+            onEdit(target, text, due) { ok ->
+                if (ok) editTarget = null else editSaveError = "저장하지 못했어요. 다시 시도해주세요."
+            }
+        }, { editTarget = null; editSaveError = null })
     }
 }
 
@@ -424,7 +440,10 @@ internal fun todayReviewRecords(
     childProfile: kr.mom.probe.data.ChildNoticeProfile,
     institution: String,
 ): List<ProbeRecord> {
-    val linkedKeySets = tasks.map { it.noticeGroupKeys + listOfNotNull(it.sourceNotificationId) }
+    // Records linked to a suspended or review-flagged task must resurface here so
+    // the user keeps a visible path back to the obligation.
+    val linkedKeySets = tasks.filter { !it.suspended && !it.needsReview }
+        .map { it.noticeGroupKeys + listOfNotNull(it.sourceNotificationId) }
         .filter { it.isNotEmpty() }
     return NoticeGrouping.representatives(records, institution)
         .filter { record ->
@@ -446,14 +465,15 @@ fun TodoScreen(
     onToggle: (AssistantTask) -> Unit,
     onToggleItem: (AssistantTask, String) -> Unit,
     onSnooze: (AssistantTask, Long) -> Unit,
-    onEdit: (AssistantTask, String, Long?) -> Unit,
+    onEdit: (AssistantTask, String, Long?, (Boolean) -> Unit) -> Unit,
     onExclude: (AssistantTask) -> Unit,
-    onAddTask: (String, Long?) -> Unit,
+    onAddTask: (String, Long?, (Boolean) -> Unit) -> Unit,
 ) {
     var expandedId by rememberSaveable { mutableStateOf<String?>(null) }
     var snoozeTarget by remember { mutableStateOf<AssistantTask?>(null) }
     var editTarget by remember { mutableStateOf<AssistantTask?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
     var showDone by rememberSaveable { mutableStateOf(false) }
     var showExcluded by rememberSaveable { mutableStateOf(false) }
     val overdue = remember(tasks, now) { TodoSelectors.overdue(tasks, now) }
@@ -468,7 +488,7 @@ fun TodoScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("할 일 ${openCount}개", Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge)
         }
-        ClayButton("할 일 직접 추가", Modifier.testTag("add-task"), primary = false, onClick = { adding = true })
+        ClayButton("할 일 직접 추가", Modifier.testTag("add-task"), primary = false, onClick = { adding = true; saveError = null })
         if (openCount == 0 && done.isEmpty() && excluded.isEmpty()) {
             EmptyCard("아직 할 일이 없어요", "공지에서 확인된 일이나 직접 적은 일이 여기 모여요.")
         }
@@ -532,9 +552,19 @@ fun TodoScreen(
         }
     }
     editTarget?.let { target ->
-        TaskEditDialog(target, target.text, busy, { text, due -> editTarget = null; onEdit(target, text, due) }, { editTarget = null })
+        TaskEditDialog(target, target.text, busy, saveError, { text, due ->
+            saveError = null
+            onEdit(target, text, due) { ok ->
+                if (ok) editTarget = null else saveError = "저장하지 못했어요. 다시 시도해주세요."
+            }
+        }, { editTarget = null; saveError = null })
     }
     if (adding) {
-        TaskEditDialog(null, "", busy, { text, due -> adding = false; onAddTask(text, due) }, { adding = false })
+        TaskEditDialog(null, "", busy, saveError, { text, due ->
+            saveError = null
+            onAddTask(text, due) { ok ->
+                if (ok) adding = false else saveError = "저장하지 못했어요. 다시 시도해주세요."
+            }
+        }, { adding = false; saveError = null })
     }
 }
