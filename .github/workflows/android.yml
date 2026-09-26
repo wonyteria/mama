@@ -120,6 +120,48 @@ jobs:
           emulator-boot-timeout: 600
           script: cd android && ./gradlew :app:connectedDebugAndroidTest --stacktrace
 
+      - name: Summarize instrumentation XML results
+        if: always()
+        run: |
+          files=$(find android/app/build/outputs/androidTest-results/connected -name '*.xml' -type f 2>/dev/null || true)
+          if [ -z "$files" ]; then
+            echo "::error::No connectedDebugAndroidTest XML results under android/app/build/outputs/androidTest-results/connected"
+            exit 1
+          fi
+          counts=$(echo "$files" | xargs grep -h -o '<testsuite [^>]*>' | awk '
+            {
+              line = $0
+              t = 0; f = 0; e = 0; s = 0
+              if (match(line, /tests="[0-9]+"/))    t = substr(line, RSTART + 7,  RLENGTH - 8)
+              if (match(line, /failures="[0-9]+"/)) f = substr(line, RSTART + 10, RLENGTH - 11)
+              if (match(line, /errors="[0-9]+"/))   e = substr(line, RSTART + 8,  RLENGTH - 9)
+              if (match(line, /skipped="[0-9]+"/))  s = substr(line, RSTART + 9,  RLENGTH - 10)
+              T += t; F += f; E += e; S += s
+            }
+            END { printf "%d %d %d %d", T, F, E, S }')
+          read -r tests failures errors skipped <<< "$counts"
+          passed=$((tests - failures - errors - skipped))
+          {
+            echo "## connectedDebugAndroidTest results (JUnit XML, authoritative)"
+            echo ""
+            echo "| tests | passed | failures | errors | skipped |"
+            echo "|---|---|---|---|---|"
+            echo "| $tests | $passed | $failures | $errors | $skipped |"
+            echo ""
+            echo "Counts are summed from the testsuite XML attributes, not the Gradle"
+            echo "console total, which can differ (UTP reports skipped/reported events"
+            echo "separately from testcase entries)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$tests" -eq 0 ]; then
+            echo "::error::Instrumentation XML reports zero test cases"
+            exit 1
+          fi
+          if [ "$failures" -gt 0 ] || [ "$errors" -gt 0 ]; then
+            echo "::error::connectedDebugAndroidTest XML reports $failures failure(s) and $errors error(s)"
+            exit 1
+          fi
+          echo "::notice::Instrumentation XML: $tests tests, $passed passed, $skipped skipped, $failures failures, $errors errors"
+
       - name: Upload instrumentation reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
