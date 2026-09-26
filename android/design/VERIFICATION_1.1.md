@@ -30,8 +30,8 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 
 `./gradlew :app:connectedDebugAndroidTest` · `mama_qa_api35` AVD · Android 15(API 35) ARM 이미지.
 
-- JUnit XML(testsuite 속성, 권위) 기준: tests=18, failures=0, errors=0, skipped=2 — 즉 16 통과 + 2 skip.
-- Gradle/UTP 콘솔은 같은 실행에서 `Finished 20 tests`라고 표시한다. XML testsuite 합계(testcase 18건)와 콘솔 표시(20)는 일관되게 `tests + skipped`만큼 어긋나며, 이는 UTP가 skip을 테스트 케이스와 별도 이벤트로 중복 집계하는 표시 문제다. 완료 수를 과장하지 않기 위해 이 문서와 CI 요약은 항상 XML 속성을 사용한다(18 total / 16 pass / 2 skip).
+- JUnit XML(testsuite 속성, 권위) 기준: tests=21, failures=0, errors=0, skipped=2 — 즉 19 통과 + 2 skip(GitHub API 35 x86_64 CI에서도 동일한 XML 합계 확인).
+- Gradle/UTP 콘솔은 같은 실행에서 `Finished 23 tests`처럼 XML보다 큰 수를 표시한다. XML testsuite 합계와 콘솔 표시는 일관되게 `tests + skipped`만큼 어긋나며(21 XML -> "23", 구형 suite 18 XML -> "20"), 이는 UTP가 skip을 테스트 케이스와 별도 이벤트로 중복 집계하는 표시 문제다. 완료 수를 과장하지 않기 위해 이 문서와 CI 요약은 항상 XML 속성을 사용한다.
 - skip 2개는 외부 HWP/HWPX 공개 fixture를 `externalFilesDir/qa-input/`에 넣어야 하는 opt-in QA 테스트다. fixture 파일은 저장소에 없으므로 의도된 `assumeTrue` skip이다.
 - NEIS 운영 동기화 비활성(`PRODUCTION_SYNC_ENABLED=false`) 검증과 온보딩 드라이버, 알람/스누즈/수집 흐름을 포함한다.
 

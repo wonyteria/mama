@@ -128,7 +128,7 @@ jobs:
             echo "::error::No connectedDebugAndroidTest XML results under android/app/build/outputs/androidTest-results/connected"
             exit 1
           fi
-          counts=$(echo "$files" | xargs grep -h -o '<testsuite [^>]*>' | awk '
+          counts=$(find android/app/build/outputs/androidTest-results/connected -name '*.xml' -type f -exec grep -h -o '<testsuite [^>]*>' {} + | awk '
             {
               line = $0
               t = 0; f = 0; e = 0; s = 0
