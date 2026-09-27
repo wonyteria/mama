@@ -42,8 +42,8 @@ class TaskReminderSchedulerTest {
 
         TaskReminderScheduler.sync(context, listOf(task))
 
-        val alarm = org.robolectric.Shadows.shadowOf(manager).nextScheduledAlarm
+        val alarm = org.robolectric.Shadows.shadowOf(manager).peekNextScheduledAlarm()
         org.junit.Assert.assertNotNull("revoked exact permission must still schedule an inexact alarm", alarm)
-        assertEquals(future, alarm!!.triggerAtTime)
+        assertEquals(future, alarm!!.triggerAtMs)
     }
 }

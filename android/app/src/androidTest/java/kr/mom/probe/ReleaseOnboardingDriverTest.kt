@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
@@ -44,7 +45,7 @@ class ReleaseOnboardingDriverTest {
         waitForText("동의해요", timeoutMs = 6_000)?.let { consent ->
             var checkable: AccessibilityNodeInfo? = consent
             while (checkable != null && !checkable.isCheckable) checkable = checkable.parent
-            if (checkable == null || !checkable.isChecked) clickRow(consent)
+            if (checkable == null || !AccessibilityNodeInfoCompat.wrap(checkable).isChecked) clickRow(consent)
             scrollUntil("이 기기에서 시작", 8)
             clickText("이 기기에서 시작", timeoutMs = 5_000)
         }
