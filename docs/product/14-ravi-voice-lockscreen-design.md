@@ -19,7 +19,8 @@ reminder/alarm 경로를 재사용한다.
   reminder 알림에 부적합(진행 중 작업 표현용이 아님)하여 보류. 고급
   애니메이션·에이전트 UI.
 - **NOT IMPLEMENTED**: hotword/상시·백그라운드 청취, 오디오 파일 저장,
-  일반 대화·외부 지식 답변, 클라우드 STT.
+  일반 대화·외부 지식 답변, 앱이 직접 운영/호출하는 외부·유료 클라우드
+  STT와 앱의 오디오 업로드.
 
 ---
 
@@ -81,13 +82,22 @@ reminder/alarm 경로를 재사용한다.
   `SpeechRecognizer.isRecognitionAvailable(context)`,
   `SpeechRecognizer.isOnDeviceRecognitionAvailable(context)`,
   `SpeechRecognizer.createOnDeviceSpeechRecognizer(context)`,
-  `SpeechRecognizer.createSpeechRecognizer(context)` — 모두 API 31+
-  이므로 minSdk 33에서 버전 가드 불필요.
+  `SpeechRecognizer.createSpeechRecognizer(context)`.
+  `isOnDeviceRecognitionAvailable`/`createOnDeviceSpeechRecognizer`는
+  API 31+이고 `isRecognitionAvailable`/`createSpeechRecognizer`는
+  더 오래된 API다 — 어느 쪽이든 minSdk 33에서 모든 호출을 사용할 수
+  있다.
 - 선택 정책: `isOnDeviceRecognitionAvailable(context)`가 true이면
   `createOnDeviceSpeechRecognizer(context)`를 사용한다. 생성이
-  실패하거나 `UnsupportedOperationException` 등이 발생하면 안전하게
+  실패하거나 `UnsupportedOperationException` 등이 발생하면
   `createSpeechRecognizer(context)`로 fallback한다. 두 경로 모두
   사용할 수 없으면 `ERROR` 상태로 안내한다.
+- **Fallback 정직성**: `createSpeechRecognizer`는 OEM/사용자가 선택한
+  시스템 `RecognitionService`를 사용하며, 그 구현에 따라 네트워크를
+  쓸 수 있다. 따라서 fallback 경로로 진입하기 전 UI에서 온디바이스
+  인식이 불가하며 시스템 음성 인식이 사용될 수 있음을 알리고 사용자가
+  취소할 수 있어야 한다. 앱 자체는 어떤 경로에서도 오디오 파일/원시
+  오디오를 저장하거나 직접 전송하지 않는다.
 - 수명주기: listener를 `startListening` **이전**에 등록한다. 생성·
   startListening·stopListening·cancel·destroy 호출은 모두
   **main thread**에서 수행한다. Activity `onDestroy`에서 `destroy()`를
@@ -220,7 +230,10 @@ reminder/alarm 경로를 재사용한다.
 ## 13. 미구현 명시
 
 - hotword·상시 청취·백그라운드 녹음·오디오 파일 저장: 구현하지 않음.
-- 일반 챗봇·외부 지식 답변·클라우드 STT·외부 의존성: 구현하지 않음.
+- 일반 챗봇·외부 지식 답변·외부 의존성: 구현하지 않음. 앱이 직접
+  운영/호출하는 외부·유료 클라우드 STT와 앱의 오디오 업로드는 없으나,
+  시스템 `RecognitionService` fallback은 OEM/사용자 선택 구현이며
+  네트워크를 사용할 수 있어 위 §4의 사전 안내·취소 정책을 따른다.
 - QS Tile·잠금화면 상세·지속 브리핑·홈 재구성: P1 설계만.
 - Android 16 `ProgressStyle`: P2 연구 — 일반 task/reminder 알림에
   부적합.
