@@ -55,6 +55,11 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 - skip 2개는 외부 HWP/HWPX 공개 fixture를 `externalFilesDir/qa-input/`에 넣어야 하는 opt-in QA 테스트다. fixture 파일은 저장소에 없으므로 의도된 `assumeTrue` skip이다.
 - NEIS 운영 동기화 비활성(`PRODUCTION_SYNC_ENABLED=false`) 검증과 온보딩 드라이버, 알람/스누즈/수집 흐름을 포함한다.
 
+현재 구현 안전 경계(에뮬레이터·CI에서 검증 — 물리기기 증거 아님):
+
+- collection 불변식: "collection gate가 닫힌 채 합성 allowlist 검증 후에만 test collection을 연다" — listener access가 이미 켜진 기기에서도 `collectionEnabled=false`이거나 allowlist 밖 패키지면 `canCapture`/`capture`가 거부함을 `nonAllowlistedSourceIsNeverCapturedWhileCollectionIsClosed`가 세 경계(게이트 닫힘·접근 허용 후·collection 활성 후)에서 입증한다. 원래 `enabled_notification_listeners` 값을 verbatim 캡처해 `finally`에서 복원하며, 빈 원본은 `settings delete`로 복원하고 복원값 verbatim 비교·QA 컴포넌트 잔존 검사가 실패 시 테스트를 hard-fail한다. 정리는 테스트가 만든 정확한 record id·task id·notification key에만 한정되며, 게시된 합성 알림은 지속된 record의 key를 await해 listener가 취소하고 비활성화를 확인한다 — 취소/연결 실패도 테스트 실패다. 전역 알림 열거·cancel-all·사용자 알림 접근/삭제는 없다.
+- 파괴적 초기화 보호: `DeviceQaSafety.requireDestructibleState`가 모든 androidTest의 `deleteAll`/`reset`/설정 쓰기 경로를 감싼다. 물리 기기에서는 records/tasks/onboarding이 비어 보여도 다른 QA 상태(CalendarCommandStore, SourceSyncStateStore, 알람 등록 등)를 지울 수 있으므로 파괴적 테스트는 격리 에뮬레이터에서만 실행되고 물리 기기에서는 사유와 함께 skip된다(XML에 honest skip으로 기록). 비파괴 테스트(예: 합성 HWP5 기기 fixture)는 이 게이트를 타지 않아 물리기기에서도 실행된다.
+
 CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터에서 같은 `connectedDebugAndroidTest`를 실행하고(KVM 가속, AVD 스냅샷 캐시, 부팅·작업 타임아웃), 실행 후 `androidTest-results/connected/*.xml`의 testsuite 속성을 합산해 tests/passed/failures/errors/skipped를 GitHub Step Summary에 기록한다. failures 또는 errors가 1 이상이면 작업이 실패하고, 실패 시 XML·HTML 보고서를 업로드한다. 콘솔 총계는 신뢰하지 않는다.
 
 ## 실기기 계측 (과거 baseline · SM-S926N)
@@ -65,15 +70,14 @@ CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터
 
 - JUnit XML(권위) 기준: tests=18, failures=0, errors=0, skipped=2 — 즉 16 통과 + 2 skip. 콘솔은 `Finished 20 tests`로 표시됐다(위와 동일한 UTP 집계 문제; 18+2=20).
 - 당시 스위트는 온보딩 드라이버, 알람/스누즈 흐름, `PRODUCTION_SYNC_ENABLED=false` 검증 등 기존 비파괴·기존 QA 경로를 커버했다. 알림 수집→저장→Todo 생성 E2E, 합성 HWP5 기기 fixture, 저널 내구성, 안전 게이트는 그 이전 스위트에 없었고 이후 추가분은 에뮬레이터와 CI(28/26/2)에서만 실행됐다 — 물리기기에서는 한 번도 실행되지 않았다(NOT_RUN).
-- 안전 경계(현재 구현, 에뮬레이터 검증): 실제 불변식은 "collection gate가 닫힌 채 합성 allowlist 검증 후에만 test collection을 연다"다 — listener access가 이미 켜진 기기에서도 `collectionEnabled=false`이거나 allowlist 밖 패키지면 `canCapture`/`capture`가 거부함을 `nonAllowlistedSourceIsNeverCapturedWhileCollectionIsClosed`가 세 경계(게이트 닫힘·접근 허용 후·collection 활성 후)에서 입증한다. 원래 `enabled_notification_listeners` 값을 verbatim 캡처해 `finally`에서 복원하며, 빈 원본은 `settings delete`로 복원하고 복원값 verbatim 비교·QA 컴포넌트 잔존 검사가 실패 시 테스트를 hard-fail한다. 정리는 테스트가 만든 정확한 record id·task id·notification key에만 한정되며, 게시된 합성 알림은 지속된 record의 key를 await해 listener가 취소하고 비활성화를 확인한다 — 취소/연결 실패도 테스트 실패다. 전역 알림 열거·cancel-all·사용자 알림 접근/삭제는 없다.
-- 파괴적 초기화 보호(현재 구현): `DeviceQaSafety.requireDestructibleState`가 모든 androidTest의 `deleteAll`/`reset`/설정 쓰기 경로를 감싼다. 물리 기기에서는 records/tasks/onboarding이 비어 보여도 다른 QA 상태(CalendarCommandStore, SourceSyncStateStore, 알람 등록 등)를 지울 수 있으므로 파괴적 테스트는 격리 에뮬레이터에서만 실행되고 물리 기기에서는 사유와 함께 skip된다(XML에 honest skip으로 기록).
 - skip 2개는 에뮬레이터와 동일한 opt-in 공개 fixture 테스트다.
 - QA 앱 cold launch 후 프로세스 유지·즉시 crash/ANR 없음을 확인했다.
-- 시점 주의: 이 실기기 실행은 `DeviceQaSafety` 도입(`11a9c86`)과 물리기기 전면 skip 강화(`7bffff2`) 이전에 수행됐다. 대상은 전용 QA 설치였으므로 `deleteAll`이 사용자 release 데이터를 건드리지 않았지만, 위 안전 경계 문구는 현재 코드의 동작을 설명하는 것이지 당시 실행에 게이트가 있었다는 뜻은 아니다. `7bffff2` 이후 코드로는 실기기 재실행을 하지 않았으며, 재실행해도 알림 파이프라인·reconcile 등 파괴적 테스트는 모두 skip되고 비파괴 경로만 실행된다.
+- 시점 주의: 이 실기기 실행은 `DeviceQaSafety` 도입(`11a9c86`)과 물리기기 전면 skip 강화(`7bffff2`) 이전에 수행됐다. 대상은 전용 QA 설치였으므로 `deleteAll`이 사용자 release 데이터를 건드리지 않았다. `7bffff2` 이후 코드로는 실기기 재실행을 하지 않았다. 재실행하면 알림 파이프라인·reconcile 등 파괴적 테스트는 모두 skip되고, 비파괴 경로(합성 HWP5 fixture, opt-in 공개 fixture skip, 온보딩/알람 조회 계열)는 실행된다 — 현재 코드의 안전 경계 설명은 위 "현재 구현 안전 경계" 절을 본다.
 
 남은 실기기 항목(여전히 NOT_RUN):
 
-- OS 경유 합성 알림 E2E(`NotificationPipelineDeviceTest`)·기기 HWP5 fixture·`ReconcileDurabilityDeviceTest` — 스위트에 추가된 시점 이후 물리기기 미실행. 현재 게이트에서는 재실행해도 전부 honest skip된다(물리기기 파괴적 경로 금지).
+- OS 경유 합성 알림 E2E(`NotificationPipelineDeviceTest`)·`ReconcileDurabilityDeviceTest` — 스위트에 추가된 시점 이후 물리기기 미실행. 파괴적 게이트(`requireDestructibleState`)가 있어 물리기기에 연결해도 honest skip된다.
+- 합성 HWP5 기기 fixture(`syntheticHwp5AssetReportsEmbeddedBinaryPartialOnDevice`) — 비파괴 테스트라 게이트를 타지 않는다. 물리기기 재실행 자체가 없어 NOT_RUN이지만, 연결하면 skip 없이 실행된다.
 - 실제 학교·학원 앱 알림 수집과 lane별 상태 정확성 — 실제 부모 기기 필요.
 - 알림 접근 권한 회수·재부여 흐름.
 - 재부팅·프로세스 종료 후 할 일·스누즈(연속 4회 이상)·읽음 상태 유지.
