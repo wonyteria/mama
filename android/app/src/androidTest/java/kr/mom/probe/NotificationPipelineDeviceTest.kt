@@ -264,8 +264,24 @@ class NotificationPipelineDeviceTest {
         assertTrue("listener rejected the synthetic notification cancel", listener.cancelNotificationByKey(key))
         assertTrue(
             "synthetic notification is still active after cancel",
-            waitUntil(5_000) { !listener.isNotificationActive(key) },
+            waitUntilInactive(listener, key, 5_000),
         )
+    }
+
+    /**
+     * Polls until a successful active-notification query reports [key] gone.
+     * A failed query is inconclusive — it retries until timeout and then
+     * reports false, so "the check kept erroring" fails the test instead of
+     * passing as if the tray were clean.
+     */
+    private fun waitUntilInactive(listener: ProbeNotificationListener, key: String, timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val stillActive = try { listener.isNotificationActive(key) } catch (_: Exception) { true }
+            if (!stillActive) return true
+            Thread.sleep(300)
+        }
+        return try { !listener.isNotificationActive(key) } catch (_: Exception) { false }
     }
 
     private suspend fun seedRepository(packages: Set<String>) {

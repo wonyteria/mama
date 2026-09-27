@@ -40,9 +40,14 @@ class ProbeNotificationListener : NotificationListenerService() {
     internal fun cancelNotificationByKey(key: String): Boolean =
         runCatching { cancelNotification(key) }.isSuccess
 
-    /** Whether [key] still resolves to a live notification the listener can see. */
+    /**
+     * Whether [key] still resolves to a live notification the listener can
+     * see. Throws when the active-notification query itself fails — a failed
+     * query must never masquerade as "key is gone", because callers use this
+     * to prove the synthetic notification they posted actually left the tray.
+     */
     internal fun isNotificationActive(key: String): Boolean =
-        runCatching { activeNotifications.any { it.key == key } }.getOrDefault(false)
+        activeNotifications.any { it.key == key }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
