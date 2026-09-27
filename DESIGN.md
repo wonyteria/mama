@@ -17,7 +17,8 @@ automated tests and the release candidate has fresh device evidence.
 ## 2. Brand
 
 **Product name:** MAMA  
-**Assistant name:** 모모  
+**Assistant name:** 라비 (레거시 별칭 모모/모모야는 기존 사용자 입력 호환으로 유지;
+저장된 데이터·알림 채널 ID·prefs 키는 rename/migrate하지 않음)
 **Promise:** 아이에게 해당하는 준비물, 제출, 일정 변경을 놓치지 않게 해주는
 가족용 실행 보조 앱.
 
@@ -183,6 +184,12 @@ explicitly valid cancellation from a newer notice revision.
 ## 8. Visual language
 
 MAMA uses a warm, low-noise system rather than a conversational mascot UI.
+The one allowed exception is 라비: a rabbit mascot that acts only as a
+structured local capture/status entry point — never a general chatbot.
+Voice capture is tap-initiated only: no hotword, no always-on or background
+listening, no audio-file persistence. Any write (task, reminder, calendar,
+capture record) requires explicit user confirmation of the previewed
+transcript first.
 
 - Backgrounds: neutral warm surfaces with strong text contrast.
 - Primary accent: calm green or teal for safe/complete states.
@@ -191,7 +198,7 @@ MAMA uses a warm, low-noise system rather than a conversational mascot UI.
   information encoded only by weight or color.
 - Cards: one action per card, short title, concrete next step, due/status line,
   and evidence affordance.
-- 모모 may appear in short explanatory copy, never as decoration that competes
+- 라비 may appear in short explanatory copy, never as decoration that competes
   with the action.
 
 ## 9. Components
