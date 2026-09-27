@@ -6,7 +6,7 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 
 `cd android && ./gradlew clean :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest`
 
-- 단위 테스트 XML 합계(testsuite 속성): tests=304, failures=0, errors=0, skipped=2 — 302 통과 + 2 skip. skip은 외부 공개 fixture opt-in 테스트다. Robolectric 화면 테스트는 프로덕션 Composable을 실제 렌더한다.
+- 단위 테스트 XML 합계(testsuite 속성): tests=306, failures=0, errors=0, skipped=2 — 304 통과 + 2 skip. skip은 외부 공개 fixture opt-in 테스트다. Robolectric 화면 테스트는 프로덕션 Composable을 실제 렌더한다.
 - `AccessibilityLayoutTest` 21/21 통과, `ProbeScreensRenderTest` 22/22 통과.
 - lint 오류 0. debug APK·androidTest APK 조립 성공.
 - release 조립은 서명 정보 없이 실행하면 지정된 fail-closed 메시지로 실패한다.
@@ -16,13 +16,13 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 
 ## A–N 결함 수정 (자동, 신규)
 
-`android/design/DEFECT_TRACKING_1.1.md`가 수락 기준과 테스트 매핑을 추적한다. 각 항목은 재현 테스트(수정 전 실패) → 최소 수정 → 회귀 검증을 거쳤으며, 커밋 `f16380c`(task/data 계층), `8846640`(UI/activity 계층), `11a9c86`(기기 QA 안전 경계 + 저널 동기 durable 저장)에 나뉘어 있다. 요약:
+`android/design/DEFECT_TRACKING_1.1.md`가 수락 기준과 테스트 매핑을 추적한다. 각 항목은 재현 테스트(수정 전 실패) → 최소 수정 → 회귀 검증을 거쳤으며, 커밋 `f16380c`(task/data 계층), `8846640`(UI/activity 계층), `11a9c86`+`7bffff2`+`1e62ab4`+`9e513f4`(기기 QA 안전 경계, 저널 내구성, cold-start replay, 알림 조회 실패 hard-fail)에 나뉘어 있다. 요약:
 
 - A: 공식 문서 ID가 다른 공지는 fingerprint 앵커가 같아도 병합하지 않는다(disjoint-id·app/web 사본·완료 미승계 테스트).
 - B: 불명확 revision/첨부 실패는 마지막 신뢰 상태를 유지하고 `needsReview`+`수정 공지 확인 필요`로 노출한다.
 - C: 마감 임박·경과 공지도 required Todo를 만들어 overdue로 노출한다(과거 알람은 예약하지 않음).
 - D: 무관한 revision은 사용자 snooze/reminder를 보존하고, 실제 기한 변경만 재예약한다.
-- E: `ReconcileJournal`이 capture→task 사이를 내구화해 startup replay로 정확히 1회 복구한다.
+- E: `ReconcileJournal`이 capture→task 사이를 내구화하고, startup replay는 멱등 재실행으로 논리적 1회 복구를 달성한다(중복 0). 실제 프로세스 kill의 atomic exactly-once는 검증하지 않았다.
 - F: consume 후 notify 전 중단 상태(`activeAlarmOccurrenceId`)를 `restoreNow`가 복구한다.
 - G: 오늘 헤드라인이 미수집/실패/확인된 일 없음/실제 완료를 구분한다.
 - H: 연결 레인이 지원 범위·마지막 성공·미지원 이유를 표시하고 미지원 웹 행을 유지한다.
@@ -50,25 +50,27 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 
 `./gradlew :app:connectedDebugAndroidTest` · `mama_qa_api35` AVD · Android 15(API 35) ARM 이미지.
 
-- JUnit XML(testsuite 속성, 권위) 기준: tests=21, failures=0, errors=0, skipped=2 — 즉 19 통과 + 2 skip(GitHub API 35 x86_64 CI에서도 동일한 XML 합계 확인).
-- Gradle/UTP 콘솔은 같은 실행에서 `Finished 23 tests`처럼 XML보다 큰 수를 표시한다. XML testsuite 합계와 콘솔 표시는 일관되게 `tests + skipped`만큼 어긋나며(21 XML -> "23", 구형 suite 18 XML -> "20"), 이는 UTP가 skip을 테스트 케이스와 별도 이벤트로 중복 집계하는 표시 문제다. 완료 수를 과장하지 않기 위해 이 문서와 CI 요약은 항상 XML 속성을 사용한다.
+- JUnit XML(testsuite 속성, 권위) 기준: tests=28, failures=0, errors=0, skipped=2 — 즉 26 통과 + 2 skip(GitHub API 35 x86_64 CI에서도 동일한 XML 합계 확인).
+- Gradle/UTP 콘솔은 같은 실행에서 `Finished 30 tests`처럼 XML보다 큰 수를 표시한다. XML testsuite 합계와 콘솔 표시는 일관되게 `tests + skipped`만큼 어긋나며(28 XML -> "30"), 이는 UTP가 skip을 테스트 케이스와 별도 이벤트로 중복 집계하는 표시 문제다. 완료 수를 과장하지 않기 위해 이 문서와 CI 요약은 항상 XML 속성을 사용한다.
 - skip 2개는 외부 HWP/HWPX 공개 fixture를 `externalFilesDir/qa-input/`에 넣어야 하는 opt-in QA 테스트다. fixture 파일은 저장소에 없으므로 의도된 `assumeTrue` skip이다.
 - NEIS 운영 동기화 비활성(`PRODUCTION_SYNC_ENABLED=false`) 검증과 온보딩 드라이버, 알람/스누즈/수집 흐름을 포함한다.
 
 CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터에서 같은 `connectedDebugAndroidTest`를 실행하고(KVM 가속, AVD 스냅샷 캐시, 부팅·작업 타임아웃), 실행 후 `androidTest-results/connected/*.xml`의 testsuite 속성을 합산해 tests/passed/failures/errors/skipped를 GitHub Step Summary에 기록한다. failures 또는 errors가 1 이상이면 작업이 실패하고, 실패 시 XML·HTML 보고서를 업로드한다. 콘솔 총계는 신뢰하지 않는다.
 
-## 실기기 계측 (실행됨 · SM-S926N)
+## 실기기 계측 (과거 baseline · SM-S926N)
 
 `ANDROID_SERIAL=R3CX40BMCYV ./gradlew :app:connectedDebugAndroidTest` · Samsung SM-S926N, Android 16 / API 36, QA 빌드 1.1.0-qa(versionCode 14).
 
+**이 결과는 `DeviceQaSafety` 강화(`7bffff2`) 이전 스위트(21 tests)의 baseline이다. 현재 스위트를 물리 기기에 실행하면 파괴적 테스트 전부 — 알림 파이프라인 E2E와 `ReconcileDurabilityDeviceTest` 포함 — 가 honest skip되므로 위 숫자가 현재 코드의 물리기기 증거를 의미하지는 않는다.** 현재 코드 기준 물리기기 재실행은 NOT_RUN이다.
+
 - JUnit XML(권위) 기준: tests=21, failures=0, errors=0, skipped=2 — 즉 19 통과 + 2 skip. 콘솔은 `Finished 23 tests`로 표시됐다(위와 동일한 UTP 집계 문제; 21+2=23).
 - 통과에는 OS 경유 E2E가 포함된다: `cmd notification post`로 com.android.shell 패키지의 합성 알림을 실제 게시 → 알림 청취자 콜백 → 암호화 레코드 저장 → 후보 분석 → 자동 할 일 생성까지 확인했다(`postedSyntheticNotificationIsCapturedThroughSystemListenerIntoTaskStore`). 또 다른 테스트는 `ProbeRepository.capture`에 합성 StatusBarNotification을 직접 주입해 동일 저장소·플래너 경로를 검증한다. QA/debug 패키지와 합성 알림만 사용하며 사용자 알림이나 정식 앱 데이터는 읽지 않는다.
-- 안전 경계(현재 구현): 실제 불변식은 "collection gate가 닫힌 채 합성 allowlist 검증 후에만 test collection을 연다"다 — listener access가 이미 켜진 기기에서도 `collectionEnabled=false`이거나 allowlist 밖 패키지면 `canCapture`/`capture`가 거부함을 `nonAllowlistedSourceIsNeverCapturedWhileCollectionIsClosed`가 세 경계(게이트 닫힘·접근 허용 후·collection 활성 후)에서 입증한다. 원래 `enabled_notification_listeners` 값을 verbatim 캡처해 `finally`에서 복원하며, 빈 원본은 `settings delete`로 복원하고 복원값 verbatim 비교·QA 컴포넌트 잔존 검사가 실패 시 테스트를 hard-fail한다. 정리는 테스트가 만든 정확한 record id·task id·notification key에만 한정되며, 게시된 합성 알림은 지속된 record의 key를 await해 listener가 취소하고 비활성화를 확인한다 — 취소/연결 실패도 테스트 실패다. 전역 알림 열거·cancel-all·사용자 알림 접근/삭제는 없다.
-- 파괴적 초기화 보호: `DeviceQaSafety.requireDestructibleState`가 모든 androidTest의 `deleteAll`/`reset`/설정 쓰기 경로를 감싼다. 물리 기기에서는 records/tasks/onboarding이 비어 보여도 다른 QA 상태(CalendarCommandStore, SourceSyncStateStore, 알람 등록 등)를 지울 수 있으므로 파괴적 테스트는 격리 에뮬레이터에서만 실행되고 물리 기기에서는 사유와 함께 skip된다(XML에 honest skip으로 기록).
-- `syntheticHwp5AssetReportsEmbeddedBinaryPartialOnDevice`가 저장소 체크인 합성 HWP5 fixture(BinData 포함, sha256 검증)로 내장 바이너리 건너뜀 보고를 기기에서 확인한다 — 공개 fixture 없이도 HWP5 부분 추출 계약을 기기에서 검증.
+- 안전 경계(현재 구현, 에뮬레이터 검증): 실제 불변식은 "collection gate가 닫힌 채 합성 allowlist 검증 후에만 test collection을 연다"다 — listener access가 이미 켜진 기기에서도 `collectionEnabled=false`이거나 allowlist 밖 패키지면 `canCapture`/`capture`가 거부함을 `nonAllowlistedSourceIsNeverCapturedWhileCollectionIsClosed`가 세 경계(게이트 닫힘·접근 허용 후·collection 활성 후)에서 입증한다. 원래 `enabled_notification_listeners` 값을 verbatim 캡처해 `finally`에서 복원하며, 빈 원본은 `settings delete`로 복원하고 복원값 verbatim 비교·QA 컴포넌트 잔존 검사가 실패 시 테스트를 hard-fail한다. 정리는 테스트가 만든 정확한 record id·task id·notification key에만 한정되며, 게시된 합성 알림은 지속된 record의 key를 await해 listener가 취소하고 비활성화를 확인한다 — 취소/연결 실패도 테스트 실패다. 전역 알림 열거·cancel-all·사용자 알림 접근/삭제는 없다.
+- 파괴적 초기화 보호(현재 구현): `DeviceQaSafety.requireDestructibleState`가 모든 androidTest의 `deleteAll`/`reset`/설정 쓰기 경로를 감싼다. 물리 기기에서는 records/tasks/onboarding이 비어 보여도 다른 QA 상태(CalendarCommandStore, SourceSyncStateStore, 알람 등록 등)를 지울 수 있으므로 파괴적 테스트는 격리 에뮬레이터에서만 실행되고 물리 기기에서는 사유와 함께 skip된다(XML에 honest skip으로 기록).
+- `syntheticHwp5AssetReportsEmbeddedBinaryPartialOnDevice`가 저장소 체크인 합성 HWP5 fixture(BinData 포함, sha256 검증)로 내장 바이너리 건너뜀 보고를 기기에서 확인했다 — 공개 fixture 없이도 HWP5 부분 추출 계약을 기기에서 검증.
 - skip 2개는 에뮬레이터와 동일한 opt-in 공개 fixture 테스트다.
 - QA 앱 cold launch 후 프로세스 유지·즉시 crash/ANR 없음을 확인했다.
-- 시점 주의: 이 실기기 실행은 `DeviceQaSafety` 게이트 도입(`11a9c86`) 이전에 수행됐다. 대상은 전용 QA 설치였으므로 `deleteAll`이 사용자 release 데이터를 건드리지 않았지만, 위 안전 경계 문구는 현재 코드의 동작을 설명하는 것이지 당시 실행에 게이트가 있었다는 뜻은 아니다. `11a9c86` 이후에는 실기기가 연결되지 않아 실기기 재실행은 하지 않았다.
+- 시점 주의: 이 실기기 실행은 `DeviceQaSafety` 도입(`11a9c86`)과 물리기기 전면 skip 강화(`7bffff2`) 이전에 수행됐다. 대상은 전용 QA 설치였으므로 `deleteAll`이 사용자 release 데이터를 건드리지 않았지만, 위 안전 경계 문구는 현재 코드의 동작을 설명하는 것이지 당시 실행에 게이트가 있었다는 뜻은 아니다. `7bffff2` 이후 코드로는 실기기 재실행을 하지 않았으며, 재실행해도 알림 파이프라인·reconcile 등 파괴적 테스트는 모두 skip되고 비파괴 경로만 실행된다.
 
 남은 실기기 항목(여전히 NOT_RUN):
 
