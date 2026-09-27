@@ -9,6 +9,7 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 - 단위 테스트 XML 합계(testsuite 속성): tests=309, failures=0, errors=0, skipped=2 — 307 통과 + 2 skip. skip은 외부 공개 fixture opt-in 테스트다. Robolectric 화면 테스트는 프로덕션 Composable을 실제 렌더한다. `RingingNotificationContractTest`(3건, FSI 제거 회귀) 포함.
 - `AccessibilityLayoutTest` 21/21 통과, `ProbeScreensRenderTest` 22/22 통과.
 - lint 오류 0. debug APK·androidTest APK 조립 성공.
+- `8de5897`에서 `--no-build-cache`로 fresh clean 재실행(1m06s): 동일 XML 합계(309/307/2/0/0), lint 오류 0, debug APK 29M·androidTest APK 2.5M 조립 성공.
 - release 조립은 서명 정보 없이 실행하면 지정된 fail-closed 메시지로 실패한다.
   - `Release signing is not configured. Set MAMA_RELEASE_STORE_FILE, ...`
   - `Debug signing is never used for release builds.`
@@ -89,7 +90,16 @@ CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터
 - 설치 후 `dumpsys package kr.mom.probe.qa`의 선언 권한 목록에 `USE_FULL_SCREEN_INTENT` 없음 — API 36 기기에서 매니페스트 제거를 실측 확인.
 - cold launch: `kr.mom.probe.qa/kr.mom.probe.MainActivity` resumed 유지, logcat에 FATAL/ANR/crash 없음.
 - 알림 게시 자체는 실기기에서 실행하지 않았다(NOT_RUN): 모든 알림 트리거(receiver)가 non-exported라 외부에서 앱의 notify 경로를 건드릴 수 없고, `POST_NOTIFICATIONS` 미부여 상태라 허가 자체가 설정 변경이 된다. Notification 객체 계약은 `RingingNotificationContractTest`(Robolectric)가, OS 파이프라인 게시는 에뮬레이터 `NotificationPipelineDeviceTest`가 증거다.
-- 증거 경계: 위의 물리기기 connected XML 28/2/26은 FSI 제거 이전 `147d7a8` 기준 결과이며 현재 HEAD의 전체 스위트 실행이 아니다. 현재 HEAD에서 물리기기로 확인된 것은 QA APK 설치·선언 권한 부재·cold launch뿐이다 — FSI 제거 후 전체 connected suite는 물리기기에서 NOT_RUN.
+- 증거 경계: 위의 물리기기 connected XML 28/2/26은 FSI 제거 이전 `147d7a8` 기준 결과이며 현재 HEAD의 전체 스위트 실행이 아니다 — FSI 제거 후 전체 connected suite는 물리기기에서 NOT_RUN이다(아래 selected-test 증거 참고).
+
+### 현재 HEAD 물리기기 selected-test 실행 (2026-09-27, `8de5897`)
+
+같은 SM-S926N에서 class filter로 **비파괴 합성 테스트 2개만** 선택 실행했다(`syntheticHwpxExtractsKoreanAndChineseTextOnAndroidSax`, `syntheticHwp5AssetReportsEmbeddedBinaryPartialOnDevice`).
+
+- JUnit XML(권위): **tests=2 / 2 pass / 0 skip / 0 fail / 0 error** — 현재 HEAD의 selected-test 증거이며 **전체 connected suite 통과가 아니다.** 게이트된 파괴적 레인은 실행하지 않았다.
+- **도구 경계(중요)**: Gradle `connectedDebugAndroidTest`가 종료 정리 과정에서 target QA 패키지 `kr.mom.probe.qa`를 **자동 제거**했다 — "QA 데이터 보존" 전제로 물리기기 connected 테스트를 실행하면 안 된다. QA 앱 데이터는 이 실행으로 보존되지 않았다. 향후 물리기기 connected 테스트는 disposable QA state/격리 전용 기기에서만 실행한다.
+- 실행 후 `app-debug.apk`를 `adb install -r`로 재설치 — cold launch Status ok, TotalTime 564ms, dumpsys versionCode=14·versionName=1.1.0-qa. 정식 `kr.mom.probe`는 versionCode=10/versionName=0.9.0-agent 그대로, 건드리지 않았다.
+- 알림 게시 자체는 실기기에서 실행하지 않았다(NOT_RUN) — 위 FSI 재확인 섹션의 사유와 동일.
 
 ### 과거 baseline (역사적 기록, 현재 코드 증거 아님)
 
@@ -103,6 +113,7 @@ CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터
 남은 실기기 항목(여전히 NOT_RUN):
 
 - OS 경유 합성 알림 E2E(`NotificationPipelineDeviceTest`)·`ReconcileDurabilityDeviceTest` — 파괴적 게이트(`requireDestructibleState`)가 있어 물리기기에서는 실행되지 않는다. skip 자체는 현재 코드 실행에서 관측됐으나 두 레인의 물리기기 동작 증거는 없다.
+- 현재 HEAD의 **전체** 물리기기 connected suite — `8de5897`에서는 class-filtered 2개만 실행했다. 게다가 `connectedDebugAndroidTest`가 QA 패키지를 자동 제거하므로, disposable QA state가 보장된 격리 기기 없이는 전체 suite를 물리기기에 돌리지 않는다.
 - 실제 학교·학원 앱 알림 수집과 lane별 상태 정확성 — 실제 부모 기기 필요.
 - 알림 접근 권한 회수·재부여 흐름.
 - 재부팅·프로세스 종료 후 할 일·스누즈(연속 4회 이상)·읽음 상태 유지.

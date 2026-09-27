@@ -41,7 +41,7 @@ versionCode 14 / versionName 1.1.0 · feature/1.1-reliability-rebuild 후보.
 ## D. 기기 검증 (실기기 필수)
 
 - [ ] QA 빌드(`*.qa` 패키지) cold launch·프로세스 유지·즉시 crash/ANR 없음 — SM-S926N / API 36에서 1.1.0-qa 확인됨(증거: VERIFICATION_1.1.md).
-- [ ] 실기기 `connectedDebugAndroidTest`를 `ANDROID_SERIAL` 명시로 실행하고 XML 결과를 기록한다.
+- [ ] 실기기 `connectedDebugAndroidTest`를 `ANDROID_SERIAL` 명시로 실행하고 XML 결과를 기록한다. **주의**: Gradle connected 테스트는 종료 정리에서 target QA 패키지(`kr.mom.probe.qa`)를 자동 제거한다 — QA 데이터 보존이 필요한 기기에서는 실행 금지. disposable QA state/격리 전용 기기에서만 실행한다.
 - [ ] 합성 알림 → 청취자 캡처 → 후보 분석 → 할 일 생성 E2E가 실기기에서 통과(`NotificationPipelineDeviceTest`).
 - [ ] 실제 학교 앱 알림 수집: NOT_RUN(실제 부모 기기 필요).
 - [ ] 알림 접근 권한 회수 후 재부여 시 캡처 중단/재개 확인: NOT_RUN.
