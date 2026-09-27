@@ -58,26 +58,34 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 현재 구현 안전 경계(에뮬레이터·CI에서 검증 — 물리기기 증거 아님):
 
 - collection 불변식: "collection gate가 닫힌 채 합성 allowlist 검증 후에만 test collection을 연다" — listener access가 이미 켜진 기기에서도 `collectionEnabled=false`이거나 allowlist 밖 패키지면 `canCapture`/`capture`가 거부함을 `nonAllowlistedSourceIsNeverCapturedWhileCollectionIsClosed`가 세 경계(게이트 닫힘·접근 허용 후·collection 활성 후)에서 입증한다. 원래 `enabled_notification_listeners` 값을 verbatim 캡처해 `finally`에서 복원하며, 빈 원본은 `settings delete`로 복원하고 복원값 verbatim 비교·QA 컴포넌트 잔존 검사가 실패 시 테스트를 hard-fail한다. 정리는 테스트가 만든 정확한 record id·task id·notification key에만 한정되며, 게시된 합성 알림은 지속된 record의 key를 await해 listener가 취소하고 비활성화를 확인한다 — 취소/연결 실패도 테스트 실패다. 전역 알림 열거·cancel-all·사용자 알림 접근/삭제는 없다.
-- 파괴적 초기화 보호: `DeviceQaSafety.requireDestructibleState`가 모든 androidTest의 `deleteAll`/`reset`/설정 쓰기 경로를 감싼다. 물리 기기에서는 records/tasks/onboarding이 비어 보여도 다른 QA 상태(CalendarCommandStore, SourceSyncStateStore, 알람 등록 등)를 지울 수 있으므로 파괴적 테스트는 격리 에뮬레이터에서만 실행되고 물리 기기에서는 사유와 함께 skip된다(XML에 honest skip으로 기록). 비파괴 테스트(예: 합성 HWP5 기기 fixture)는 이 게이트를 타지 않아 물리기기에서도 실행된다.
+- 파괴적 초기화 보호: `DeviceQaSafety.requireDestructibleState`가 모든 androidTest의 `deleteAll`/`reset`/설정 쓰기 경로를 감싼다. 물리 기기에서는 records/tasks/onboarding이 비어 보여도 다른 QA 상태(CalendarCommandStore, SourceSyncStateStore, 알람 등록 등)를 지울 수 있으므로 파괴적 테스트는 격리 에뮬레이터에서만 실행되고 물리 기기에서는 사유와 함께 skip된다(XML에 honest skip으로 기록). 비파괴 테스트(합성 HWP5·HWPX 기기 fixture)는 이 게이트를 타지 않아 물리기기에서도 실행된다 — SM-S926N 현재 코드 실행에서 실제로 통과했다(아래 실기기 절).
 
 CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터에서 같은 `connectedDebugAndroidTest`를 실행하고(KVM 가속, AVD 스냅샷 캐시, 부팅·작업 타임아웃), 실행 후 `androidTest-results/connected/*.xml`의 testsuite 속성을 합산해 tests/passed/failures/errors/skipped를 GitHub Step Summary에 기록한다. failures 또는 errors가 1 이상이면 작업이 실패하고, 실패 시 XML·HTML 보고서를 업로드한다. 콘솔 총계는 신뢰하지 않는다.
 
-## 실기기 계측 (과거 baseline · SM-S926N)
+## 실기기 계측 (현재 코드 · SM-S926N)
 
-`ANDROID_SERIAL=R3CX40BMCYV ./gradlew :app:connectedDebugAndroidTest` · Samsung SM-S926N, Android 16 / API 36, QA 빌드 1.1.0-qa(versionCode 14).
+`ANDROID_SERIAL=R3CX40BMCYV ./gradlew :app:connectedDebugAndroidTest` · Samsung SM-S926N, Android 16 / API 36, QA 빌드 1.1.0-qa(versionCode 14), HEAD `147d7a8`.
 
-**이 결과는 `DeviceQaSafety` 강화(`7bffff2`) 이전의 이전 스위트(18 tests) baseline이다. 이 스위트는 알림 파이프라인 E2E(`NotificationPipelineDeviceTest`), 기기 HWP5 fixture 테스트, `DeviceQaSafety`, `ReconcileDurabilityDeviceTest`가 추가되기 전이라 해당 레인의 물리기기 증거는 존재하지 않는다.** 현재 스위트를 물리 기기에 실행하면 파괴적 테스트 전부 — 알림 파이프라인 E2E와 `ReconcileDurabilityDeviceTest` 포함 — 가 honest skip되므로 위 숫자가 현재 코드의 물리기기 증거를 의미하지는 않는다. 현재 코드 기준 물리기기 재실행은 NOT_RUN이다.
+- JUnit XML(권위) 기준: tests=28, failures=0, errors=0, skipped=26 — 즉 **2 통과 + 26 skip**. 콘솔 `Finished 54 tests`는 UTP 중복 집계라 권위가 아니다.
+- 통과한 2개는 게이트를 타지 않는 비파괴 테스트다: `syntheticHwpxExtractsKoreanAndChineseTextOnAndroidSax`, `syntheticHwp5AssetReportsEmbeddedBinaryPartialOnDevice` — 합성 HWP5 기기 fixture가 실기기에서 실행·통과함을 실측으로 확인했다.
+- skip 26개는 파괴적 `requireDestructibleState` 게이트가 잡은 테스트(알림 파이프라인 E2E·`ReconcileDurabilityDeviceTest`·온보딩 드라이버·라이브/수집 경로 등)와 opt-in 공개 fixture다. 즉 물리기기에서 파괴적 레인이 실제로 skip됨을 코드 수준 가정이 아니라 실행으로 확인했다.
+- 이것은 **전체 스위트 통과가 아니다** — 게이트가 잡은 파괴적 테스트는 실행되지 않았으므로 알림 수집→저장→Todo 생성 E2E와 저널 내구성은 물리기기 증거가 여전히 없다(NOT_RUN).
+- 물리기기 UI 스모크는 추가하지 않았다: instrumentation target process는 테스트 본문이나 사전 조건 검사보다 먼저 `ProbeApplication.onCreate`를 실행하고, 그 시점에 `candidate_feedback` 마이그레이션 clear/commit, `WorkManager` enqueue, `SourceSyncScheduler.schedulePeriodic`·`scheduleLearnedWindows` 같은 쓰기가 발생한다. MainActivity 시작 경로도 ON_RESUME에서 `cleanupExpired`(record·tombstone 삭제)와 `enqueueForegroundStale`(source state 갱신)을 무조건 수행한다. 따라서 "아무것도 쓰지 않는" 물리기기 UI 스모크는 증명할 수 없어 만들지 않았다.
+- 별도 설치 검증: `app-debug.apk`를 격리 패키지 `kr.mom.probe.qa`로 설치(기존 `kr.mom.probe` 데이터 미접촉) — dumpsys versionCode=14·versionName=1.1.0-qa, cold launch 560ms·activity resumed 유지·crash/ANR/FATAL 없음(플랫폼 HAL·deprecation 경고만), 온보딩이 스크린샷으로 정상 렌더링됨.
+- secrets 부재 확인: `assembleRelease`가 `:app:verifyReleaseSigning`에서 지정된 두 문장("Release signing is not configured...", "Debug signing is never used for release builds.")으로 fail-closed.
 
-- JUnit XML(권위) 기준: tests=18, failures=0, errors=0, skipped=2 — 즉 16 통과 + 2 skip. 콘솔은 `Finished 20 tests`로 표시됐다(위와 동일한 UTP 집계 문제; 18+2=20).
-- 당시 스위트는 온보딩 드라이버, 알람/스누즈 흐름, `PRODUCTION_SYNC_ENABLED=false` 검증 등 기존 비파괴·기존 QA 경로를 커버했다. 알림 수집→저장→Todo 생성 E2E, 합성 HWP5 기기 fixture, 저널 내구성, 안전 게이트는 그 이전 스위트에 없었고 이후 추가분은 에뮬레이터와 CI(28/26/2)에서만 실행됐다 — 물리기기에서는 한 번도 실행되지 않았다(NOT_RUN).
-- skip 2개는 에뮬레이터와 동일한 opt-in 공개 fixture 테스트다.
+### 과거 baseline (역사적 기록, 현재 코드 증거 아님)
+
+`ANDROID_SERIAL=R3CX40BMCYV ./gradlew :app:connectedDebugAndroidTest` · 같은 SM-S926N, `DeviceQaSafety` 도입(`11a9c86`)·강화(`7bffff2`) 이전 커밋에서 수행(실행일 미기록, 두 커밋 모두 이보다 최신).
+
+- JUnit XML(권위) 기준: tests=18, failures=0, errors=0, skipped=2 — 즉 16 통과 + 2 skip. 콘솔은 `Finished 20 tests`로 표시됐다(UTP 집계 문제; 18+2=20).
+- 당시 스위트는 온보딩 드라이버, 알람/스누즈 흐름, `PRODUCTION_SYNC_ENABLED=false` 검증 등 기존 QA 경로를 커버했다. 알림 수집→저장→Todo 생성 E2E, 합성 HWP5 기기 fixture, 저널 내구성, 안전 게이트는 그 이전 스위트에 없었다.
 - QA 앱 cold launch 후 프로세스 유지·즉시 crash/ANR 없음을 확인했다.
-- 시점 주의: 이 실기기 실행은 `DeviceQaSafety` 도입(`11a9c86`)과 물리기기 전면 skip 강화(`7bffff2`) 이전에 수행됐다. 대상은 전용 QA 설치였으므로 `deleteAll`이 사용자 release 데이터를 건드리지 않았다. `7bffff2` 이후 코드로는 실기기 재실행을 하지 않았다. 재실행하면 알림 파이프라인·reconcile 등 파괴적 테스트는 모두 skip되고, 비파괴 경로(합성 HWP5 fixture, opt-in 공개 fixture skip, 온보딩/알람 조회 계열)는 실행된다 — 현재 코드의 안전 경계 설명은 위 "현재 구현 안전 경계" 절을 본다.
+- 대상은 전용 QA 설치였으므로 `deleteAll`이 사용자 release 데이터를 건드리지 않았다.
 
 남은 실기기 항목(여전히 NOT_RUN):
 
-- OS 경유 합성 알림 E2E(`NotificationPipelineDeviceTest`)·`ReconcileDurabilityDeviceTest` — 스위트에 추가된 시점 이후 물리기기 미실행. 파괴적 게이트(`requireDestructibleState`)가 있어 물리기기에 연결해도 honest skip된다.
-- 합성 HWP5 기기 fixture(`syntheticHwp5AssetReportsEmbeddedBinaryPartialOnDevice`) — 비파괴 테스트라 게이트를 타지 않는다. 물리기기 재실행 자체가 없어 NOT_RUN이지만, 연결하면 skip 없이 실행된다.
+- OS 경유 합성 알림 E2E(`NotificationPipelineDeviceTest`)·`ReconcileDurabilityDeviceTest` — 파괴적 게이트(`requireDestructibleState`)가 있어 물리기기에서는 실행되지 않는다. skip 자체는 현재 코드 실행에서 관측됐으나 두 레인의 물리기기 동작 증거는 없다.
 - 실제 학교·학원 앱 알림 수집과 lane별 상태 정확성 — 실제 부모 기기 필요.
 - 알림 접근 권한 회수·재부여 흐름.
 - 재부팅·프로세스 종료 후 할 일·스누즈(연속 4회 이상)·읽음 상태 유지.
@@ -93,6 +101,7 @@ CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터
 
 - `signed-release` CI 작업은 `MAMA_RELEASE_KEYSTORE_BASE64`·`MAMA_RELEASE_STORE_PASSWORD`·`MAMA_RELEASE_KEY_ALIAS`·`MAMA_RELEASE_KEY_PASSWORD` secrets가 모두 있을 때만 keystore를 임시 파일로 복원해 `assembleRelease`·`bundleRelease`를 빌드하고 `apksigner`/`jarsigner`로 서명을 검증한다. 자격 증명은 저장소에 기록하지 않는다.
 - secrets가 없는 환경에서는 이 작업이 건너뛰고, `verify` 작업의 음성 검사가 계속 fail-closed 계약을 강제한다. 현재 저장소에는 이 secrets가 설정되어 있지 않아 성공 경로는 실행한 적이 없다.
+- secrets 부재 상태의 로컬 `assembleRelease`는 `:app:verifyReleaseSigning`에서 지정된 두 문장("Release signing is not configured...", "Debug signing is never used for release builds.")으로 실패함을 재확인했다 — fail-closed 계약 유지.
 
 ## 실기기 수동 QA 절차 (알림 청취자)
 
