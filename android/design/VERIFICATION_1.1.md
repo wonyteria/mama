@@ -61,19 +61,19 @@ CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터
 
 `ANDROID_SERIAL=R3CX40BMCYV ./gradlew :app:connectedDebugAndroidTest` · Samsung SM-S926N, Android 16 / API 36, QA 빌드 1.1.0-qa(versionCode 14).
 
-**이 결과는 `DeviceQaSafety` 강화(`7bffff2`) 이전 스위트(21 tests)의 baseline이다. 현재 스위트를 물리 기기에 실행하면 파괴적 테스트 전부 — 알림 파이프라인 E2E와 `ReconcileDurabilityDeviceTest` 포함 — 가 honest skip되므로 위 숫자가 현재 코드의 물리기기 증거를 의미하지는 않는다.** 현재 코드 기준 물리기기 재실행은 NOT_RUN이다.
+**이 결과는 `DeviceQaSafety` 강화(`7bffff2`) 이전의 이전 스위트(18 tests) baseline이다. 이 스위트는 알림 파이프라인 E2E(`NotificationPipelineDeviceTest`), 기기 HWP5 fixture 테스트, `DeviceQaSafety`, `ReconcileDurabilityDeviceTest`가 추가되기 전이라 해당 레인의 물리기기 증거는 존재하지 않는다.** 현재 스위트를 물리 기기에 실행하면 파괴적 테스트 전부 — 알림 파이프라인 E2E와 `ReconcileDurabilityDeviceTest` 포함 — 가 honest skip되므로 위 숫자가 현재 코드의 물리기기 증거를 의미하지는 않는다. 현재 코드 기준 물리기기 재실행은 NOT_RUN이다.
 
-- JUnit XML(권위) 기준: tests=21, failures=0, errors=0, skipped=2 — 즉 19 통과 + 2 skip. 콘솔은 `Finished 23 tests`로 표시됐다(위와 동일한 UTP 집계 문제; 21+2=23).
-- 통과에는 OS 경유 E2E가 포함된다: `cmd notification post`로 com.android.shell 패키지의 합성 알림을 실제 게시 → 알림 청취자 콜백 → 암호화 레코드 저장 → 후보 분석 → 자동 할 일 생성까지 확인했다(`postedSyntheticNotificationIsCapturedThroughSystemListenerIntoTaskStore`). 또 다른 테스트는 `ProbeRepository.capture`에 합성 StatusBarNotification을 직접 주입해 동일 저장소·플래너 경로를 검증한다. QA/debug 패키지와 합성 알림만 사용하며 사용자 알림이나 정식 앱 데이터는 읽지 않는다.
+- JUnit XML(권위) 기준: tests=18, failures=0, errors=0, skipped=2 — 즉 16 통과 + 2 skip. 콘솔은 `Finished 20 tests`로 표시됐다(위와 동일한 UTP 집계 문제; 18+2=20).
+- 당시 스위트는 온보딩 드라이버, 알람/스누즈 흐름, `PRODUCTION_SYNC_ENABLED=false` 검증 등 기존 비파괴·기존 QA 경로를 커버했다. 알림 수집→저장→Todo 생성 E2E, 합성 HWP5 기기 fixture, 저널 내구성, 안전 게이트는 그 이전 스위트에 없었고 이후 추가분은 에뮬레이터와 CI(28/26/2)에서만 실행됐다 — 물리기기에서는 한 번도 실행되지 않았다(NOT_RUN).
 - 안전 경계(현재 구현, 에뮬레이터 검증): 실제 불변식은 "collection gate가 닫힌 채 합성 allowlist 검증 후에만 test collection을 연다"다 — listener access가 이미 켜진 기기에서도 `collectionEnabled=false`이거나 allowlist 밖 패키지면 `canCapture`/`capture`가 거부함을 `nonAllowlistedSourceIsNeverCapturedWhileCollectionIsClosed`가 세 경계(게이트 닫힘·접근 허용 후·collection 활성 후)에서 입증한다. 원래 `enabled_notification_listeners` 값을 verbatim 캡처해 `finally`에서 복원하며, 빈 원본은 `settings delete`로 복원하고 복원값 verbatim 비교·QA 컴포넌트 잔존 검사가 실패 시 테스트를 hard-fail한다. 정리는 테스트가 만든 정확한 record id·task id·notification key에만 한정되며, 게시된 합성 알림은 지속된 record의 key를 await해 listener가 취소하고 비활성화를 확인한다 — 취소/연결 실패도 테스트 실패다. 전역 알림 열거·cancel-all·사용자 알림 접근/삭제는 없다.
 - 파괴적 초기화 보호(현재 구현): `DeviceQaSafety.requireDestructibleState`가 모든 androidTest의 `deleteAll`/`reset`/설정 쓰기 경로를 감싼다. 물리 기기에서는 records/tasks/onboarding이 비어 보여도 다른 QA 상태(CalendarCommandStore, SourceSyncStateStore, 알람 등록 등)를 지울 수 있으므로 파괴적 테스트는 격리 에뮬레이터에서만 실행되고 물리 기기에서는 사유와 함께 skip된다(XML에 honest skip으로 기록).
-- `syntheticHwp5AssetReportsEmbeddedBinaryPartialOnDevice`가 저장소 체크인 합성 HWP5 fixture(BinData 포함, sha256 검증)로 내장 바이너리 건너뜀 보고를 기기에서 확인했다 — 공개 fixture 없이도 HWP5 부분 추출 계약을 기기에서 검증.
 - skip 2개는 에뮬레이터와 동일한 opt-in 공개 fixture 테스트다.
 - QA 앱 cold launch 후 프로세스 유지·즉시 crash/ANR 없음을 확인했다.
 - 시점 주의: 이 실기기 실행은 `DeviceQaSafety` 도입(`11a9c86`)과 물리기기 전면 skip 강화(`7bffff2`) 이전에 수행됐다. 대상은 전용 QA 설치였으므로 `deleteAll`이 사용자 release 데이터를 건드리지 않았지만, 위 안전 경계 문구는 현재 코드의 동작을 설명하는 것이지 당시 실행에 게이트가 있었다는 뜻은 아니다. `7bffff2` 이후 코드로는 실기기 재실행을 하지 않았으며, 재실행해도 알림 파이프라인·reconcile 등 파괴적 테스트는 모두 skip되고 비파괴 경로만 실행된다.
 
 남은 실기기 항목(여전히 NOT_RUN):
 
+- OS 경유 합성 알림 E2E(`NotificationPipelineDeviceTest`)·기기 HWP5 fixture·`ReconcileDurabilityDeviceTest` — 스위트에 추가된 시점 이후 물리기기 미실행. 현재 게이트에서는 재실행해도 전부 honest skip된다(물리기기 파괴적 경로 금지).
 - 실제 학교·학원 앱 알림 수집과 lane별 상태 정확성 — 실제 부모 기기 필요.
 - 알림 접근 권한 회수·재부여 흐름.
 - 재부팅·프로세스 종료 후 할 일·스누즈(연속 4회 이상)·읽음 상태 유지.
