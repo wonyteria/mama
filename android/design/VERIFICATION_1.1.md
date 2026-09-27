@@ -82,13 +82,14 @@ CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터
 - 별도 설치 검증: `app-debug.apk`를 격리 패키지 `kr.mom.probe.qa`로 설치(기존 `kr.mom.probe` 데이터 미접촉) — dumpsys versionCode=14·versionName=1.1.0-qa, cold launch 560ms·activity resumed 유지·crash/ANR/FATAL 없음(플랫폼 HAL·deprecation 경고만), 온보딩이 스크린샷으로 정상 렌더링됨.
 - secrets 부재 확인: `assembleRelease`가 `:app:verifyReleaseSigning`에서 지정된 두 문장("Release signing is not configured...", "Debug signing is never used for release builds.")으로 fail-closed.
 
-### FSI 제거 후 실기기 재확인 (현재 코드, 2026-07)
+### FSI 제거 후 실기기 재확인 (현재 코드, 2026-09-27)
 
 같은 SM-S926N, FSI 제거가 포함된 fresh `app-debug.apk`를 격리 패키지 `kr.mom.probe.qa`에 `install -r`로 갱신(기존 `kr.mom.probe`는 dumpsys versionCode=10/versionName=0.9.0-agent 그대로 — 읽기만 수행, 데이터 미접촉).
 
 - 설치 후 `dumpsys package kr.mom.probe.qa`의 선언 권한 목록에 `USE_FULL_SCREEN_INTENT` 없음 — API 36 기기에서 매니페스트 제거를 실측 확인.
 - cold launch: `kr.mom.probe.qa/kr.mom.probe.MainActivity` resumed 유지, logcat에 FATAL/ANR/crash 없음.
 - 알림 게시 자체는 실기기에서 실행하지 않았다(NOT_RUN): 모든 알림 트리거(receiver)가 non-exported라 외부에서 앱의 notify 경로를 건드릴 수 없고, `POST_NOTIFICATIONS` 미부여 상태라 허가 자체가 설정 변경이 된다. Notification 객체 계약은 `RingingNotificationContractTest`(Robolectric)가, OS 파이프라인 게시는 에뮬레이터 `NotificationPipelineDeviceTest`가 증거다.
+- 증거 경계: 위의 물리기기 connected XML 28/2/26은 FSI 제거 이전 `147d7a8` 기준 결과이며 현재 HEAD의 전체 스위트 실행이 아니다. 현재 HEAD에서 물리기기로 확인된 것은 QA APK 설치·선언 권한 부재·cold launch뿐이다 — FSI 제거 후 전체 connected suite는 물리기기에서 NOT_RUN.
 
 ### 과거 baseline (역사적 기록, 현재 코드 증거 아님)
 
