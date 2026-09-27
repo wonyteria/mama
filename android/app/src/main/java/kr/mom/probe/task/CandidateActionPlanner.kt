@@ -226,16 +226,21 @@ object AutoActionCoordinator {
         val pending = ReconcileJournal.pending(context)
         if (pending.isEmpty()) return
         val repository = runCatching { kr.mom.probe.data.ProbeRepository.get(context) }.getOrNull() ?: return
+        // Replay decides against the committed database, not the cached flow:
+        // a marker whose row exists but whose snapshot has not published yet is
+        // still reconciled, and when the DB cannot be read the markers simply
+        // wait instead of being dropped as ghosts.
+        val committed = runCatching { repository.committedRecordsSnapshot() }.getOrNull() ?: return
         val settings = repository.settings.value
         if (!settings.consent || settings.consentVersion != ProbeRules.CONSENT_VERSION || !settings.onboardingDone) return
         val institution = NoticeGrouping.institution(settings)
         val retired = ReconcileJournal.retiredKeys(context)
-        val actions = pendingActions(repository.records.value, pending, retired, institution)
+        val actions = pendingActions(committed, pending, retired, institution)
         actions.forEach { (pendingId, action) ->
             when (action) {
                 PendingAction.DROP -> ReconcileJournal.clearPending(context, pendingId)
                 PendingAction.REPLAY -> {
-                    val record = repository.records.value.firstOrNull { record ->
+                    val record = committed.firstOrNull { record ->
                         val keys = NoticeGrouping.keys(record, institution)
                         pendingId in keys || NoticeGrouping.matches(keys, setOf(pendingId))
                     }

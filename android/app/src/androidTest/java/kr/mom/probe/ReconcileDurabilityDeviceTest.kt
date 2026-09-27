@@ -22,6 +22,7 @@ import kr.mom.probe.sync.SourceIds
 import kr.mom.probe.task.AssistantTaskStore
 import kr.mom.probe.task.AutoActionCoordinator
 import kr.mom.probe.task.ReconcileJournal
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -288,6 +289,61 @@ class ReconcileDurabilityDeviceTest {
         assertTrue("ghost markers drop once replay sees no record",
             ReconcileJournal.pending(context).isEmpty())
         assertTrue(store.tasks.value.isEmpty())
+    }
+
+    /**
+     * Cold-start race: isReady used to flip before the initial records
+     * snapshot landed, so a replay running right after startup saw an empty
+     * records list and dropped a real pending marker as a ghost. A fresh
+     * repository instance over the same database must expose the committed
+     * record at isReady, and replay must reconcile it exactly once.
+     */
+    @Test
+    fun coldStartReplaySeesPersistedRecordAndReconcilesOnce() = runBlocking {
+        DeviceQaSafety.requireDestructibleState(context, "coldStartReplaySeesPersistedRecordAndReconcilesOnce")
+        seedRepository()
+        val restore = DeviceQaSafety.grantQaListenerAccess(context, instrumentation, repository)
+        var recordId: String? = null
+        try {
+            assumeTrue("listener access could not be granted", repository.hasNotificationAccess())
+            assertTrue(repository.setCollectionEnabled(true))
+            AssistantTaskStore.saveInterceptor = { throw IOException("injected save failure") }
+            assertTrue(try {
+                repository.capture(syntheticSbn(), repository.captureEpoch())
+            } finally {
+                AssistantTaskStore.saveInterceptor = null
+            })
+            recordId = await(10_000) {
+                repository.records.value.firstOrNull { it.packageName == SYNTHETIC_PACKAGE }
+            }!!.id
+            assertTrue(ReconcileJournal.pending(context).isNotEmpty())
+
+            // Simulate process restart: a fresh repository instance over the
+            // same database must publish committed records at isReady.
+            ProbeRepository.resetInstanceForTest()
+            val fresh = ProbeRepository.get(context)
+            fresh.isReady.first { it }
+            assertTrue("isReady fired before the committed record was visible",
+                fresh.records.value.any { it.id == recordId })
+
+            AutoActionCoordinator.replayPending(context)
+            store.load()
+            val first = store.tasks.value.count { it.sourceRevisionId == recordId }
+            assertTrue("cold-start replay must reconcile the persisted record", first >= 1)
+            AutoActionCoordinator.replayPending(context)
+            store.load()
+            assertEquals("second replay must not duplicate", first,
+                store.tasks.value.count { it.sourceRevisionId == recordId })
+            assertTrue(ReconcileJournal.pending(context).isEmpty())
+        } finally {
+            runCatching {
+                store.load()
+                store.tasks.value.filter { it.sourceRevisionId == recordId }
+                    .forEach { store.delete(it.id) }
+            }
+            recordId?.let { ProbeRepository.get(context).deleteRecord(it) }
+            DeviceQaSafety.restoreQaListenerAccess(context, restore)
+        }
     }
 
     private suspend fun seedRepository() {

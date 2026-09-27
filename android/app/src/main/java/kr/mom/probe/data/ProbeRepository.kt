@@ -66,6 +66,14 @@ class ProbeRepository private constructor(context: Context) {
                     mutableSettings.value = dao.settings()?.let { decodeSettings(crypto.decrypt(it.encryptedPayload, "settings")) }
                         ?: ProbeSettings()
                     pruneLocked()
+                    // Publish the committed snapshot before isReady: replayPending
+                    // and other readers must never observe an empty records list
+                    // while rows are already persisted — a pending marker whose
+                    // record exists would otherwise be dropped as a ghost.
+                    val now = System.currentTimeMillis()
+                    mutableRecords.value = dao.currentRecords()
+                        .filterNot { ProbeRules.isExpired(it.receivedAt, now) }
+                        .map { decodeRecord(crypto.decrypt(it.encryptedPayload, "record:${it.id}")) }
                     storageReady = true
                     // Restoring existing consent is not a new policy generation. Callbacks that
                     // arrived during startup may proceed once ready if no actual setting changed.
@@ -208,6 +216,21 @@ class ProbeRepository private constructor(context: Context) {
 
     /** Whether a record id was tombstoned (user-deleted or retired by scope change). */
     suspend fun isSuppressed(id: String): Boolean = withContext(Dispatchers.IO) { dao.isDeleted(id) > 0 }
+
+    /**
+     * Fresh committed-records snapshot for reconcile replay. Reads the DAO
+     * directly rather than the cached StateFlow, so a pending marker is never
+     * dropped against a stale or still-empty in-memory view. Throws while
+     * storage is unreadable so callers keep their markers pending.
+     */
+    internal suspend fun committedRecordsSnapshot(): List<ProbeRecord> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            check(storageReady) { "저장소를 아직 읽을 수 없어요." }
+            val now = System.currentTimeMillis()
+            dao.currentRecords().filterNot { ProbeRules.isExpired(it.receivedAt, now) }
+                .map { decodeRecord(crypto.decrypt(it.encryptedPayload, "record:${it.id}")) }
+        }
+    }
 
     suspend fun ingestSource(scope: SourceScope, result: SourceFetchResult): IngestReceipt {
         var receipt = IngestReceipt(result.sourceId, result.status, result.fetchedAt)
@@ -480,6 +503,11 @@ class ProbeRepository private constructor(context: Context) {
         @Volatile private var instance: ProbeRepository? = null
         fun get(context: Context): ProbeRepository = instance ?: synchronized(this) {
             instance ?: ProbeRepository(context).also { instance = it }
+        }
+
+        /** Test seam: drops the singleton so the next get() replays cold startup init. */
+        internal fun resetInstanceForTest() {
+            synchronized(this) { instance = null }
         }
     }
 }
