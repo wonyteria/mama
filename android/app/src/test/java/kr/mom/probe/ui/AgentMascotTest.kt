@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.Surface
+import android.view.ViewGroup
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -93,6 +95,8 @@ class AgentMascotTest {
             compose.onAllNodes(
                 SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, state.stateLabel),
             ).assertCountEquals(1)
+            // The API has no showLabel escape: a non-decorative mascot is
+            // structurally guaranteed to render its label as visible text.
             compose.onAllNodesWithText(state.stateLabel).assertCountEquals(1)
         }
     }
@@ -150,27 +154,56 @@ class AgentMascotTest {
         assertNotEquals(R.drawable.assistant_widget_momo, R.drawable.assistant_widget_rabbit)
     }
 
-    @Test fun `mascot pixels are non-empty in native graphics mode`() {
+    @Test fun `five states render visually distinct pixels`() {
         render {
             Column {
                 AgentMascotState.entries.forEach { state ->
-                    AgentMascot(state = state, modifier = Modifier.size(60.dp, 70.dp))
+                    AgentMascot(
+                        state = state,
+                        modifier = Modifier.size(60.dp, 70.dp)
+                            .testTag("mascot-${state.name}"),
+                    )
                 }
             }
         }
+        // Deterministic render signatures: clip the composable's own draw
+        // output to each mascot's bounds and require every pairwise state
+        // combination to differ. Canvas drawing is deterministic — no
+        // frame capture, timing, or animation involved.
+        val bitmaps = AgentMascotState.entries.map { state ->
+            state to captureNode("mascot-${state.name}")
+        }
+        for ((a, ba) in bitmaps) {
+            for ((b, bb) in bitmaps) {
+                if (a != b) {
+                    assertTrue("$a and $b must render differently", !ba.sameAs(bb))
+                }
+            }
+        }
+        // Keep the whole-strip artifact for human review.
         val file = File("build/reports/screenshots", "agent_mascot_states.png")
             .apply { parentFile?.mkdirs() }
-        val bitmap = compose.runOnIdle {
-            val decor = compose.activity.window.decorView
-            assertTrue(decor.width > 0 && decor.height > 0)
-            Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888)
-                .also { decor.draw(Canvas(it)) }
-        }
-        val pixels = IntArray(bitmap.width * bitmap.height)
-        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-        assertTrue("mascot must draw non-empty pixels", pixels.any { it != pixels[0] })
+        val decor = compose.activity.window.decorView
+        val bitmap = Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888)
+        decor.draw(Canvas(bitmap))
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         assertTrue(file.length() > 0)
+    }
+
+    private fun captureNode(tag: String): Bitmap {
+        val bounds = compose.runOnIdle {
+            compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+        }
+        val host = compose.activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        val bitmap = Bitmap.createBitmap(
+            bounds.width.toInt().coerceAtLeast(1),
+            bounds.height.toInt().coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888,
+        )
+        val canvas = Canvas(bitmap)
+        canvas.translate(-bounds.left, -bounds.top)
+        compose.runOnIdle { host.draw(canvas) }
+        return bitmap
     }
 
     private fun render(fontScale: Float = 1f, content: @Composable () -> Unit) {

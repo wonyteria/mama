@@ -59,15 +59,15 @@ private val Shadow = Color(0x22847869)
  *   that already says the same thing.
  * - Operational surfaces (voice capture, stateful prompts) pass
  *   `decorative = false`: the node then carries the state as
- *   contentDescription/stateDescription, and [showLabel] also renders it
- *   as visible text.
+ *   contentDescription/stateDescription AND renders it as visible text.
+ *   There is deliberately no way to get an announcing mascot without its
+ *   label — the state label is unconditional for non-decorative callers.
  */
 @Composable
 fun AgentMascot(
     state: AgentMascotState,
     modifier: Modifier = Modifier,
     decorative: Boolean = true,
-    showLabel: Boolean = !decorative,
 ) {
     Column(
         modifier = if (decorative) {
@@ -85,7 +85,7 @@ fun AgentMascot(
                 drawRabbit(state)
             }
         }
-        if (showLabel) {
+        if (!decorative) {
             Text(
                 state.stateLabel,
                 style = MaterialTheme.typography.bodySmall,
