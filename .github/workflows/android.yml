@@ -7,7 +7,7 @@ on:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: android
@@ -60,7 +60,7 @@ jobs:
           ! grep -q 'NEIS_API_KEY' "$config"
 
   instrumentation:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       API_LEVEL: "35"
@@ -173,7 +173,7 @@ jobs:
           if-no-files-found: ignore
 
   signed-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
