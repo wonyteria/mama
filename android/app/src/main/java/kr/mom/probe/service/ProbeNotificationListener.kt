@@ -30,14 +30,19 @@ class ProbeNotificationListener : NotificationListenerService() {
     }
 
     /**
-     * Cancels exactly one notification by its stored key. QA/debug tests use the
-     * listener's authority to remove the synthetic notification they posted —
-     * never a bulk cancel and never a user notification, since callers pass the
-     * key of the record they themselves created.
+     * Cancels exactly one notification by its stored key and reports whether
+     * the cancel call itself was accepted. QA/debug tests use the listener's
+     * authority to remove the synthetic notification they posted — never a
+     * bulk cancel and never a user notification, since callers pass the key of
+     * the record they themselves created. The result is observable so teardown
+     * failure is a test failure, not a silent residue.
      */
-    internal fun cancelNotificationByKey(key: String) {
-        runCatching { cancelNotification(key) }
-    }
+    internal fun cancelNotificationByKey(key: String): Boolean =
+        runCatching { cancelNotification(key) }.isSuccess
+
+    /** Whether [key] still resolves to a live notification the listener can see. */
+    internal fun isNotificationActive(key: String): Boolean =
+        runCatching { activeNotifications.any { it.key == key } }.getOrDefault(false)
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return

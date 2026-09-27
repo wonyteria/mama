@@ -1,8 +1,6 @@
 package kr.mom.probe
 
 import android.app.Notification
-import android.content.ComponentName
-import android.provider.Settings
 import android.service.notification.StatusBarNotification
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -28,12 +26,16 @@ import org.junit.runner.RunWith
 /**
  * End-to-end QA for the notification -> candidate analysis -> todo pipeline.
  *
- * Runs only against the debug QA application id (`kr.mom.probe.qa`). The
- * synthetic source allowlist is configured and verified BEFORE listener access
- * is enabled, so no real notification or user data is ever read. The original
- * enabled-listeners setting is captured first and restored verbatim in
- * `finally`. Teardown removes only the exact record, task, and notification
- * key this test created — no notification dump, no cancel-all, no user data.
+ * Runs only against the debug QA application id (`kr.mom.probe.qa`) and only
+ * on an isolated emulator. The collection gate stays closed until the
+ * synthetic allowlist is seeded and proven — listener access by itself can
+ * never make capture accept a package outside `selectedPackages`, and that
+ * invariant is asserted explicitly for the pre-existing-access case. The
+ * original enabled-listeners setting is captured verbatim and restored in
+ * `finally`; a mismatched restore fails the test. Teardown deletes only the
+ * exact record and task this test created and cancels its posted notification
+ * by the stored key, verifying the key is gone — no dump, no cancel-all, no
+ * user notification is ever touched.
  */
 @RunWith(AndroidJUnit4::class)
 class NotificationPipelineDeviceTest {
@@ -61,8 +63,8 @@ class NotificationPipelineDeviceTest {
     fun capturePipelineStoresEncryptedRecordAndCreatesEvidenceBackedTask() = runBlocking {
         DeviceQaSafety.requireDestructibleState(context, "capturePipelineStoresEncryptedRecordAndCreatesEvidenceBackedTask")
         seedRepository(setOf(SYNTHETIC_PACKAGE))
-        assertAllowlistBeforeListenerAccess(SYNTHETIC_PACKAGE)
-        val listenerRestore = grantListenerAccessCapturingOriginal()
+        assertAllowlistBeforeCollection(SYNTHETIC_PACKAGE)
+        val listenerRestore = DeviceQaSafety.grantQaListenerAccess(context, instrumentation, repository)
         var recordId: String? = null
         var taskId: String? = null
         try {
@@ -106,10 +108,67 @@ class NotificationPipelineDeviceTest {
             AssistantAlertNotifier.cancel(context, record)
         } finally {
             // Remove exactly what this test created, then restore the listener
-            // grant state the device had before the run.
-            taskId?.let { id -> runCatching { store.delete(id) } }
-            recordId?.let { id -> runCatching { repository.deleteRecord(id) } }
-            restoreListenerAccess(listenerRestore)
+            // grant state the device had before the run. Cleanup failures are
+            // test failures, not best-effort hints.
+            taskId?.let { store.delete(it) }
+            recordId?.let { assertTrue("captured record was not removed", repository.deleteRecord(it)) }
+            DeviceQaSafety.restoreQaListenerAccess(context, listenerRestore)
+        }
+    }
+
+    /**
+     * Proves the real collection invariant for a device where listener access
+     * already exists (or is granted mid-test): with the collection gate closed
+     * or the package outside the synthetic allowlist, `capture` rejects the
+     * notification no matter what `enabled_notification_listeners` says.
+     * Nothing is persisted and no real notification is read.
+     */
+    @Suppress("DEPRECATION")
+    @Test
+    fun nonAllowlistedSourceIsNeverCapturedWhileCollectionIsClosed() = runBlocking {
+        DeviceQaSafety.requireDestructibleState(context, "nonAllowlistedSourceIsNeverCapturedWhileCollectionIsClosed")
+        seedRepository(setOf(SYNTHETIC_PACKAGE))
+        val listenerRestore = DeviceQaSafety.grantQaListenerAccess(context, instrumentation, repository)
+        try {
+            val realPackage = "com.example.real.school.app"
+            val realPackageNotification = Notification().apply {
+                extras.putString(Notification.EXTRA_TITLE, "학원 공지")
+                extras.putString(Notification.EXTRA_TEXT, "이번 주 수업 시간이 변경됩니다")
+            }
+            val sbn = StatusBarNotification(
+                realPackage, realPackage, 7, "real-tag", 20_007,
+                0, 0, realPackageNotification, android.os.Process.myUserHandle(),
+                System.currentTimeMillis(),
+            )
+            // capture() reports whether the action ran, not whether the notice
+            // was stored — the gate rejection is proven through canCapture and
+            // by the record never appearing.
+            fun gateOpen() = ProbeRules.canCapture(
+                repository.settings.value, realPackage, context.packageName,
+                repository.hasNotificationAccess(), false, false,
+            )
+            fun realRecordStored() = repository.records.value.any { it.packageName == realPackage }
+
+            // Collection gate closed: rejected whether or not access is live.
+            assertFalse(gateOpen())
+            repository.capture(sbn, repository.captureEpoch())
+            assertFalse(realRecordStored())
+
+            assumeTrue(
+                "QA listener access could not be enabled from instrumentation shell",
+                repository.hasNotificationAccess(),
+            )
+            // Access granted but collection still closed: still rejected.
+            assertFalse(gateOpen())
+            repository.capture(sbn, repository.captureEpoch())
+            assertFalse(realRecordStored())
+            // Collection armed: the package is outside the allowlist, still rejected.
+            assertTrue(repository.setCollectionEnabled(true))
+            assertFalse(gateOpen())
+            repository.capture(sbn, repository.captureEpoch())
+            assertFalse(realRecordStored())
+        } finally {
+            DeviceQaSafety.restoreQaListenerAccess(context, listenerRestore)
         }
     }
 
@@ -123,14 +182,15 @@ class NotificationPipelineDeviceTest {
      *
      * `cmd notification post` offers no cancel command, so teardown cancels the
      * posted notification through the QA listener by the exact key stored on
-     * the captured record — the tray is left clean.
+     * the captured record, then verifies that key is no longer active — the
+     * tray is left clean and any residue fails the test.
      */
     @Test
     fun postedSyntheticNotificationIsCapturedThroughSystemListenerIntoTaskStore() = runBlocking {
         DeviceQaSafety.requireDestructibleState(context, "postedSyntheticNotificationIsCapturedThroughSystemListenerIntoTaskStore")
         seedRepository(setOf("com.android.shell"))
-        assertAllowlistBeforeListenerAccess("com.android.shell")
-        val listenerRestore = grantListenerAccessCapturingOriginal()
+        assertAllowlistBeforeCollection("com.android.shell")
+        val listenerRestore = DeviceQaSafety.grantQaListenerAccess(context, instrumentation, repository)
         var recordId: String? = null
         var notificationKey: String? = null
         var taskId: String? = null
@@ -140,14 +200,18 @@ class NotificationPipelineDeviceTest {
                 repository.hasNotificationAccess(),
             )
             assertTrue(repository.setCollectionEnabled(true))
+            // The setting being enabled does not mean the service is bound;
+            // posting before onListenerConnected delivers nothing.
+            assumeTrue(
+                "QA listener service did not bind within 30s of the grant",
+                waitUntil(30_000) { ProbeNotificationListener.instance != null },
+            )
             val postedAt = System.currentTimeMillis()
             // executeShellCommand splits arguments on whitespace without shell
             // quoting, so the synthetic content stays single-token.
-            runCatching {
-                instrumentation.uiAutomation.executeShellCommand(
-                    "cmd notification post -t 회신안내 qa_pipeline 9월16일까지회신해주세요"
-                ).close()
-            }
+            instrumentation.uiAutomation.executeShellCommand(
+                "cmd notification post -t 회신안내 qa_pipeline 9월16일까지회신해주세요"
+            ).close()
 
             val db = Room.databaseBuilder(context, ProbeDatabase::class.java, "mom-probe.db").build()
             try {
@@ -162,9 +226,13 @@ class NotificationPipelineDeviceTest {
                 db.close()
             }
 
-            // The stored notification key identifies this test's post exactly —
-            // use it to remove the tray residue once assertions are done.
-            notificationKey = repository.records.value.firstOrNull { it.id == recordId }?.notificationKey
+            // The stored notification key identifies this test's post exactly;
+            // wait until the record row is visible through the repository so
+            // the key is proven persisted, not read optimistically.
+            notificationKey = await(10_000) {
+                repository.records.value.firstOrNull { it.id == recordId }?.notificationKey
+            }
+            assertNotNull("captured record did not persist its notification key", notificationKey)
 
             val task = awaitTask("회신안내", timeoutMs = 30_000)
             assertNotNull("captured notification did not produce an automatic task", task)
@@ -173,13 +241,31 @@ class NotificationPipelineDeviceTest {
             assertNotNull(task.evidenceText)
             assertTrue(task.noticeGroupKeys.isNotEmpty())
         } finally {
-            taskId?.let { id -> runCatching { store.delete(id) } }
-            recordId?.let { id -> runCatching { repository.deleteRecord(id) } }
-            notificationKey?.let { key ->
-                ProbeNotificationListener.instance?.cancelNotificationByKey(key)
-            }
-            restoreListenerAccess(listenerRestore)
+            taskId?.let { store.delete(it) }
+            recordId?.let { assertTrue("captured record was not removed", repository.deleteRecord(it)) }
+            notificationKey?.let { cancelSyntheticNotificationExactly(it) }
+            DeviceQaSafety.restoreQaListenerAccess(context, listenerRestore)
         }
+    }
+
+    /**
+     * Cancels the one notification this test posted, by its stored key, and
+     * proves it left the tray. Awaits a bound listener instance first, then
+     * requires the cancel call to succeed and the key to go inactive — a
+     * leftover synthetic notification or a missing listener fails the test.
+     */
+    private fun cancelSyntheticNotificationExactly(key: String) {
+        assertTrue(
+            "QA listener never connected; cannot remove the posted synthetic notification",
+            waitUntil(15_000) { ProbeNotificationListener.instance != null },
+        )
+        val listener = ProbeNotificationListener.instance
+            ?: error("QA listener instance disappeared before cleanup")
+        assertTrue("listener rejected the synthetic notification cancel", listener.cancelNotificationByKey(key))
+        assertTrue(
+            "synthetic notification is still active after cancel",
+            waitUntil(5_000) { !listener.isNotificationActive(key) },
+        )
     }
 
     private suspend fun seedRepository(packages: Set<String>) {
@@ -195,12 +281,12 @@ class NotificationPipelineDeviceTest {
 
     /**
      * The synthetic allowlist must be in place and proven effective before the
-     * listener is granted — otherwise the service could observe real user
-     * notifications during the window between grant and seeding. The gate is
+     * collection gate opens — otherwise the listener could observe real user
+     * notifications during the window between grant and arming. The gate is
      * evaluated on an as-if-enabled settings copy because collection is still
      * off at this point by design.
      */
-    private fun assertAllowlistBeforeListenerAccess(syntheticPackage: String) {
+    private fun assertAllowlistBeforeCollection(syntheticPackage: String) {
         val settings = repository.settings.value.copy(collectionEnabled = true)
         assertTrue(
             "synthetic package must be the only selected source",
@@ -214,66 +300,6 @@ class NotificationPipelineDeviceTest {
             "capture gate must still reject packages outside the allowlist",
             ProbeRules.canCapture(settings, "com.example.real.school.app", context.packageName, true, false, false),
         )
-    }
-
-    /**
-     * Enabled-listener setting captured before this test touched it; null means
-     * the QA component was already enabled and nothing was modified.
-     */
-    private class ListenerRestore(val originalEnabled: String, val modified: Boolean)
-
-    /**
-     * Enables the QA listener through the instrumentation shell, first
-     * capturing the device's existing enabled_notification_listeners value so
-     * teardown can put back exactly what was there. Only the QA component is
-     * granted; user listeners are never removed or reordered by hand.
-     */
-    private fun grantListenerAccessCapturingOriginal(): ListenerRestore {
-        val original = Settings.Secure.getString(
-            context.contentResolver, "enabled_notification_listeners"
-        ).orEmpty()
-        val component = ComponentName(context, ProbeNotificationListener::class.java)
-            .flattenToString()
-        if (original.split(':').any { it == component }) {
-            return ListenerRestore(original, modified = false)
-        }
-        val automation = instrumentation.uiAutomation
-        runCatching {
-            automation.executeShellCommand("cmd notification allow_listener $component").close()
-        }
-        if (waitUntil(15_000) { repository.hasNotificationAccess() }) {
-            return ListenerRestore(original, modified = true)
-        }
-        // Fallback: append the QA component without dropping existing listeners.
-        val updated = (original.split(':') + component)
-            .filter { it.isNotBlank() }
-            .joinToString(":")
-        runCatching {
-            automation.executeShellCommand(
-                "settings put secure enabled_notification_listeners $updated"
-            ).close()
-        }
-        waitUntil(15_000) { repository.hasNotificationAccess() }
-        return ListenerRestore(original, modified = true)
-    }
-
-    /**
-     * Writes back the captured enabled-listener value verbatim. Only runs when
-     * this test actually granted the component — a pre-existing grant is left
-     * alone, and no user listener is ever removed.
-     */
-    private fun restoreListenerAccess(restore: ListenerRestore) {
-        if (!restore.modified) return
-        runCatching {
-            instrumentation.uiAutomation.executeShellCommand(
-                "settings put secure enabled_notification_listeners ${restore.originalEnabled}"
-            ).close()
-        }
-        waitUntil(15_000) {
-            Settings.Secure.getString(
-                context.contentResolver, "enabled_notification_listeners"
-            ).orEmpty() == restore.originalEnabled
-        }
     }
 
     private suspend fun awaitTask(sourceTitle: String, timeoutMs: Long) = await(timeoutMs) {

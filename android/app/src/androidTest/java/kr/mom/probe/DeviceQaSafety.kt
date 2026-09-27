@@ -1,18 +1,26 @@
 package kr.mom.probe
 
+import android.content.ComponentName
 import android.content.Context
 import android.os.Build
-import kotlinx.coroutines.flow.first
+import android.provider.Settings
+import androidx.test.platform.app.InstrumentationRegistry
 import kr.mom.probe.data.ProbeRepository
-import kr.mom.probe.task.AssistantTaskStore
+import kr.mom.probe.service.ProbeNotificationListener
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 
 /**
- * Gate for destructive QA setup (deleteAll / store reset). A wipe is safe on an
- * emulator or on a QA install that still holds no captured data; on a physical
- * device that already has QA records, tasks, or completed onboarding the wipe
- * would destroy evidence we are not allowed to touch, so the caller must skip
- * honestly instead.
+ * Safety boundary for destructive QA (deleteAll / store reset / settings
+ * writes) and for the notification-listener grant the pipeline tests need.
+ *
+ * Destructive tests run ONLY on an isolated emulator. On any physical device
+ * they skip honestly: a wiped or emptied-looking QA install still carries
+ * state these tests must not touch (calendar commands, sync state, alarm
+ * registrations, onboarding flags), so "records and tasks look empty" is never
+ * accepted as proof that a wipe is safe.
  */
 object DeviceQaSafety {
     fun isEmulator(): Boolean = Build.FINGERPRINT.startsWith("generic") ||
@@ -25,30 +33,99 @@ object DeviceQaSafety {
         Build.PRODUCT.contains("sdk")
 
     /**
-     * True only when a full repository reset cannot destroy existing QA data.
-     * Reads loaded state, so callers must have awaited repository readiness.
+     * Skips the test unless it is running on an emulator, with the reason
+     * recorded in the test XML instead of silently wiping a physical device.
      */
-    suspend fun hasDestructibleState(context: Context): Boolean {
-        if (isEmulator()) return true
-        val repository = ProbeRepository.get(context)
-        repository.isReady.first { it }
-        val store = AssistantTaskStore.get(context)
-        store.load()
-        return repository.records.value.isEmpty() &&
-            store.tasks.value.isEmpty() &&
-            !repository.settings.value.onboardingDone
+    fun requireDestructibleState(context: Context, testName: String) {
+        assumeTrue(
+            "$testName performs a destructive repository reset; destructive tests " +
+                "run only on an isolated emulator so a physical device keeps all " +
+                "existing QA state untouched.",
+            isEmulator(),
+        )
+    }
+
+    /** Raw `enabled_notification_listeners` value, verbatim ("" when unset). */
+    fun enabledListeners(context: Context): String =
+        Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners").orEmpty()
+
+    /**
+     * Enabled-listener setting captured before a test touched it.
+     * `modified == false` means the QA component was already enabled and the
+     * setting must be left exactly as found.
+     */
+    class ListenerRestore(val originalEnabled: String, val modified: Boolean)
+
+    /**
+     * Enables the QA listener through the instrumentation shell after capturing
+     * the existing value verbatim. Only the QA component is granted; user
+     * listeners are never removed or reordered by hand.
+     */
+    fun grantQaListenerAccess(
+        context: Context,
+        instrumentation: android.app.Instrumentation,
+        repository: ProbeRepository,
+    ): ListenerRestore {
+        val original = enabledListeners(context)
+        val component = ComponentName(context, ProbeNotificationListener::class.java).flattenToString()
+        if (original.split(':').any { it == component }) {
+            return ListenerRestore(original, modified = false)
+        }
+        val automation = instrumentation.uiAutomation
+        runCatching {
+            automation.executeShellCommand("cmd notification allow_listener $component").close()
+        }
+        if (waitUntil(15_000) { repository.hasNotificationAccess() }) {
+            return ListenerRestore(original, modified = true)
+        }
+        // Fallback: append the QA component without dropping existing listeners.
+        val updated = (original.split(':') + component)
+            .filter { it.isNotBlank() }
+            .joinToString(":")
+        runCatching {
+            automation.executeShellCommand("settings put secure enabled_notification_listeners $updated").close()
+        }
+        waitUntil(15_000) { repository.hasNotificationAccess() }
+        return ListenerRestore(original, modified = true)
     }
 
     /**
-     * Skips the test on a physical device that still holds QA data, with the
-     * reason recorded in the test XML instead of silently wiping it.
+     * Restores the captured enabled-listener value and proves it. A blank
+     * original means the device had no enabled listeners: `settings put` with
+     * an empty value is rejected, so the key is deleted instead. The restored
+     * value is compared verbatim and the QA component must be gone — any
+     * mismatch or leftover grant fails the calling test rather than passing
+     * with the listener still enabled.
      */
-    suspend fun requireDestructibleState(context: Context, testName: String) {
-        assumeTrue(
-            "$testName needs a destructive repository reset; skipping because this " +
-                "physical device already holds QA records/tasks/onboarding state. " +
-                "Run on an emulator or a fresh QA install.",
-            hasDestructibleState(context),
+    fun restoreQaListenerAccess(context: Context, restore: ListenerRestore) {
+        if (!restore.modified) return
+        val component = ComponentName(context, ProbeNotificationListener::class.java).flattenToString()
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        if (restore.originalEnabled.isBlank()) {
+            automation.executeShellCommand("settings delete secure enabled_notification_listeners").close()
+        } else {
+            automation.executeShellCommand(
+                "settings put secure enabled_notification_listeners ${restore.originalEnabled}"
+            ).close()
+        }
+        waitUntil(15_000) { enabledListeners(context) == restore.originalEnabled }
+        assertEquals(
+            "enabled_notification_listeners was not restored verbatim",
+            restore.originalEnabled,
+            enabledListeners(context),
         )
+        assertFalse(
+            "QA listener survived teardown",
+            enabledListeners(context).split(':').any { it == component },
+        )
+    }
+
+    private fun waitUntil(timeoutMs: Long, condition: () -> Boolean): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (condition()) return true
+            Thread.sleep(400)
+        }
+        return condition()
     }
 }

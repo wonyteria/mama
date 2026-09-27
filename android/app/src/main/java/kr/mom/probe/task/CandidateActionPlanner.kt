@@ -9,6 +9,7 @@ import kr.mom.probe.data.NoticeDecisionEngine
 import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.NoticeObligation
 import kr.mom.probe.data.ProbeRecord
+import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.data.ProbeSettings
 
 data class CandidateActionPlan(
@@ -213,12 +214,20 @@ object AutoActionCoordinator {
         }
     }
 
-    /** Replays journaled reconciliations; each replayed handle() clears its entry on success. */
-    fun replayPending(context: android.content.Context) {
+    /**
+     * Replays journaled reconciliations; each replayed handle() clears its
+     * entry on success. While consent or onboarding is withdrawn the replay
+     * stays closed: automation is never recreated from stale markers, and the
+     * markers simply wait until consent returns or the records are wiped.
+     * A record tombstoned between capture and replay is dropped the same way
+     * a missing record is.
+     */
+    suspend fun replayPending(context: android.content.Context) {
         val pending = ReconcileJournal.pending(context)
         if (pending.isEmpty()) return
         val repository = runCatching { kr.mom.probe.data.ProbeRepository.get(context) }.getOrNull() ?: return
         val settings = repository.settings.value
+        if (!settings.consent || settings.consentVersion != ProbeRules.CONSENT_VERSION || !settings.onboardingDone) return
         val institution = NoticeGrouping.institution(settings)
         val retired = ReconcileJournal.retiredKeys(context)
         val actions = pendingActions(repository.records.value, pending, retired, institution)
@@ -230,8 +239,12 @@ object AutoActionCoordinator {
                         val keys = NoticeGrouping.keys(record, institution)
                         pendingId in keys || NoticeGrouping.matches(keys, setOf(pendingId))
                     }
-                    if (record != null) handle(context, record, settings)
-                    else ReconcileJournal.clearPending(context, pendingId)
+                    when {
+                        record == null -> ReconcileJournal.clearPending(context, pendingId)
+                        repository.isSuppressed(record.id) ->
+                            ReconcileJournal.clearPending(context, pendingId)
+                        else -> handle(context, record, settings)
+                    }
                 }
             }
         }

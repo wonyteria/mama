@@ -206,6 +206,9 @@ class ProbeRepository private constructor(context: Context) {
         mutableRecords.value = mutableRecords.value.filterNot { it.id == id }
     }
 
+    /** Whether a record id was tombstoned (user-deleted or retired by scope change). */
+    suspend fun isSuppressed(id: String): Boolean = withContext(Dispatchers.IO) { dao.isDeleted(id) > 0 }
+
     suspend fun ingestSource(scope: SourceScope, result: SourceFetchResult): IngestReceipt {
         var receipt = IngestReceipt(result.sourceId, result.status, result.fetchedAt)
         val saved = action {
@@ -295,18 +298,20 @@ class ProbeRepository private constructor(context: Context) {
             title, text, bigText, lines, subText, summaryText, value.category, value.channelId,
             notification.id, notification.key, ongoing, summary, rawHash, truncated)
         if (epoch.get() != expectedEpoch || !hasNotificationAccess()) return@action
+        // Journal BEFORE the row commits: a failed journal write aborts the
+        // capture with nothing persisted, and a crash between this mark and the
+        // insert leaves only a ghost entry that replay drops because the record
+        // is missing. A crash after the commit replays the reconcile once.
+        kr.mom.probe.task.ReconcileJournal.markPending(
+            app,
+            kr.mom.probe.data.NoticeGrouping.groupId(
+                record,
+                kr.mom.probe.data.NoticeGrouping.institution(settings.value),
+            ),
+        )
         pruneLocked()
         val inserted = dao.insert(StoredRecord(id, record.receivedAt, crypto.encrypt(encodeRecord(record), "record:$id")))
         if (inserted != -1L) {
-            // Journal before reconcile so a crash between the record commit and the
-            // task write below still replays on the next startup or resync.
-            kr.mom.probe.task.ReconcileJournal.markPending(
-                app,
-                kr.mom.probe.data.NoticeGrouping.groupId(
-                    record,
-                    kr.mom.probe.data.NoticeGrouping.institution(settings.value),
-                ),
-            )
             kr.mom.probe.task.AutoActionCoordinator.handle(app, record, settings.value)
             kr.mom.probe.reminder.AssistantAlertNotifier.notify(app, record)
         }
@@ -391,6 +396,7 @@ class ProbeRepository private constructor(context: Context) {
         val replacedIds = mutableListOf<String>()
         val seenItemIdentities = mutableSetOf<String>()
         val discoveryTimes = mutableListOf<Long>()
+        val ingestInstitution = kr.mom.probe.data.NoticeGrouping.institution(currentSettings)
         database.withTransaction {
             result.items.forEach { item ->
                 if (item.sourceId != scope.sourceId || !originHostMatchesScope(item.origin.host, scope)) {
@@ -419,6 +425,14 @@ class ProbeRepository private constructor(context: Context) {
                     unchanged++
                     return@forEach
                 }
+                // Journal inside the record transaction: a failed journal write
+                // rolls the whole batch back, and a crash after the commit leaves
+                // markers that replay resolves. A marker without a record (e.g.
+                // a rolled-back sibling) drops on replay because it is missing.
+                kr.mom.probe.task.ReconcileJournal.markPending(
+                    app,
+                    kr.mom.probe.data.NoticeGrouping.groupId(record, ingestInstitution),
+                )
                 previous?.takeIf { it.id != revisionId }?.let { replacedIds += it.id }
                 storedIds += revisionId
                 if (previous == null) {
@@ -440,14 +454,9 @@ class ProbeRepository private constructor(context: Context) {
         if (replacedIds.isNotEmpty()) database.withTransaction { dao.deleteIds(replacedIds) }
         mutableRecords.value = dao.currentRecords().filterNot { ProbeRules.isExpired(it.receivedAt, System.currentTimeMillis()) }
             .map { decodeRecord(crypto.decrypt(it.encryptedPayload, "record:${it.id}")) }
-        val ingestInstitution = kr.mom.probe.data.NoticeGrouping.institution(settings.value)
         mutableRecords.value.filter { it.id in storedIds }.forEach { record ->
-            // Same journal-before-reconcile contract as notification capture: a
-            // death between the row commit above and this loop replays later.
-            kr.mom.probe.task.ReconcileJournal.markPending(
-                app,
-                kr.mom.probe.data.NoticeGrouping.groupId(record, ingestInstitution),
-            )
+            // The pending marker was committed inside the record transaction
+            // above, so this loop only needs to reconcile and alert.
             kr.mom.probe.task.AutoActionCoordinator.handle(app, record, settings.value)
             kr.mom.probe.reminder.AssistantAlertNotifier.notify(app, record)
         }

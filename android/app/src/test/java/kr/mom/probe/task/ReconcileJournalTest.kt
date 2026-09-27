@@ -51,6 +51,31 @@ class ReconcileJournalTest {
         }
     }
 
+    @Test fun concurrentWritesNeverLoseUpdates() {
+        ReconcileJournal.reset(context)
+        val ids = (1..40).map { "fp:$it" }
+
+        // Capture, ingest, replay and user delete can all write the same sets
+        // from different threads without the repository action mutex; every
+        // read-modify-write must serialize or an entry is silently dropped.
+        ids.map { id -> Thread { ReconcileJournal.markPending(context, id) } }
+            .also { threads -> threads.forEach { it.start() } }
+            .forEach { it.join() }
+        assertEquals(ids.toSet(), ReconcileJournal.pending(context))
+
+        ids.map { id -> Thread { ReconcileJournal.clearPending(context, id) } }
+            .also { threads -> threads.forEach { it.start() } }
+            .forEach { it.join() }
+        assertTrue(ReconcileJournal.pending(context).isEmpty())
+
+        val retired = (1..20).map { "ret:$it" }
+        retired.map { key -> Thread { ReconcileJournal.retire(context, setOf(key)) } }
+            .also { threads -> threads.forEach { it.start() } }
+            .forEach { it.join() }
+        assertEquals(retired.toSet(), ReconcileJournal.retiredKeys(context))
+        ReconcileJournal.reset(context)
+    }
+
     @Test fun retiredKeysAccumulateAcrossDeletes() {
         ReconcileJournal.reset(context)
         ReconcileJournal.retire(context, setOf("fp:a", "ext:a"))
