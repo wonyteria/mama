@@ -12,14 +12,14 @@ jobs:
       run:
         working-directory: android
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest
@@ -65,14 +65,14 @@ jobs:
     env:
       API_LEVEL: "35"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Enable KVM
         run: |
@@ -81,7 +81,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: AVD snapshot cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         id: avd-cache
         with:
           path: |
@@ -164,7 +164,7 @@ jobs:
 
       - name: Upload instrumentation reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: connectedDebugAndroidTest-api${{ env.API_LEVEL }}
           path: |
@@ -184,14 +184,14 @@ jobs:
       MAMA_RELEASE_KEY_ALIAS: ${{ secrets.MAMA_RELEASE_KEY_ALIAS }}
       MAMA_RELEASE_KEY_PASSWORD: ${{ secrets.MAMA_RELEASE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Detect release signing secrets
         id: signing
@@ -234,7 +234,7 @@ jobs:
 
       - name: Upload signed release artifacts
         if: steps.signing.outputs.available == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mama-signed-release
           path: |
