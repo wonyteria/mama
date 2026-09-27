@@ -28,6 +28,8 @@ versionCode 14 / versionName 1.1.0 · feature/1.1-reliability-rebuild 후보.
 ## C. 권한·개인정보 선언
 
 - [ ] 매니페스트 권한 검토: `POST_NOTIFICATIONS`, `BIND_NOTIFICATION_LISTENER_SERVICE`(서비스), 인터넷/네트워크, 알람 관련 권한이 선언과 실제 사용에 일치.
+- [x] `USE_FULL_SCREEN_INTENT` 미사용 — 전용 알람/통화 앱이 아니므로 Play 정책상 사용 불가. 권한·`setFullScreenIntent`·설정 유도 UI를 전부 제거했고, 울림 알림은 high-priority heads-up + contentIntent 탭 열기만 사용한다(`RingingNotificationContractTest`가 두 경로의 `fullScreenIntent==null`·contentIntent·채널·30초 timeout·action을 Notification 객체로 검증, manifest 권한 부재도 테스트로 확인).
+- [ ] `BIND_NOTIFICATION_LISTENER_SERVICE`의 Play Console 선언(알림 접근 권한 사용 앱 양식)을 실제 수집 목적과 일치하게 제출 — prominent disclosure 문구는 `PLAY_CONSOLE_1.1.md` 초안 참고.
 - [ ] Play Data Safety 양식: 알림 내용 수집 목적(할 일 생성), 암호화 저장, 기기 외 전송 여부, 사용자 삭제 가능 여부를 실제 구현과 일치하게 기입.
 - [ ] 개인정보처리방침 URL 게시: 수집 항목(알림 텍스트, 자녀 학년·학교명), 보관 기간, 삭제 절차, 연락처 포함.
 - [ ] 데이터 보관 기간과 자동 삭제 정책을 문서화하고 구현과 대조.

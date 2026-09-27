@@ -12,7 +12,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class TaskReminderSchedulerTest {
-    @Test fun fullScreenStopActionUsesTheSameStateTransitionAsNotificationStop() {
+    @Test fun stopActionUsesTheSameStateTransitionAsNotificationStop() {
         val context = ApplicationProvider.getApplicationContext<Application>()
 
         val intent = TaskReminderScheduler.stopIntent(

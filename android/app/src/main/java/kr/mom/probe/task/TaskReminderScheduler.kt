@@ -219,7 +219,7 @@ object TaskReminderScheduler {
             .setAutoCancel(true)
             .addAction(0, "소리 끄기", stop)
             .addAction(0, "10분 뒤", snooze)
-        if (ringing) notification.setFullScreenIntent(open, true).setTimeoutAfter(30_000)
+        if (ringing) notification.setTimeoutAfter(30_000)
         return try {
             val built = notification.build()
             if (ringing) built.flags = built.flags or Notification.FLAG_INSISTENT

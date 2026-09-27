@@ -6,7 +6,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.RingtoneManager
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import kr.mom.probe.R
 import kr.mom.probe.data.ProbeRepository
@@ -95,8 +94,10 @@ object BriefingReminders {
     )
     fun generation(context: Context): Long = prefs(context).getLong("generation", 0)
     fun alarmMode(context: Context): Boolean = prefs(context).getBoolean("alarmMode", false)
-    fun alarmPermissions(context: Context): Boolean = context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms() &&
-        (Build.VERSION.SDK_INT < 34 || context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent())
+    // Google Play scopes USE_FULL_SCREEN_INTENT to dedicated alarm/calling
+    // apps, so alarm mode rides heads-up high-priority notifications and only
+    // needs the exact-alarm grant. Tapping the notification opens the briefing.
+    fun alarmPermissions(context: Context): Boolean = context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
     fun saveAlarmMode(context: Context, enabled: Boolean): Boolean {
         if (enabled && !alarmPermissions(context)) return false
         val previous = alarmMode(context)
@@ -318,7 +319,7 @@ object BriefingReminders {
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setContentIntent(open).setAutoCancel(true)
             .setCategory(if (ringing) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER).setPriority(NotificationCompat.PRIORITY_HIGH)
             .addAction(0, "브리핑 열기", open)
-        if (ringing) note.setFullScreenIntent(open, true).setTimeoutAfter(30_000)
+        if (ringing) note.setTimeoutAfter(30_000)
         if (!demo) note.addAction(0, "10분 뒤", pending(context, slot, true, occurrenceId = notifyOccurrenceId, expectedGeneration = expectedGeneration))
         return try { manager.notify(notificationId, note.build()); true } catch (_: SecurityException) { false }
     }

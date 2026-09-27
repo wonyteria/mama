@@ -6,7 +6,7 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 
 `cd android && ./gradlew clean :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest`
 
-- 단위 테스트 XML 합계(testsuite 속성): tests=306, failures=0, errors=0, skipped=2 — 304 통과 + 2 skip. skip은 외부 공개 fixture opt-in 테스트다. Robolectric 화면 테스트는 프로덕션 Composable을 실제 렌더한다.
+- 단위 테스트 XML 합계(testsuite 속성): tests=309, failures=0, errors=0, skipped=2 — 307 통과 + 2 skip. skip은 외부 공개 fixture opt-in 테스트다. Robolectric 화면 테스트는 프로덕션 Composable을 실제 렌더한다. `RingingNotificationContractTest`(3건, FSI 제거 회귀) 포함.
 - `AccessibilityLayoutTest` 21/21 통과, `ProbeScreensRenderTest` 22/22 통과.
 - lint 오류 0. debug APK·androidTest APK 조립 성공.
 - release 조립은 서명 정보 없이 실행하면 지정된 fail-closed 메시지로 실패한다.
@@ -32,6 +32,14 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 - L: exact alarm 재허용 브로드캐스트가 Todo reminder도 재스케줄한다.
 - M: `ResetMarker`가 reset을 재시작 가능하게 하고 미완료 상태의 재가입을 거부한다.
 - N: `ChildProfileScreen`·needs-review·오류 화면을 실제로 검증하고, 무이름 컨트롤(실제 Checkbox 결함 수정)과 상향/좌향 traversal 역행을 허용하지 않는다.
+
+## Play 정책 대응 (자동, 신규)
+
+- `USE_FULL_SCREEN_INTENT` 완전 제거: 전용 알람/통화 앱이 아니므로 Play의 전체화면 인텐트 정책 대상. 매니페스트 권한, `TaskReminderScheduler`·`BriefingReminders`의 `setFullScreenIntent`, `BriefingSettingsActivity`의 `ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT` 유도 UI와 '두 설정' 문구를 제거했다.
+- 울림(alarm mode) 알림은 계속 `mom-assistant-alarm` 채널(IMPORTANCE_HIGH·alarm 사운드)·CATEGORY_ALARM·30초 timeout·contentIntent·완료/미루기 action·`FLAG_INSISTENT`(task 경로)를 유지한다 — heads-up 고우선 알림으로만 동작하고, 탭 시에만 `TaskAlarmActivity`/`BriefingActivity`가 열린다. 백그라운드 Activity 직접 시작은 없다.
+- `alarmPermissions`는 이제 exact alarm 권한(`canScheduleExactAlarms`)만 요구한다 — exact alarm 거부 시 기존 inexact `setAndAllowWhileIdle` fallback이 유지된다.
+- 회귀: `RingingNotificationContractTest`가 문자열 grep이 아니라 게시된 Notification 객체로 `fullScreenIntent==null`, contentIntent의 대상 Activity, 채널·category·timeout·action 라벨을 두 경로 모두 검증하고, `requestedPermissions`에서 FSI 부재와 exact-revoked inexact fallback(`TaskReminderSchedulerTest`)을 확인한다.
+- 0.8 문서(`REVIEW_0.8_ALARM.md`·`ALARM_AND_CALENDAR_0.8.md` 등)의 FSI 언급은 당시 구현의 역사적 기록이다 — 1.1 현재 코드는 FSI를 사용하지 않는다.
 
 ## 접근성·소형 화면 회귀 (자동, 신규)
 
@@ -73,6 +81,14 @@ CI의 `instrumentation` 작업은 GitHub 호스팅 API 35 x86_64 에뮬레이터
 - 물리기기 UI 스모크는 추가하지 않았다: instrumentation target process는 테스트 본문이나 사전 조건 검사보다 먼저 `ProbeApplication.onCreate`를 실행하고, 그 시점에 `candidate_feedback` 마이그레이션 clear/commit, `WorkManager` enqueue, `SourceSyncScheduler.schedulePeriodic`·`scheduleLearnedWindows` 같은 쓰기가 발생한다. MainActivity 시작 경로도 ON_RESUME에서 `cleanupExpired`(record·tombstone 삭제)와 `enqueueForegroundStale`(source state 갱신)을 무조건 수행한다. 따라서 "아무것도 쓰지 않는" 물리기기 UI 스모크는 증명할 수 없어 만들지 않았다.
 - 별도 설치 검증: `app-debug.apk`를 격리 패키지 `kr.mom.probe.qa`로 설치(기존 `kr.mom.probe` 데이터 미접촉) — dumpsys versionCode=14·versionName=1.1.0-qa, cold launch 560ms·activity resumed 유지·crash/ANR/FATAL 없음(플랫폼 HAL·deprecation 경고만), 온보딩이 스크린샷으로 정상 렌더링됨.
 - secrets 부재 확인: `assembleRelease`가 `:app:verifyReleaseSigning`에서 지정된 두 문장("Release signing is not configured...", "Debug signing is never used for release builds.")으로 fail-closed.
+
+### FSI 제거 후 실기기 재확인 (현재 코드, 2026-07)
+
+같은 SM-S926N, FSI 제거가 포함된 fresh `app-debug.apk`를 격리 패키지 `kr.mom.probe.qa`에 `install -r`로 갱신(기존 `kr.mom.probe`는 dumpsys versionCode=10/versionName=0.9.0-agent 그대로 — 읽기만 수행, 데이터 미접촉).
+
+- 설치 후 `dumpsys package kr.mom.probe.qa`의 선언 권한 목록에 `USE_FULL_SCREEN_INTENT` 없음 — API 36 기기에서 매니페스트 제거를 실측 확인.
+- cold launch: `kr.mom.probe.qa/kr.mom.probe.MainActivity` resumed 유지, logcat에 FATAL/ANR/crash 없음.
+- 알림 게시 자체는 실기기에서 실행하지 않았다(NOT_RUN): 모든 알림 트리거(receiver)가 non-exported라 외부에서 앱의 notify 경로를 건드릴 수 없고, `POST_NOTIFICATIONS` 미부여 상태라 허가 자체가 설정 변경이 된다. Notification 객체 계약은 `RingingNotificationContractTest`(Robolectric)가, OS 파이프라인 게시는 에뮬레이터 `NotificationPipelineDeviceTest`가 증거다.
 
 ### 과거 baseline (역사적 기록, 현재 코드 증거 아님)
 
