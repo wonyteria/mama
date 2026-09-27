@@ -119,7 +119,7 @@ class AlarmContentRenderTest {
         render {
             AlarmContent(
                 state = AlarmContentState(
-                    title = "모모의 브리핑",
+                    title = "라비의 브리핑",
                     dateText = "9월 20일 일요일",
                     scheduledTimeText = "20:30",
                     actionTitle = "체험학습 준비물 · 내일 오전 9시",
@@ -171,7 +171,7 @@ class AlarmContentRenderTest {
         render(fontScale = 2f) {
             AlarmContent(
                 state = AlarmContentState(
-                    title = "모모의 부탁",
+                    title = "라비의 부탁",
                     dateText = "9월 20일 일요일",
                     scheduledTimeText = "07:00",
                     actionTitle = "등교 가방에 물티슈 넣기",

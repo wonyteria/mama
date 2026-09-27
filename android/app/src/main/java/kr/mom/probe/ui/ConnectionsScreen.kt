@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.connector.*
 import kr.mom.probe.data.NoticeDecisionEngine
 import kr.mom.probe.data.ProbeSettings
@@ -238,7 +239,7 @@ private fun HideOriginalRow(hidden: Boolean, enabled: Boolean, onToggle: (Boolea
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("정리되면 원본 알림 숨기기", style = MaterialTheme.typography.bodyMedium)
-            Text("꺼두면 원본과 모모 알림이 함께 보여요", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+            Text("꺼두면 원본과 ${AgentIdentity.displayName} 알림이 함께 보여요", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
         }
         Switch(checked = hidden, onCheckedChange = null, enabled = enabled)
     }

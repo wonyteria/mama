@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import kr.mom.probe.MainActivity
 import kr.mom.probe.R
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.data.NoticeContentState
 import kr.mom.probe.data.NoticeDecision
 import kr.mom.probe.data.NoticeDecisionEngine
@@ -102,7 +103,7 @@ object AssistantAlertNotifier {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(
             CHANNEL,
-            "모모의 긴급한 일",
+            "${AgentIdentity.displayName}의 긴급한 일",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "오늘 안에 놓치면 안 되는 준비물·제출·마감만 바로 알려줘요"
@@ -123,7 +124,7 @@ object AssistantAlertNotifier {
         val description = decision.action?.label ?: "확인할 일이 있어요"
         val privateNotification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("모모가 챙길 일을 찾았어요")
+            .setContentTitle("${AgentIdentity.displayName}가 챙길 일을 찾았어요")
             .setContentText(listOfNotNull(record.title.ifBlank { description }, decision.action?.whenText).joinToString(" · "))
             .setStyle(NotificationCompat.BigTextStyle().bigText("$description. 눌러서 원문을 확인해주세요."))
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)

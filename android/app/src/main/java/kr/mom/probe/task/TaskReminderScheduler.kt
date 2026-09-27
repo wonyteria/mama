@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kr.mom.probe.R
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.data.ProbeRepository
 import kr.mom.probe.reminder.BriefingReminders
 import kr.mom.probe.reminder.TaskAlarmActivity
@@ -55,7 +56,7 @@ object TaskReminderScheduler {
     private fun ensureChannel(manager: NotificationManager) {
         manager.createNotificationChannel(NotificationChannel(
             CHANNEL,
-            "모모의 부탁 알림",
+            "${AgentIdentity.displayName}의 부탁 알림",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "직접 정한 시간 무렵에 챙길 일을 알려줘요"
@@ -208,7 +209,7 @@ object TaskReminderScheduler {
             .build()
         val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("모모가 부탁을 알려드려요")
+            .setContentTitle("${AgentIdentity.displayName}가 부탁을 알려드려요")
             .setContentText(task.text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(task.text))
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)

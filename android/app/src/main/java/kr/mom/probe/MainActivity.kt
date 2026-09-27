@@ -41,6 +41,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.data.ProbeRecord
 import kr.mom.probe.data.ProbeRepository
 import kr.mom.probe.connector.*
@@ -313,7 +314,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                         audienceLabel = request.audienceLabel,
                     ) != null
                 }
-                message = if (added) "모모가 부탁과 알림을 기억해뒀어요." else "이미 모모가 기억하고 있어요."
+                message = if (added) "${AgentIdentity.displayName}가 부탁과 알림을 기억해뒀어요." else "이미 ${AgentIdentity.displayName}가 기억하고 있어요."
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 message = error.message ?: "부탁으로 저장하지 못했어요."
@@ -328,7 +329,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
             pendingTaskSave = null
             saveAssistantTask(taskRequest)
         } else if (granted && taskRequest != null) {
-            message = "휴대폰 설정에서 ‘모모의 부탁 알림’을 켜면 자동으로 저장할게요."
+            message = "휴대폰 설정에서 ‘${AgentIdentity.displayName}의 부탁 알림’을 켜면 자동으로 저장할게요."
             context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
                 .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                 .putExtra(Settings.EXTRA_CHANNEL_ID, kr.mom.probe.task.TaskReminderScheduler.CHANNEL))
@@ -338,7 +339,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
             val briefingsEnabled = kr.mom.probe.reminder.BriefingReminders.enableDefaults(context)
             message = if (assistantAlertsEnabled && briefingsEnabled) "아침·저녁에는 한 번에 정리하고, 오늘 긴급한 일만 바로 알려드릴게요." else "비서 알림 설정을 저장하지 못했어요."
         }
-        else message = "알림을 켜기 전까지 모모의 안내는 앱 안에서 확인할 수 있어요."
+        else message = "알림을 켜기 전까지 ${AgentIdentity.displayName}의 안내는 앱 안에서 확인할 수 있어요."
         pendingNotificationTest = false
         pendingAssistantAlertEnable = false
         if (!granted) pendingTaskSave = null
@@ -806,7 +807,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
                             if (!notificationsAllowed) {
                                 notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                             } else {
-                                message = "휴대폰 설정에서 ‘모모의 부탁 알림’을 켜면 자동으로 저장할게요."
+                                message = "휴대폰 설정에서 ‘${AgentIdentity.displayName}의 부탁 알림’을 켜면 자동으로 저장할게요."
                                 context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
                                     .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                                     .putExtra(Settings.EXTRA_CHANNEL_ID, kr.mom.probe.task.TaskReminderScheduler.CHANNEL))

@@ -317,7 +317,7 @@ class AccessibilityLayoutTest {
         render(fontScale = 2f) {
             AlarmContent(
                 state = AlarmContentState(
-                    title = "모모의 부탁", dateText = "9월 20일 일요일", scheduledTimeText = "07:00",
+                    title = "라비의 부탁", dateText = "9월 20일 일요일", scheduledTimeText = "07:00",
                     actionTitle = "등교 가방에 물티슈 넣기", actionSummary = "곧 챙길 일 1개",
                     showComplete = true, completeEnabled = true,
                 ),
@@ -405,7 +405,7 @@ class AccessibilityLayoutTest {
         render {
             AlarmContent(
                 state = AlarmContentState(
-                    title = "모모의 브리핑", dateText = "9월 20일 일요일", scheduledTimeText = "07:00",
+                    title = "라비의 브리핑", dateText = "9월 20일 일요일", scheduledTimeText = "07:00",
                     actionTitle = "체험학습 준비물 · 내일 오전 9시", actionSummary = "곧 챙길 일 1개",
                     showComplete = false,
                 ),

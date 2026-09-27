@@ -37,6 +37,7 @@ import java.util.TimeZone
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import kr.mom.probe.BuildConfig
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.data.ChildNoticeProfile
 import kr.mom.probe.data.NoticeApplicability
 import kr.mom.probe.data.NoticeDecision
@@ -69,7 +70,7 @@ fun BackHeading(title: String, onBack: () -> Unit) {
 @Composable
 fun Brand() {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Eyebrow("엄마의 하루를 함께 챙기는 모모")
+        Eyebrow("엄마의 하루를 함께 챙기는 ${AgentIdentity.displayName}")
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
             Text("나는 엄마다", style = MaterialTheme.typography.titleLarge)
             LeafMark()
@@ -102,7 +103,7 @@ fun WelcomeScreen(busy: Boolean, onStart: () -> Unit, onPolicy: () -> Unit) {
             Text("아이 이름만으로 시작하고, 필요한 앱·사이트를 골라요.\n계정 비밀번호를 우리 앱에 저장하지 않아요.", color = Clay.Muted)
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("선택한 앱의 새 알림을 모모가 기기 안에서 정리해요. 날짜와 행동이 분명한 일은 할 일과 알림이 자동으로 만들어지고, 애매한 소식은 엄마가 직접 확인할 때까지 저장하지 않아요.", style = MaterialTheme.typography.bodyMedium, color = Clay.Muted)
+            Text("선택한 앱의 새 알림을 ${AgentIdentity.displayName}가 기기 안에서 정리해요. 날짜와 행동이 분명한 일은 할 일과 알림이 자동으로 만들어지고, 애매한 소식은 엄마가 직접 확인할 때까지 저장하지 않아요.", style = MaterialTheme.typography.bodyMedium, color = Clay.Muted)
             Text("선택한 앱의 알림과 자녀 정보는 이 기기에 암호화해 보관해요. 학교명은 나이스 공식 OpenAPI에서 학교를 찾을 때만 전송해요. 알림 원문은 14일 뒤 삭제하며 재설치하면 복구할 수 없어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
             TextButton(onClick = onPolicy, modifier = Modifier.minTouchTarget()) { Text("수집·보관·삭제 설명 보기") }
             ConsentRow(agreed, { agreed = it }, "설명을 확인했고, 이 기기에서 알림을 모아 챙길 후보를 찾는 데 동의해요. (필수)")
@@ -447,7 +448,7 @@ fun SettingsScreen(settings: ProbeSettings, access: Boolean, connected: Boolean,
             HorizontalDivider(color = Color.White)
             SettingLink("비서 알림", "시간을 정하고 소식 듣기", onReminders)
             HorizontalDivider(color = Color.White)
-            SettingLink("홈 화면 비서", "모모를 홈 화면에 놓기", onWidget)
+            SettingLink("홈 화면 비서", "${AgentIdentity.displayName}를 홈 화면에 놓기", onWidget)
         }
         TextButton(onClick = { details = !details }, modifier = Modifier.minTouchTarget()) { Text(if (details) "도움말 접기" else "도움말 · 연결 문제 해결") }
         if (details) ClayCard {

@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import java.util.Locale
 import kr.mom.probe.BuildConfig
 import kr.mom.probe.MainActivity
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.task.AssistantTaskStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -131,7 +132,7 @@ class BriefingActivity : ComponentActivity() {
                     initiallyVisibleBriefingNoticeCount(agendaSummaries.size, visibleNoticeRows.size),
                 )
                 val text = when {
-                    !unlocked -> "모모가 알려드릴 소식이 있어요. 잠금을 풀고 확인해 주세요."
+                    !unlocked -> "${AgentIdentity.displayName}가 알려드릴 소식이 있어요. 잠금을 풀고 확인해 주세요."
                     !allowed -> "첫 설정을 마친 뒤 다시 불러주세요."
                     demo -> "비서 알림 미리보기예요. 앞으로 정한 시간에 새로 모인 알림을 알려드릴게요."
                     taskLoading -> "부탁을 확인하고 있어요."
@@ -161,7 +162,7 @@ class BriefingActivity : ComponentActivity() {
                     else -> "새 알림과 남은 부탁이 없어요"
                 }
                 val actionSummary = when {
-                    !unlocked -> "모모가 알려드릴 소식이 있어요"
+                    !unlocked -> "${AgentIdentity.displayName}가 알려드릴 소식이 있어요"
                     !allowed -> "앱에서 처음 설정을 마치면 내용을 볼 수 있어요."
                     demo -> "정한 시간에 새로 모인 알림을 알려드릴게요."
                     taskLoading -> "저장된 부탁을 불러오는 중이에요."
@@ -181,7 +182,7 @@ class BriefingActivity : ComponentActivity() {
                 }
                 val alarmState = snoozedUntil?.let {
                     AlarmContentState(
-                        title = if (demo) "비서 미리보기" else "모모의 브리핑",
+                        title = if (demo) "비서 미리보기" else "${AgentIdentity.displayName}의 브리핑",
                         dateText = formatAlarmDate(it),
                         scheduledTimeText = formatAlarmTime(it),
                         actionTitle = "다시 알림을 예약했어요",
@@ -193,7 +194,7 @@ class BriefingActivity : ComponentActivity() {
                         timeLabel = "다음 알림",
                     )
                 } ?: AlarmContentState(
-                    title = if (demo) "비서 미리보기" else "모모의 브리핑",
+                    title = if (demo) "비서 미리보기" else "${AgentIdentity.displayName}의 브리핑",
                     dateText = formatAlarmDate(scheduledAt),
                     scheduledTimeText = formatAlarmTime(scheduledAt),
                     actionTitle = actionTitle,

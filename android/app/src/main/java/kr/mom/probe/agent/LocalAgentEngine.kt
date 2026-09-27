@@ -126,7 +126,7 @@ class LocalAgentEngine(
     private fun proposedTask(question: String): ProposedTask? {
         val match = taskCommand.matchEntire(question) ?: return null
         var subject = match.groupValues[1].trim(' ', ',', '.', '!', '?', '~')
-            .removePrefix("모모야 ").removePrefix("모모 ").trim()
+            .let { AgentIdentity.stripWakeName(it) }
         subject = subject.replace(taskListPrefix, "").trim()
         if (subject.isBlank() || interrogative.containsMatchIn(subject)) return null
 

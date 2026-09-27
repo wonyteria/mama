@@ -29,6 +29,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Calendar
 import java.util.TimeZone
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.data.NoticeDecisionEngine
 import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.ProbeRecord
@@ -328,7 +329,7 @@ fun TodayScreen(
         }
         if (!configured) {
             ClayCard(tint = Clay.Sage) {
-                StatusPill("모모 준비 중")
+                StatusPill("${AgentIdentity.displayName} 준비 중")
                 Text("마지막 준비를 도와드릴게요", style = MaterialTheme.typography.titleLarge)
                 Text("한 번만 설정하면, 고른 곳의 새 소식을 이 휴대폰에서 확인할 수 있어요.", color = Clay.Muted)
                 AgentButton("이어서 설정하기", Modifier.testTag("resume-setup"), onClick = onSetup)

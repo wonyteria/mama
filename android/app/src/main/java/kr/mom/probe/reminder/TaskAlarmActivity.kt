@@ -20,6 +20,7 @@ import java.util.Date
 import java.util.Locale
 import kr.mom.probe.BuildConfig
 import kr.mom.probe.MainActivity
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.data.ProbeRepository
 import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.task.AssistantTask
@@ -127,7 +128,7 @@ class TaskAlarmActivity : ComponentActivity() {
                 }
                 val screenState = snoozedUntil?.let {
                     AlarmContentState(
-                        title = "모모의 부탁",
+                        title = "${AgentIdentity.displayName}의 부탁",
                         dateText = formatAlarmDate(it),
                         scheduledTimeText = formatAlarmTime(it),
                         actionTitle = "다시 알림을 예약했어요",
@@ -338,17 +339,17 @@ internal fun taskAlarmState(
     val timeText = formatAlarmTime(scheduledAt)
     return when {
         !unlocked -> AlarmContentState(
-            title = "모모 알림",
+            title = "${AgentIdentity.displayName} 알림",
             dateText = dateText,
             scheduledTimeText = timeText,
             actionTitle = "잠금을 풀면 내용을 볼 수 있어요",
-            actionSummary = "모모가 알려드릴 부탁이 있어요",
+            actionSummary = "${AgentIdentity.displayName}가 알려드릴 부탁이 있어요",
             locked = true,
             snoozeEnabled = allowed,
             statusText = status,
         )
         !allowed -> AlarmContentState(
-            title = "모모 알림",
+            title = "${AgentIdentity.displayName} 알림",
             dateText = dateText,
             scheduledTimeText = timeText,
             actionTitle = "첫 설정을 확인해주세요",
@@ -357,7 +358,7 @@ internal fun taskAlarmState(
             statusText = status,
         )
         loading -> AlarmContentState(
-            title = "모모 알림",
+            title = "${AgentIdentity.displayName} 알림",
             dateText = dateText,
             scheduledTimeText = timeText,
             actionTitle = "부탁을 확인하고 있어요",
@@ -366,7 +367,7 @@ internal fun taskAlarmState(
             statusText = status,
         )
         taskError || task == null -> AlarmContentState(
-            title = "모모 알림",
+            title = "${AgentIdentity.displayName} 알림",
             dateText = dateText,
             scheduledTimeText = timeText,
             actionTitle = "이미 지난 알림이에요",
@@ -375,7 +376,7 @@ internal fun taskAlarmState(
             statusText = status,
         )
         else -> AlarmContentState(
-            title = "모모의 부탁",
+            title = "${AgentIdentity.displayName}의 부탁",
             dateText = dateText,
             scheduledTimeText = timeText,
             actionTitle = task.text,

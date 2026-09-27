@@ -8,6 +8,7 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import androidx.core.app.NotificationCompat
 import kr.mom.probe.R
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.data.ProbeRepository
 import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.data.ProbeSettings
@@ -314,7 +315,7 @@ object BriefingReminders {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val note = NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle(if (demo) "비서 알림 미리보기" else "모모가 새 알림을 모아뒀어요")
+            .setContentTitle(if (demo) "비서 알림 미리보기" else "${AgentIdentity.displayName}가 새 알림을 모아뒀어요")
             .setContentText(if (demo) "시험 알림이에요. 실제 기록은 만들지 않아요." else "일정 ${agendaCount}개 · 부탁 ${taskCount}개 · 새 알림 ${count}개")
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setContentIntent(open).setAutoCancel(true)
             .setCategory(if (ringing) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER).setPriority(NotificationCompat.PRIORITY_HIGH)
