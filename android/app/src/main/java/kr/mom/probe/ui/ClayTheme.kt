@@ -259,35 +259,6 @@ fun StatusPill(text: String, tint: Color = Color.White.copy(alpha = .65f)) {
 }
 
 @Composable
-fun BellMascot(modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        scale(size.width / 120f, size.height / 140f, pivot = Offset.Zero) {
-            drawOval(Brush.radialGradient(listOf(Color(0x20847869), Color.Transparent), Offset(60f, 122f), 43f), Offset(17f, 114f), Size(86f, 18f))
-            drawOval(Color(0xFFC8B9DF), Offset(52f, 7f), Size(18f, 25f))
-            drawCircle(Color(0xFFB3977D), 10f, Offset(60f, 112f))
-            val bell = Path().apply {
-                moveTo(32f, 39f); cubicTo(32f, 8f, 86f, 9f, 90f, 40f)
-                lineTo(92f, 81f); cubicTo(92f, 89f, 106f, 95f, 100f, 103f)
-                cubicTo(89f, 115f, 28f, 111f, 20f, 99f); cubicTo(15f, 92f, 29f, 86f, 29f, 78f); close()
-            }
-            drawPath(bell, Brush.linearGradient(listOf(Color(0xFFFFDDC4), Color(0xFFF5B49E), Color(0xFFDD927F)), Offset(20f, 10f), Offset(100f, 115f)))
-            val shine = Path().apply { moveTo(39f, 45f); cubicTo(39f, 29f, 47f, 24f, 60f, 23f) }
-            drawPath(shine, Color(0xFFFFE9D7), style = Stroke(6f, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-            val hem = Path().apply { moveTo(27f, 96f); quadraticTo(63f, 111f, 95f, 100f) }
-            drawPath(hem, Color(0xFFFFDBC6), style = Stroke(5f, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-            drawOval(Color(0xFF795C50), Offset(47f, 62f), Size(4.5f, 6f))
-            drawOval(Color(0xFF795C50), Offset(70f, 64f), Size(4.5f, 6f))
-            val smile = Path().apply { moveTo(56f, 74f); quadraticTo(62f, 80f, 67f, 75f) }
-            drawPath(smile, Color(0xFF986D5B), style = Stroke(2.2f, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-            drawCircle(Color(0x55D98F84), 5f, Offset(40f, 74f))
-            drawCircle(Color(0x55D98F84), 5f, Offset(81f, 76f))
-            drawLine(Color(0xFF9DB497), Offset(106f, 22f), Offset(110f, 13f), 3f)
-            drawLine(Color(0xFF9DB497), Offset(111f, 38f), Offset(119f, 34f), 3f)
-        }
-    }
-}
-
-@Composable
 fun NavGlyph(kind: String, selected: Boolean, modifier: Modifier = Modifier) {
     val color = if (selected) Clay.Green else Clay.Muted
     Canvas(modifier.size(21.dp)) {

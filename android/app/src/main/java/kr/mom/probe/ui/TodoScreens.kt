@@ -325,7 +325,7 @@ fun TodayScreen(
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.headlineMedium,
             )
-            if (LocalDensity.current.fontScale <= 1.25f) BellMascot(Modifier.size(92.dp, 110.dp))
+            if (LocalDensity.current.fontScale <= 1.25f) AgentMascot(state = AgentMascotState.IDLE, modifier = Modifier.size(92.dp, 110.dp))
         }
         if (!configured) {
             ClayCard(tint = Clay.Sage) {

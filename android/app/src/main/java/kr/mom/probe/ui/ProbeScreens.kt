@@ -94,7 +94,7 @@ fun WelcomeScreen(busy: Boolean, onStart: () -> Unit, onPolicy: () -> Unit) {
         Brand()
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("엄마의 하루에,\n작은 여유를.", Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge)
-            if (LocalDensity.current.fontScale <= 1.25f) BellMascot(Modifier.size(106.dp, 130.dp))
+            if (LocalDensity.current.fontScale <= 1.25f) AgentMascot(state = AgentMascotState.IDLE, modifier = Modifier.size(106.dp, 130.dp))
         }
         Text("학교·학원 앱과 사이트,\n한곳에서 챙길 준비를 해요.", style = MaterialTheme.typography.titleLarge)
         ClayCard(tint = Clay.Sage) {
@@ -170,7 +170,7 @@ fun ChildScreen(initial: String, busy: Boolean, onSave: (String) -> Unit, onBack
         Eyebrow("2 / 3  ·  아이 이름")
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("어떻게\n불러드릴까요?", Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge)
-            if (LocalDensity.current.fontScale <= 1.25f) BellMascot(Modifier.size(100.dp, 118.dp))
+            if (LocalDensity.current.fontScale <= 1.25f) AgentMascot(state = AgentMascotState.IDLE, modifier = Modifier.size(100.dp, 118.dp))
         }
         Text("이름이나 별칭 하나만 알려주세요.\n학교·학원 정보는 지금 입력하지 않아도 돼요.", color = Clay.Muted)
         OutlinedTextField(name, { if (it.length <= 40) name = it }, modifier = Modifier.fillMaxWidth().testTag("child-name"),

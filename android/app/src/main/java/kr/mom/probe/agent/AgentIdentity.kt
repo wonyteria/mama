@@ -3,7 +3,7 @@ package kr.mom.probe.agent
 /**
  * Central assistant identity contract.
  *
- * Kotlin callers must use [DISPLAY_NAME] instead of a hard-coded name.
+ * Kotlin callers must use [displayName] instead of a hard-coded name.
  * Android XML/manifest/widget strings cannot read this object at runtime,
  * so res/values mirrors it — [AgentIdentityTest] asserts the mirror stays
  * in sync. Stable identifiers (package kr.mom.*, mom-* notification

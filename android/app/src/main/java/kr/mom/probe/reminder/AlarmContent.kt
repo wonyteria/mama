@@ -38,7 +38,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kr.mom.probe.agent.AgentIdentity
-import kr.mom.probe.ui.BellMascot
+import kr.mom.probe.ui.AgentMascot
+import kr.mom.probe.ui.AgentMascotState
 import kr.mom.probe.ui.Clay
 import kr.mom.probe.ui.minTouchTarget
 
@@ -108,7 +109,7 @@ fun AlarmContent(
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
                 )
-                if (!compact) BellMascot(Modifier.size(width = 44.dp, height = 52.dp).testTag("alarm-mascot"))
+                if (!compact) AgentMascot(state = AgentMascotState.NEW_INFO, modifier = Modifier.size(width = 44.dp, height = 52.dp).testTag("alarm-mascot"))
                 BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     val clockSize = if (compact) 44.sp else if (maxWidth < 360.dp) 52.sp else 64.sp
                     Text(

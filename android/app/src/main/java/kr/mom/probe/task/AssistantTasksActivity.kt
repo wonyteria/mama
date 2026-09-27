@@ -89,7 +89,7 @@ class AssistantTasksActivity : ComponentActivity() {
                 }) { Text("앱 열기") }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Image(painterResource(R.drawable.assistant_widget_momo), contentDescription = null,
+                Image(painterResource(R.drawable.assistant_widget_rabbit), contentDescription = null,
                     modifier = Modifier.size(width = 46.dp, height = 62.dp))
                 Spacer(Modifier.width(12.dp))
                 Text("${AgentIdentity.displayName}에게 부탁하기", style = MaterialTheme.typography.headlineSmall)
