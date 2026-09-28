@@ -338,14 +338,14 @@ class ScheduleCommandParser(
         private val rangeClock = Regex("(오전|오후)?\\s*(\\d{1,2})(?::(\\d{2})|\\s*시(?:\\s*(\\d{1,2})\\s*분)?)\\s*(?:~|-|부터)\\s*(오전|오후)?\\s*(\\d{1,2})(?::(\\d{2})|\\s*시(?:\\s*(\\d{1,2})\\s*분)?)")
         private val createVerbs = listOf("저장", "추가", "등록", "넣어", "넣기")
         private val imperativeSuffix = "\\s*(?:해\\s*줘|해줘|해\\s*주세요|해주세요|해|줘|주세요)?[.!~\\s]*$"
-        private val calendarImperative = Regex("캘린더(?:에)?\\s*(?:저장|추가|등록|넣어|넣기)$imperativeSuffix|(?:일정|약속)(?:으로|에)?\\s*(?:저장|추가|등록|넣어|넣기)$imperativeSuffix")
+        private val calendarImperative = Regex("캘린더(?:에)?\\s*(?:저장|추가|등록|넣어|넣기|잡아|잡기)$imperativeSuffix|(?:일정|약속)(?:으로|에)?\\s*(?:저장|추가|등록|넣어|넣기|잡아|잡기)$imperativeSuffix")
         private val alarmImperative = Regex("알람\\s*(?:맞춰|맞추어|맞추|설정|켜|등록|추가)$imperativeSuffix")
         private val negative = Regex("(?:저장|등록|추가|맞추|맞춰|설정|켜|넣)\\s*(?:하)?\\s*지\\s*마|취소|삭제|지우")
         private val quotedMeta = Regex("[‘'\"“][^’'\"”]*(일정|캘린더|알람)[^’'\"”]*(저장|추가|등록|맞춰)[^’'\"”]*[’'\"”].*(라는|문장|설명|뜻)")
         private val explanation = Regex("방법|설명|뜻|어떻게")
         private val lookupEnd = Regex("(있어|있나요|맞췄어|저장됐|알려줘|보여줘|뭐야|언제야)[요?!.\\s]*$")
         private val queryWords = listOf("뭐", "무엇", "언제", "어디", "확인", "조회", "보여")
-        private val calendarRemovals = listOf("캘린더에", "캘린더", "일정으로", "일정에", "일정", "약속으로", "약속", "저장해줘", "저장해 줘", "저장", "추가해줘", "추가해 줘", "추가", "등록해줘", "등록해 줘", "등록", "넣어줘", "넣어 줘", "넣어")
+        private val calendarRemovals = listOf("캘린더에", "캘린더", "일정으로", "일정에", "일정", "약속으로", "약속", "저장해줘", "저장해 줘", "저장", "추가해줘", "추가해 줘", "추가", "등록해줘", "등록해 줘", "등록", "넣어줘", "넣어 줘", "넣어", "잡아줘", "잡아 줘", "잡아", "잡기")
         private val alarmRemovals = listOf("알람", "맞춰줘", "맞춰 줘", "맞춰", "맞추", "설정해줘", "설정해 줘", "설정", "켜줘", "켜 줘", "켜", "등록해줘", "등록", "추가해줘", "추가")
     }
 }

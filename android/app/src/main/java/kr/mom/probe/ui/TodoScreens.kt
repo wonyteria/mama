@@ -360,24 +360,19 @@ fun TodayScreen(
             )
             EmptyCard(emptyTitle, emptyBody)
         }
-        if (overdue.isNotEmpty()) {
-            Eyebrow("기한 지남")
-            overdue.take(5).forEach { task ->
-                TaskRow(task, now, expandedId == task.id, busy, onToggle, onToggleItem,
-                    { expandedId = if (expandedId == it.id) null else it.id },
-                    { snoozeTarget = it }, { editTarget = it }, onExclude)
-            }
-        }
-        if (dueSoon.isNotEmpty()) {
-            Eyebrow("오늘·내일 챙길 일")
-            dueSoon.take(5).forEach { task ->
+        // Quiet top-of-page queue: at most three items, overdue first.
+        // Provenance (출처·근거·상태) stays visible on every TaskRow.
+        val focus = remember(overdue, dueSoon) { (overdue + dueSoon).distinctBy { it.id }.take(3) }
+        if (focus.isNotEmpty()) {
+            Eyebrow("오늘은 이것만")
+            focus.forEach { task ->
                 TaskRow(task, now, expandedId == task.id, busy, onToggle, onToggleItem,
                     { expandedId = if (expandedId == it.id) null else it.id },
                     { snoozeTarget = it }, { editTarget = it }, onExclude)
             }
         }
         if (undated.isNotEmpty()) {
-            Eyebrow("날짜 미정")
+            Eyebrow("나중에 확인")
             undated.take(5).forEach { task ->
                 TaskRow(task, now, expandedId == task.id, busy, onToggle, onToggleItem,
                     { expandedId = if (expandedId == it.id) null else it.id },

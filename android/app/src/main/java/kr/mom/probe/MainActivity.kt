@@ -207,6 +207,7 @@ fun ProbeApp(session: ProbeSession, openAssistant: Boolean = false, initialRecor
         runCatching { kr.mom.probe.calendar.CalendarCommandStore.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
         runCatching { kr.mom.probe.reminder.ExternalAlarmGateway.reset(context) }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
         runCatching { withContext(Dispatchers.IO) { kr.mom.probe.task.AssistantTaskStore.reset(context) } }.onFailure { deleted = false }
+        runCatching { kr.mom.probe.voice.VoiceCaptureStore.reset(context) }.onFailure { deleted = false }
         runCatching { WebsiteSessionManager.clearAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
         runCatching { connectorRepository.deleteAll() }.onSuccess { if (!it) deleted = false }.onFailure { deleted = false }
         runCatching { SourceSyncScheduler.cancelAll(context) }.onFailure { deleted = false }

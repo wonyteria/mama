@@ -154,6 +154,38 @@ class ProbeScreensRenderTest {
     }
 
     @Test
+    fun todayCapsQuietPriorityQueueAtThree() {
+        val overdueTasks = (1..5).map {
+            task(id = "o$it", text = "기한 지난 일 $it", dueAt = NOW - it * 3_600_000L)
+        }
+        render { today(tasks = overdueTasks) }
+        compose.onNodeWithText("오늘은 이것만").performScrollTo().assertIsDisplayed()
+        // At most three priority cards, oldest overdue first — the rest stay
+        // in Todo, not dumped here.
+        compose.onNodeWithText("기한 지난 일 5").assertExists()
+        compose.onNodeWithText("기한 지난 일 4").assertExists()
+        compose.onNodeWithText("기한 지난 일 3").assertExists()
+        compose.onAllNodesWithText("기한 지난 일 1").assertCountEquals(0)
+        compose.onAllNodesWithText("기한 지난 일 2").assertCountEquals(0)
+        screenshot("today-quiet-queue")
+    }
+
+    @Test
+    fun todayKeepsUndatedWorkInTheLaterBucket() {
+        render {
+            today(
+                tasks = listOf(
+                    task(id = "o1", text = "지난 회신 정리", dueAt = NOW - 3_600_000L),
+                    task(id = "u1", text = "언젠가 확인할 일"),
+                ),
+            )
+        }
+        compose.onNodeWithText("오늘은 이것만").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("나중에 확인").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("언젠가 확인할 일").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun todoShowsChecklistProgress() {
         render {
             TodoScreen(
@@ -634,6 +666,7 @@ class ProbeScreensRenderTest {
         completed: Boolean = false,
         sourceNotificationId: String? = null,
         checklist: List<kr.mom.probe.task.TaskChecklistItem> = emptyList(),
+        dueAt: Long? = null,
     ) = kr.mom.probe.task.AssistantTask(
         id = id,
         text = text,
@@ -641,6 +674,7 @@ class ProbeScreensRenderTest {
         createdAt = NOW,
         sourceNotificationId = sourceNotificationId,
         checklist = checklist,
+        dueAt = dueAt,
     )
 
     private fun render(fontScale: Float = 1f, content: @Composable () -> Unit) {

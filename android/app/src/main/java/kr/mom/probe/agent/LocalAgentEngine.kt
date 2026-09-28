@@ -37,6 +37,8 @@ data class LocalAgentReply(
     val proposedDueAt: Long? = null,
     val proposedRemindAt: Long? = null,
     val scheduleCommand: ScheduleCommand? = null,
+    /** Typed classification. Null for legacy chat-style answers; capture sets it. */
+    val intent: AgentIntent? = null,
 )
 
 /**
@@ -122,6 +124,147 @@ class LocalAgentEngine(
             reply
         }
     }
+
+    /**
+     * Classifies a spoken/typed capture into a typed [CapturePlan]. This is
+     * the only classification engine — callers assemble context, show the
+     * preview, and may write only when [CapturePlan.saveable] and after an
+     * explicit user confirm. Nothing here persists or schedules anything.
+     *
+     * Dispositions follow the quiet-capture contract: dated action →
+     * KEEP_TODAY, undated action → REVIEW_LATER, plain note → MEMO_ONLY,
+     * clarification/alarm/unparseable → NEEDS_CONFIRM, question → answered
+     * inline and never stored.
+     */
+    fun capture(rawText: String, context: LocalAgentContext): CapturePlan {
+        val text = AgentIdentity.stripWakeName(rawText).trim().replace(whitespace, " ")
+        if (text.isBlank()) {
+            return CapturePlan(
+                transcript = rawText.trim(),
+                reply = LocalAgentReply("무슨 말인지 듣지 못했어요. 다시 말해주세요."),
+                intent = AgentIntent.MEMO,
+                disposition = CaptureDisposition.NEEDS_CONFIRM,
+                labels = listOf(CaptureLabels.USER_SPOKE, CaptureLabels.NO_SAVE),
+                saveable = false,
+            )
+        }
+
+        val reply = answer(text, context)
+        when (reply.scheduleCommand) {
+            is CalendarCreateCommand -> return plan(
+                text, reply.copy(intent = AgentIntent.CALENDAR), AgentIntent.CALENDAR,
+                CaptureDisposition.KEEP_TODAY,
+                listOf(CaptureLabels.USER_SPOKE, AgentIntent.CALENDAR.label),
+                saveable = true,
+            )
+            is AlarmRequestCommand -> return plan(
+                text, reply.copy(intent = AgentIntent.REMINDER), AgentIntent.REMINDER,
+                CaptureDisposition.NEEDS_CONFIRM,
+                listOf(CaptureLabels.USER_SPOKE, CaptureLabels.EXTERNAL_APP, CaptureLabels.NO_SAVE),
+                saveable = false,
+            )
+            is ScheduleClarification -> return plan(
+                text, reply.copy(intent = AgentIntent.MEMO), AgentIntent.MEMO,
+                CaptureDisposition.NEEDS_CONFIRM,
+                listOf(CaptureLabels.USER_SPOKE, CaptureDisposition.NEEDS_CONFIRM.label),
+                saveable = false,
+            )
+            else -> Unit
+        }
+
+        reply.proposedTask?.let { taskText ->
+            val intent = when {
+                reply.proposedRemindAt != null -> AgentIntent.REMINDER
+                shoppingMarker.containsMatchIn(taskText) -> AgentIntent.SHOPPING
+                else -> AgentIntent.TASK
+            }
+            return plan(
+                text, reply.copy(intent = intent), intent,
+                if (reply.proposedDueAt != null) CaptureDisposition.KEEP_TODAY else CaptureDisposition.REVIEW_LATER,
+                listOfNotNull(
+                    CaptureLabels.USER_SPOKE,
+                    intent.label,
+                    if (reply.proposedDueAt == null) CaptureLabels.NEEDS_DATE else null,
+                ),
+                saveable = true,
+            )
+        }
+
+        obligationProposal(text)?.let { proposed ->
+            val intent = if (shoppingMarker.containsMatchIn(proposed.text)) AgentIntent.SHOPPING else AgentIntent.TASK
+            return plan(
+                text,
+                LocalAgentReply(
+                    message = "‘${proposed.text}’${proposed.dueAt?.let { " (${absoluteDate(it)})" }.orEmpty()}를 이 기기 부탁 목록에 저장할게요.",
+                    proposedTask = proposed.text,
+                    proposedDueAt = proposed.dueAt,
+                    proposedRemindAt = proposed.remindAt,
+                    intent = intent,
+                ),
+                intent,
+                if (proposed.dueAt != null) CaptureDisposition.KEEP_TODAY else CaptureDisposition.REVIEW_LATER,
+                listOfNotNull(
+                    CaptureLabels.USER_SPOKE,
+                    intent.label,
+                    if (proposed.dueAt == null) CaptureLabels.NEEDS_DATE else null,
+                    CaptureLabels.RULE_ESTIMATE,
+                ),
+                saveable = true,
+            )
+        }
+
+        if (looksLikeQuestion(text)) {
+            return plan(
+                text, reply.copy(intent = AgentIntent.QUESTION), AgentIntent.QUESTION,
+                disposition = null,
+                labels = listOf(CaptureLabels.USER_SPOKE, AgentIntent.QUESTION.label, CaptureLabels.NO_SAVE),
+                saveable = false,
+            )
+        }
+
+        return plan(
+            text,
+            reply.copy(
+                message = "‘$text’를 메모로 남길게요. 할 일이나 알림은 만들지 않아요.",
+                intent = AgentIntent.MEMO,
+            ),
+            AgentIntent.MEMO, CaptureDisposition.MEMO_ONLY,
+            listOf(CaptureLabels.USER_SPOKE, AgentIntent.MEMO.label),
+            saveable = true,
+        )
+    }
+
+    private fun plan(
+        transcript: String,
+        reply: LocalAgentReply,
+        intent: AgentIntent,
+        disposition: CaptureDisposition?,
+        labels: List<String>,
+        saveable: Boolean,
+    ): CapturePlan = CapturePlan(
+        transcript = transcript,
+        reply = reply, intent = intent, disposition = disposition,
+        labels = labels, saveable = saveable,
+    )
+
+    /**
+     * Obligation statements without a command verb — "금요일까지 체육복 사야 돼"
+     * — still become task *candidates*, but carry the rule-estimate label so
+     * the preview is honest about how the interpretation was derived.
+     */
+    private fun obligationProposal(text: String): ProposedTask? {
+        if (interrogative.containsMatchIn(text)) return null
+        if (!obligationMarker.containsMatchIn(text)) return null
+        val normalized = text.take(MAX_PROPOSED_TASK_LENGTH).trim()
+        if (normalized.isBlank()) return null
+        val dueAt = resolveCommandDue(normalized)
+        return ProposedTask(normalized, dueAt, null)
+    }
+
+    private fun looksLikeQuestion(text: String): Boolean =
+        asksCapabilities(text) || asksPendingTasks(text) || asksRecentNotifications(text) ||
+            asksAgenda(text) || asksApplicability(text) || asksActionCandidates(text) ||
+            interrogative.containsMatchIn(text) || questionTail.containsMatchIn(text)
 
     private fun proposedTask(question: String): ProposedTask? {
         val match = taskCommand.matchEntire(question) ?: return null
@@ -366,6 +509,11 @@ class LocalAgentEngine(
         private val taskListPrefix = Regex("^(?:부탁(?:\\s*목록)?|할\\s*일|준비물)(?:에|으로)?\\s+")
         private val interrogative = Regex("(?:뭐|무엇|어떤|언제|어디|누구|왜|어떻게)(?:를|을|가|이|야|지|죠|요)?(?:\\s|$)")
         private val capabilityQuestion = Regex("뭘?\\s*할\\s*수|무엇을\\s*할\\s*수|도와줄\\s*수|사용법|어떻게\\s*써")
+        private val obligationMarker = Regex(
+            "해야\\s*(?:돼|해|지|함)|사야\\s*(?:돼|해)|챙겨야|내야\\s*(?:돼|해)|납부해야|제출해야|신청해야|준비해야|가져가야|알아봐야|확인해야|해야\\s*할\\s*(?:거|것)",
+        )
+        private val shoppingMarker = Regex("사야\\s*(?:돼|해)|사\\s*줘|사다|구매|장보|주문|사러\\s*가")
+        private val questionTail = Regex("""[?？]\s*$|(?:뭐야|뭐냐|뭐지|있어\??|있니|없니|누구야|언제야|어디야)\s*[?？]?\s*$""")
         private val taskQuestion = Regex("부탁|할\\s*일|해야\\s*할\\s*일|기억한|기억해\\s*둔")
         private val recentNotificationQuestion = Regex("최근|새(?:로운)?\\s*알림|무슨\\s*알림|받은\\s*알림|공지\\s*(?:보여|알려)")
         private val agendaQuestion = Regex("일정|행사|학사")

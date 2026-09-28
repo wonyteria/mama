@@ -191,6 +191,20 @@ listening, no audio-file persistence. Any write (task, reminder, calendar,
 capture record) requires explicit user confirmation of the previewed
 transcript first.
 
+Quiet capture (inspired by KUU, translated for MAMA — not copied): every
+spoken utterance lands in exactly one quiet bucket shown on the preview —
+오늘 챙길 일, 나중에 확인, 메모만, 엄마 확인 필요, or 내려놓기/저장 안 함.
+Not every thought becomes a task: questions are answered inline and stored
+as nothing, plain reflections stay memo-only, and ambiguous or externally
+effecting requests (alarms, unparseable dates) stop at 엄마 확인 필요 until
+the parent confirms. The confirmed transcript is kept as text under the
+existing encrypted store (bounded retention, cleared by delete-all) so prior
+utterances can be reviewed — audio itself is never written. Every preview
+and Today card carries its provenance label (엄마가 직접 말함, 학교 공지에서
+확인, 날짜 확인 필요, AI/규칙 추정) so a parent can always tell what Ravi
+knows from what it guessed. Today shows a calm 오늘은 이것만 queue of at
+most three items rather than a quadrant grid.
+
 - Backgrounds: neutral warm surfaces with strong text contrast.
 - Primary accent: calm green or teal for safe/complete states.
 - Warning: amber for attention; red only for overdue, destructive, or true errors.

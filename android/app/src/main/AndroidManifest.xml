@@ -44,6 +44,19 @@
         <activity android:name=".reminder.TaskAlarmActivity" android:exported="false" />
         <activity android:name=".task.AssistantTasksActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".voice.VoiceQuickCaptureActivity" android:exported="false" android:theme="@style/Theme.MomProbe.VoiceCapture" />
+        <service
+            android:name=".service.VoiceCaptureTileService"
+            android:exported="true"
+            android:icon="@drawable/assistant_widget_rabbit"
+            android:label="라비 말하기"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="false" />
+        </service>
         <receiver android:name=".reminder.BriefingReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

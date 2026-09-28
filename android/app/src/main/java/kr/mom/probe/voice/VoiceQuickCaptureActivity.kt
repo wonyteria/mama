@@ -51,7 +51,18 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import kr.mom.probe.agent.AgentIdentity
+import kr.mom.probe.agent.AgentIntent
+import kr.mom.probe.agent.CapturePlan
+import kr.mom.probe.agent.CaptureDisposition
+import kr.mom.probe.agent.LocalAgentContext
+import kr.mom.probe.agent.LocalAgentEngine
+import kr.mom.probe.data.NoticeDecisionEngine
+import kr.mom.probe.data.NoticeGrouping
+import kr.mom.probe.data.ProbeRepository
+import kr.mom.probe.task.AssistantTaskStore
 import kr.mom.probe.ui.AgentMascot
 import kr.mom.probe.ui.AgentMascotState
 import kr.mom.probe.ui.Clay
@@ -60,21 +71,25 @@ import kr.mom.probe.ui.minTouchTarget
 
 /**
  * Structured local voice capture entry point. Non-exported, explicit
- * intent only (widget/home/tile callers arrive in later stages).
+ * intent only (widget/home/tile callers arrive through [intent]).
  *
  * Guarantees: nothing listens on create/resume/recreate; RECORD_AUDIO is
  * requested only after an explicit mic tap; rotation or destruction cancels
  * and destroys the session. No audio is ever stored — the transcript is
- * memory-only and Stage 4 decides what happens to it after user confirm.
+ * memory-only until the parent explicitly confirms the preview card.
+ * Saves route through [VoiceCaptureSaver]; nothing writes on question,
+ * clarification, or discard paths.
  */
 class VoiceQuickCaptureActivity : ComponentActivity() {
 
     private lateinit var controller: VoiceCaptureController
     private var captureState by mutableStateOf(VoiceCaptureState.IDLE)
     private var transcript by mutableStateOf("")
+    private var plan by mutableStateOf<CapturePlan?>(null)
     private var errorText by mutableStateOf<String?>(null)
     private var needsFallbackConsent by mutableStateOf(false)
     private var permissionDenied by mutableStateOf(false)
+    private var captureId = VoiceCaptureStore.newCaptureId()
 
     private val micPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -99,27 +114,55 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
         controller = VoiceCaptureController {
             (factoryOverride ?: ::SystemSpeechRecognizerFactory)(this)
         }
+        controller.classifier = classifier@{ text ->
+            (classifierOverride?.invoke(this, text)) ?: runCatching {
+                LocalAgentEngine().capture(text, buildContext())
+            }.getOrNull()
+        }
         controller.onChanged = {
             captureState = controller.state
             transcript = controller.transcript
+            plan = controller.plan
             errorText = controller.errorText
             needsFallbackConsent = controller.needsFallbackConsent
+        }
+        // Pre-warm the stores off the main thread so classification/saving
+        // see loaded state; missing consent fails the write path honestly.
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { AssistantTaskStore.get(this@VoiceQuickCaptureActivity).load() }
+            runCatching { VoiceCaptureStore.get(this@VoiceQuickCaptureActivity).load() }
         }
         setContent {
             MomTheme {
                 VoiceCaptureScreen(
                     state = captureState,
                     transcript = transcript,
+                    plan = plan,
                     errorText = errorText,
                     permissionDenied = permissionDenied,
                     needsFallbackConsent = needsFallbackConsent,
                     onMicTap = ::onMicTap,
                     onConsentContinue = { controller.onFallbackConsent(true) },
                     onConsentCancel = { controller.onFallbackConsent(false) },
+                    onSave = ::onSave,
+                    onSaveMemo = { controller.convertToMemo() },
+                    onDiscard = { controller.discard() },
                     onClose = ::finish,
                 )
             }
         }
+    }
+
+    private fun buildContext(): LocalAgentContext {
+        val repository = ProbeRepository.get(this)
+        val settings = repository.settings.value
+        return LocalAgentContext(
+            childName = settings.childName,
+            notifications = repository.records.value,
+            tasks = AssistantTaskStore.get(this).tasks.value,
+            childProfile = NoticeDecisionEngine.childProfile(settings),
+            institution = NoticeGrouping.institution(settings),
+        )
     }
 
     private fun onMicTap() {
@@ -129,10 +172,26 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
             permissionDenied = false
             when (captureState) {
                 VoiceCaptureState.LISTENING -> controller.stopCapture()
-                else -> controller.startCapture()
+                VoiceCaptureState.SAVING, VoiceCaptureState.THINKING -> Unit
+                else -> {
+                    captureId = VoiceCaptureStore.newCaptureId()
+                    controller.startCapture()
+                }
             }
         } else {
             micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    private fun onSave() {
+        val current = plan ?: return
+        if (!controller.requestSave()) return
+        val saver = saverOverride ?: LocalVoiceCaptureSaver(this)
+        lifecycleScope.launch {
+            when (val result = saver.save(current, transcript, captureId)) {
+                VoiceSaveResult.Saved -> controller.finishSave(true)
+                is VoiceSaveResult.Failed -> controller.finishSave(false, result.message)
+            }
         }
     }
 
@@ -142,20 +201,24 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
     }
 
     companion object {
-        /** Stable explicit-intent contract for future widget/home/tile entry. */
+        /** Stable explicit-intent contract for widget/home/tile entry. */
         fun intent(context: Context): Intent =
             Intent(context, VoiceQuickCaptureActivity::class.java)
 
         /** Test seam: unit/Robolectric tests swap in a fake factory. */
         var factoryOverride: ((Context) -> SpeechRecognizerFactory)? = null
+        /** Test seam: replaces LocalAgentEngine classification. */
+        var classifierOverride: ((Context, String) -> CapturePlan?)? = null
+        /** Test seam: replaces the durable write. */
+        var saverOverride: VoiceCaptureSaver? = null
     }
 }
 
 private fun mascotFor(state: VoiceCaptureState): AgentMascotState = when (state) {
     VoiceCaptureState.IDLE -> AgentMascotState.IDLE
     VoiceCaptureState.LISTENING -> AgentMascotState.LISTENING
-    VoiceCaptureState.THINKING -> AgentMascotState.THINKING
-    VoiceCaptureState.DONE -> AgentMascotState.DONE
+    VoiceCaptureState.THINKING, VoiceCaptureState.SAVING -> AgentMascotState.THINKING
+    VoiceCaptureState.DONE, VoiceCaptureState.SAVED -> AgentMascotState.DONE
     VoiceCaptureState.ERROR -> AgentMascotState.NEW_INFO
 }
 
@@ -165,18 +228,24 @@ private fun headlineFor(state: VoiceCaptureState): String = when (state) {
     VoiceCaptureState.THINKING -> "정리하고 있어요"
     VoiceCaptureState.DONE -> "이렇게 들었어요"
     VoiceCaptureState.ERROR -> "다시 시도해 주세요"
+    VoiceCaptureState.SAVING -> "저장하고 있어요"
+    VoiceCaptureState.SAVED -> "저장했어요"
 }
 
 @Composable
 internal fun VoiceCaptureScreen(
     state: VoiceCaptureState,
     transcript: String,
+    plan: CapturePlan?,
     errorText: String?,
     permissionDenied: Boolean,
     needsFallbackConsent: Boolean,
     onMicTap: () -> Unit,
     onConsentContinue: () -> Unit,
     onConsentCancel: () -> Unit,
+    onSave: () -> Unit,
+    onSaveMemo: () -> Unit,
+    onDiscard: () -> Unit,
     onClose: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(Clay.Background)) {
@@ -205,7 +274,10 @@ internal fun VoiceCaptureScreen(
             when {
                 permissionDenied -> PermissionDeniedBody(onMicTap)
                 needsFallbackConsent -> FallbackConsentBody(onConsentContinue, onConsentCancel)
-                else -> CaptureBody(state, transcript, errorText, onMicTap)
+                else -> CaptureBody(
+                    state, transcript, plan, errorText,
+                    onMicTap, onSave, onSaveMemo, onDiscard,
+                )
             }
             Spacer(Modifier.height(20.dp))
             TextButton(onClick = onClose, modifier = Modifier.minTouchTarget()) {
@@ -257,25 +329,17 @@ private fun FallbackConsentBody(onContinue: () -> Unit, onCancel: () -> Unit) {
 private fun CaptureBody(
     state: VoiceCaptureState,
     transcript: String,
+    plan: CapturePlan?,
     errorText: String?,
     onMicTap: () -> Unit,
+    onSave: () -> Unit,
+    onSaveMemo: () -> Unit,
+    onDiscard: () -> Unit,
 ) {
-    if (state == VoiceCaptureState.DONE) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Clay.Paper),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(Modifier.padding(16.dp)) {
-                Text(transcript, style = MaterialTheme.typography.bodyLarge, color = Clay.Ink)
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "아직 저장하거나 실행하지 않았어요.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Clay.Muted,
-                )
-            }
-        }
+    if (state == VoiceCaptureState.DONE || state == VoiceCaptureState.SAVING ||
+        state == VoiceCaptureState.SAVED
+    ) {
+        ResultCard(transcript, plan, state, errorText)
         Spacer(Modifier.height(14.dp))
     }
     if (state == VoiceCaptureState.ERROR && errorText != null) {
@@ -297,20 +361,111 @@ private fun CaptureBody(
         Spacer(Modifier.height(14.dp))
     }
     MicButton(state = state, onMicTap = onMicTap)
-    if (state == VoiceCaptureState.DONE) {
+    if (state == VoiceCaptureState.IDLE) {
+        Spacer(Modifier.height(10.dp))
         Text(
-            "마이크를 다시 누르면 새로 말할 수 있어요.",
+            "말한 내용은 확인 전까지 어디에도 저장되지 않아요.",
             style = MaterialTheme.typography.bodySmall,
             color = Clay.Muted,
             textAlign = TextAlign.Center,
         )
+    }
+    if (state == VoiceCaptureState.DONE) {
+        Spacer(Modifier.height(12.dp))
+        DoneActions(plan, onSave, onSaveMemo, onDiscard)
+    }
+}
+
+@Composable
+private fun ResultCard(
+    transcript: String,
+    plan: CapturePlan?,
+    state: VoiceCaptureState,
+    errorText: String?,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Clay.Paper),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().testTag("voice-result-card"),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(transcript, style = MaterialTheme.typography.bodyLarge, color = Clay.Ink)
+            if (plan != null) {
+                if (plan.labels.isNotEmpty() || plan.disposition != null) {
+                    Text(
+                        (listOfNotNull(plan.disposition?.label) + plan.labels).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Clay.Muted,
+                    )
+                }
+                if (plan.reply.message.isNotBlank()) {
+                    Text(
+                        plan.reply.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (plan.intent == AgentIntent.QUESTION) Clay.Ink else Clay.Muted,
+                    )
+                }
+            } else {
+                Text("분류를 확인하지 못했어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+            }
+            when (state) {
+                VoiceCaptureState.DONE -> Text(
+                    if (plan?.saveable == true) "확인하면 저장해요. 지금은 아직 아무것도 쓰지 않았어요."
+                    else "이 내용은 확인 없이 저장하지 않아요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Clay.Muted,
+                )
+                VoiceCaptureState.SAVING -> Text(
+                    "저장하고 있어요…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Clay.Muted,
+                )
+                VoiceCaptureState.SAVED -> Text(
+                    "저장했어요. 부탁 목록에서 확인할 수 있어요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Clay.Green,
+                )
+                else -> Unit
+            }
+            errorText?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = Clay.Error)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DoneActions(
+    plan: CapturePlan?,
+    onSave: () -> Unit,
+    onSaveMemo: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (plan != null && plan.saveable && plan.intent != AgentIntent.QUESTION) {
+            Button(
+                onClick = onSave,
+                modifier = Modifier.minTouchTarget().testTag("voice-save"),
+            ) { Text("저장하기") }
+        } else if (plan == null || plan.disposition == CaptureDisposition.NEEDS_CONFIRM) {
+            Button(
+                onClick = onSaveMemo,
+                modifier = Modifier.minTouchTarget().testTag("voice-save-memo"),
+            ) { Text("메모로 저장") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TextButton(
+                onClick = onDiscard,
+                modifier = Modifier.minTouchTarget().testTag("voice-discard"),
+            ) { Text("내려놓기", color = Clay.Muted) }
+        }
     }
 }
 
 @Composable
 private fun MicButton(state: VoiceCaptureState, onMicTap: () -> Unit) {
     val listening = state == VoiceCaptureState.LISTENING
-    val enabled = state != VoiceCaptureState.THINKING
+    val enabled = state != VoiceCaptureState.THINKING && state != VoiceCaptureState.SAVING
     val description = when {
         listening -> "듣는 중 · 누르면 마무리"
         else -> "말하기"

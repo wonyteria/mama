@@ -12,9 +12,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -22,6 +25,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import java.io.File
+import kr.mom.probe.agent.AgentIntent
+import kr.mom.probe.agent.CaptureDisposition
+import kr.mom.probe.agent.CaptureLabels
+import kr.mom.probe.agent.CapturePlan
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -112,6 +119,51 @@ class VoiceQuickCaptureActivityTest {
 
     @After fun tearDown() {
         VoiceQuickCaptureActivity.factoryOverride = null
+        VoiceQuickCaptureActivity.classifierOverride = null
+        VoiceQuickCaptureActivity.saverOverride = null
+    }
+
+    private fun taskPlan(saveable: Boolean = true) = CapturePlan(
+        transcript = "내일 물티슈 챙겨줘",
+        reply = kr.mom.probe.agent.LocalAgentReply(
+            message = "‘내일 물티슈 챙기기’를 이 기기 부탁 목록에 저장할게요.",
+            proposedTask = "내일 물티슈 챙기기",
+            intent = AgentIntent.TASK,
+        ),
+        intent = AgentIntent.TASK,
+        disposition = if (saveable) CaptureDisposition.KEEP_TODAY else CaptureDisposition.NEEDS_CONFIRM,
+        labels = listOf(CaptureLabels.USER_SPOKE, AgentIntent.TASK.label),
+        saveable = saveable,
+    )
+
+    private fun questionPlan() = CapturePlan(
+        transcript = "이번 주 준비물 뭐야?",
+        reply = kr.mom.probe.agent.LocalAgentReply(
+            message = "저장된 알림에서 ‘도시락, 물통’을 찾았어요.",
+            intent = AgentIntent.QUESTION,
+        ),
+        intent = AgentIntent.QUESTION,
+        disposition = null,
+        labels = listOf(CaptureLabels.USER_SPOKE, AgentIntent.QUESTION.label, CaptureLabels.NO_SAVE),
+        saveable = false,
+    )
+
+    private class FakeSaver(var result: VoiceSaveResult = VoiceSaveResult.Saved) : VoiceCaptureSaver {
+        val calls = mutableListOf<Triple<String, String, String>>()
+        override suspend fun save(plan: CapturePlan, transcript: String, captureId: String): VoiceSaveResult {
+            calls += Triple(plan.intent.name, transcript, captureId)
+            return result
+        }
+    }
+
+    private fun listenToResult(result: String) {
+        val adapter = factory.createdOnDevice[0]
+        compose.runOnIdle {
+            adapter.listener!!.onReady()
+            adapter.listener!!.onSpeechEnded()
+            adapter.listener!!.onResult(result)
+        }
+        compose.waitForIdle()
     }
 
     @Test fun `cold create never listens and shows the tap entry point`() {
@@ -169,7 +221,7 @@ class VoiceQuickCaptureActivityTest {
         }
         compose.waitForIdle()
         compose.onNodeWithText("금요일까지 체육복 사야 돼").assertIsDisplayed()
-        compose.onNodeWithText("아직 저장하거나 실행하지 않았어요.").assertIsDisplayed()
+        compose.onNodeWithText("지금은 아직 아무것도 쓰지 않았어요.", substring = true).assertIsDisplayed()
         assertEquals(listOf("setCallback", "start", "destroy"), adapter.events)
     }
 
@@ -233,6 +285,34 @@ class VoiceQuickCaptureActivityTest {
         compose.onNodeWithTag("voice-mic").assertIsDisplayed()
     }
 
+    @Test fun `empty speech result lands in a retryable error`() {
+        launch()
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        compose.runOnIdle {
+            factory.createdOnDevice[0].listener!!.onReady()
+            factory.createdOnDevice[0].listener!!.onError(android.speech.SpeechRecognizer.ERROR_NO_MATCH)
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("알아듣지 못했어요. 다시 말해주세요.").assertIsDisplayed()
+        compose.onNodeWithTag("voice-mic").assertIsEnabled()
+    }
+
+    @Test fun `cancelled recognition lands in error and nothing is written`() {
+        val saver = FakeSaver()
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        compose.runOnIdle {
+            factory.createdOnDevice[0].listener!!.onError(android.speech.SpeechRecognizer.ERROR_CLIENT)
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("음성 인식이 중단됐어요. 다시 시도해 주세요.").assertIsDisplayed()
+        assertEquals(0, saver.calls.size)
+        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
+    }
+
     @Test fun `recreation destroys the session once and does not re-listen`() {
         launch()
         shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
@@ -264,6 +344,120 @@ class VoiceQuickCaptureActivityTest {
         compose.waitForIdle()
         // The new session stayed at its own idle entry — stale text never surfaces.
         compose.onNodeWithText("마이크를 눌러 말해주세요").assertIsDisplayed()
+    }
+
+    @Test fun `done preview shows provenance labels and writes only on explicit confirm`() {
+        val saver = FakeSaver()
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        VoiceQuickCaptureActivity.classifierOverride = { _, text -> taskPlan().copy(transcript = text) }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        listenToResult("내일 물티슈 챙겨줘")
+
+        // Preview is honest: transcript + labels + not-yet-written copy.
+        compose.onNodeWithTag("voice-result-card").assertIsDisplayed()
+        compose.onNodeWithText("엄마가 직접 말함 · 할 일", substring = true).assertExists()
+        compose.onNodeWithText("지금은 아직 아무것도 쓰지 않았어요.", substring = true).assertExists()
+        assertEquals(0, saver.calls.size)
+
+        compose.onNodeWithTag("voice-save").performClick()
+        compose.waitForIdle()
+        ShadowLooper.idleMainLooper()
+        compose.waitForIdle()
+        assertEquals(1, saver.calls.size)
+        compose.onNodeWithText("저장했어요.", substring = true).assertExists()
+    }
+
+    @Test fun `duplicate confirm taps submit exactly once`() {
+        val saver = FakeSaver()
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan() }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        listenToResult("물통 챙겨줘")
+
+        // The write path disappears the instant the save is claimed — there is
+        // no second tap to double-submit.
+        compose.onNodeWithTag("voice-save").performClick()
+        ShadowLooper.idleMainLooper()
+        compose.waitForIdle()
+        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
+        assertEquals(1, saver.calls.size)
+    }
+
+    @Test fun `save failure keeps transcript and offers retry`() {
+        val saver = FakeSaver(VoiceSaveResult.Failed("저장 실패", retryable = true))
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan() }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        listenToResult("물통 챙겨줘")
+
+        compose.onNodeWithTag("voice-save").performClick()
+        ShadowLooper.idleMainLooper()
+        compose.waitForIdle()
+        compose.onNodeWithText("저장 실패").assertIsDisplayed()
+        compose.onNodeWithText("물통 챙겨줘").assertIsDisplayed()
+
+        saver.result = VoiceSaveResult.Saved
+        compose.onNodeWithTag("voice-save").performClick()
+        ShadowLooper.idleMainLooper()
+        compose.waitForIdle()
+        assertEquals(2, saver.calls.size)
+        compose.onNodeWithText("저장했어요.", substring = true).assertExists()
+    }
+
+    @Test fun `question answers inline with no save button`() {
+        val saver = FakeSaver()
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> questionPlan() }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        listenToResult("이번 주 준비물 뭐야?")
+
+        compose.onNodeWithText("저장된 알림에서 ‘도시락, 물통’을 찾았어요.").assertIsDisplayed()
+        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
+        assertEquals(0, saver.calls.size)
+    }
+
+    @Test fun `discard writes nothing and returns to the tap entry`() {
+        val saver = FakeSaver()
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan() }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        listenToResult("물통 챙겨줘")
+
+        compose.onNodeWithTag("voice-discard").performClick()
+        compose.waitForIdle()
+        assertEquals(0, saver.calls.size)
+        compose.onNodeWithText("마이크를 눌러 말해주세요").assertIsDisplayed()
+    }
+
+    @Test fun `unclassifiable capture only writes through the memo opt-in`() {
+        val saver = FakeSaver()
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan(saveable = false) }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        listenToResult("다음주 화요일 3시 상담")
+
+        // No silent write; the only write path is the explicit memo opt-in.
+        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
+        assertEquals(0, saver.calls.size)
+        compose.onNodeWithTag("voice-save-memo").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("voice-save").performClick()
+        ShadowLooper.idleMainLooper()
+        compose.waitForIdle()
+        assertEquals(1, saver.calls.size)
+        assertEquals(AgentIntent.MEMO.name, saver.calls[0].first)
     }
 
     @Test fun `manifest declares RECORD_AUDIO, recognition query, and non-exported activity`() {
@@ -335,11 +529,13 @@ class VoiceCaptureScreenLayoutTest {
                         VoiceCaptureScreen(
                             state = state,
                             transcript = "",
+                            plan = null,
                             errorText = null,
                             permissionDenied = false,
                             needsFallbackConsent = false,
                             onMicTap = {}, onConsentContinue = {},
                             onConsentCancel = {}, onClose = {},
+                            onSave = {}, onSaveMemo = {}, onDiscard = {},
                         )
                     }
                 }

@@ -53,4 +53,22 @@
             android:maxLines="1"
             android:ellipsize="end" />
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/assistant_widget_voice"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:minWidth="48dp"
+        android:minHeight="48dp"
+        android:gravity="center"
+        android:padding="8dp"
+        android:text="@string/assistant_widget_voice_action"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:textColor="#375A3B"
+        android:background="@drawable/assistant_widget_voice_background"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="@string/assistant_widget_voice_accessibility" />
 </LinearLayout>

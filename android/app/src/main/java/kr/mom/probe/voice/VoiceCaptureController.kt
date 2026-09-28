@@ -1,6 +1,7 @@
 package kr.mom.probe.voice
 
 import android.speech.SpeechRecognizer
+import kr.mom.probe.agent.CapturePlan
 
 /**
  * Tap-driven voice capture state machine.
@@ -10,15 +11,17 @@ import android.speech.SpeechRecognizer
  * listening on creation, resume, or recreation — and no hotword,
  * background listening, or audio-file persistence anywhere.
  *
+ * DONE holds a classified [CapturePlan] as a memory-only preview. Writes
+ * happen only through [requestSave] → the caller performs the save and
+ * reports back via [finishSave]; a failed save returns to DONE with the
+ * transcript intact and a retry path. [discard] is the explicit
+ * 내려놓기 path — nothing is ever written for it.
+ *
  * Lifecycle contract: the owning Activity calls [release] exactly once
  * from onDestroy. Every recognizer adapter is destroyed at most once;
  * callbacks from a torn-down or superseded session are ignored.
- *
- * Transcript is memory-only: it is set from partial/final results and
- * cleared on a new capture. Persistence belongs to Stage 4 routing and
- * requires explicit user confirmation.
  */
-enum class VoiceCaptureState { IDLE, LISTENING, THINKING, DONE, ERROR }
+enum class VoiceCaptureState { IDLE, LISTENING, THINKING, DONE, ERROR, SAVING, SAVED }
 
 class VoiceCaptureController(
     factoryProvider: () -> SpeechRecognizerFactory,
@@ -36,14 +39,26 @@ class VoiceCaptureController(
         private set
     var errorText: String? = null
         private set
+    /** Classified preview produced when the final transcript arrives. */
+    var plan: CapturePlan? = null
+        private set
 
     /** True while the generic system RecognitionService needs explicit consent. */
     var needsFallbackConsent: Boolean = false
         private set
 
+    /**
+     * Classification seam — set by the owning component to the single
+     * LocalAgentEngine.capture call. Returning null leaves the transcript
+     * visible without an interpretation.
+     */
+    var classifier: (String) -> CapturePlan? = { null }
+
     private var adapter: RecognizerAdapter? = null
     private var session = 0
     private var released = false
+    /** One in-flight or completed write per capture — duplicate-submit guard. */
+    private var saveClaimed = false
     var onChanged: () -> Unit = {}
 
     /**
@@ -52,9 +67,11 @@ class VoiceCaptureController(
      * instead of silently creating the generic recognizer.
      */
     fun startCapture() {
-        if (released || adapter != null) return
+        if (released || adapter != null || state == VoiceCaptureState.SAVING) return
         transcript = ""
         errorText = null
+        plan = null
+        saveClaimed = false
         needsFallbackConsent = false
         if (!factory.isRecognitionAvailable()) {
             fail("이 기기에서는 음성 인식을 지원하지 않아요.")
@@ -97,6 +114,79 @@ class VoiceCaptureController(
         } catch (t: Throwable) {
             fail("음성 인식을 시작하지 못했어요. 다시 시도해 주세요.")
         }
+    }
+
+    /**
+     * Explicit save request from the preview card. Fires at most once per
+     * capture — the caller reports the outcome through [finishSave].
+     */
+    fun requestSave(): Boolean {
+        if (released || state != VoiceCaptureState.DONE || saveClaimed) return false
+        if (plan?.saveable != true) return false
+        saveClaimed = true
+        errorText = null
+        state = VoiceCaptureState.SAVING
+        onChanged()
+        return true
+    }
+
+    /** Caller reports the write result; failure keeps the transcript for retry. */
+    fun finishSave(success: Boolean, message: String? = null) {
+        if (state != VoiceCaptureState.SAVING) return
+        if (success) {
+            state = VoiceCaptureState.SAVED
+            errorText = null
+        } else {
+            saveClaimed = false
+            state = VoiceCaptureState.DONE
+            errorText = message ?: "저장하지 못했어요. 다시 시도해 주세요."
+        }
+        onChanged()
+    }
+
+    /**
+     * Lets the parent explicitly keep an unclassifiable capture as a memo —
+     * the only write path out of NEEDS_CONFIRM, and still user-initiated.
+     */
+    fun convertToMemo() {
+        if (state != VoiceCaptureState.DONE) return
+        val current = plan
+        if (current?.saveable == true) return
+        val base = current ?: CapturePlan(
+            transcript = transcript,
+            reply = kr.mom.probe.agent.LocalAgentReply(""),
+            intent = kr.mom.probe.agent.AgentIntent.MEMO,
+            disposition = null,
+            labels = emptyList(),
+            saveable = false,
+        )
+        plan = base.copy(
+            intent = kr.mom.probe.agent.AgentIntent.MEMO,
+            disposition = kr.mom.probe.agent.CaptureDisposition.MEMO_ONLY,
+            reply = base.reply.copy(
+                proposedTask = base.transcript.ifBlank { transcript },
+                proposedDueAt = null,
+                proposedRemindAt = null,
+                scheduleCommand = null,
+                intent = kr.mom.probe.agent.AgentIntent.MEMO,
+            ),
+            labels = (base.labels - kr.mom.probe.agent.CaptureLabels.NO_SAVE) +
+                kr.mom.probe.agent.AgentIntent.MEMO.label,
+            saveable = true,
+        )
+        onChanged()
+    }
+
+    /** Explicit 내려놓기 — the preview is dropped and nothing is written. */
+    fun discard() {
+        if (released) return
+        transcript = ""
+        plan = null
+        errorText = null
+        saveClaimed = false
+        needsFallbackConsent = false
+        state = VoiceCaptureState.IDLE
+        onChanged()
     }
 
     /** Cancel/timeout from the user (e.g. 화면 닫기 중 청취 취소). */
@@ -145,6 +235,7 @@ class VoiceCaptureController(
                     if (transcript.isBlank()) {
                         fail("알아듣지 못했어요. 다시 말해주세요.")
                     } else {
+                        plan = runCatching { classifier(transcript) }.getOrNull()
                         state = VoiceCaptureState.DONE
                         onChanged()
                     }

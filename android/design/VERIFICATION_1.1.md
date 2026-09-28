@@ -15,6 +15,20 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
   - `Debug signing is never used for release builds.`
 - release `BuildConfig.java`에 `NEIS_API_KEY` 필드가 없다(grep 0건). APK에 운영 비밀 키를 싣지 않는다.
 
+## 조용한 음성 캡처·오늘 큐 (자동, 이번 사이클)
+
+`8083878`(탭 기반 음성 캡처) 이후 Stage 4/5 — KUU의 "말하기 우선·모든 말을 할 일로 만들지 않음"을 MAMA 정책으로 번역했다(4분면 격자·ADHD 포지셔닝 복제 아님, 근거/확인 중심 유지).
+
+- fresh clean `testDebugUnitTest` XML 합계: **tests=373, pass=371, skipped=2, failures=0, errors=0**. lint **오류 0 / 경고 100**(신규 파일 경고 3건 — StaticFieldLeak·UseKtx는 AssistantTaskStore 등 기존 싱글톤과 동일 패턴). debug·androidTest APK 조립 성공.
+- 발화 분류: `LocalAgentEngine.capture()`가 MEMO/TASK/REMINDER/CALENDAR/SHOPPING/QUESTION으로 분류하고 preview는 `오늘 챙길 일`·`나중에 확인`·`메모만`·`엄마 확인 필요`·`내려놓기/저장 안 함` 버킷 중 하나를 표시한다. 질문형은 저장 없이 인라인 답변만, 알람·날짜 불명확·파싱 불가는 확인 없이 쓰지 않는다(`CaptureClassificationTest` 13건).
+- 저장 경로: 미리보기 → 명시 확인 → `VoiceCaptureSaver` → 기존 `AssistantTaskStore`/`CalendarGateway`. 저장 실패 시 transcript+preview 보존·재시도, `captureId` 멱등으로 중복 기록 방지, 내려놓기는 아무것도 쓰지 않는다(`VoiceQuickCaptureActivityTest` 20건 — 권한 거부/재시도·on-device 부재 disclosure·generic 취소·빈 결과·중복 탭·회전·stale callback 포함).
+- `VoiceCaptureStore`: 확인된 발화의 **텍스트만** 기존 ProbeCrypto+SharedPreferences로 최대 200건·14일 보존(`VoiceCaptureStoreTest` — consent 없으면 fail-closed, 오디오를 담을 필드가 없음을 구조로 단언, `reset()`은 delete-all 경로에 연결됨).
+- 위젯: open-Todo와 말하기 액션 PendingIntent를 분리(각각 명시 인텐트·request code 분리), 기본 렌더는 정적 리소스만 — 아이 이름·학교명·구체 할 일 없음(`VoiceEntryPointsTest`). QS Tile은 탭 시에만 `VoiceQuickCaptureActivity`를 명시 인텐트로 연다 — 자동 청취 없음.
+- Today: `오늘은 이것만` 최대 3개 우선 큐 + `나중에 확인` 버킷(Todo 전체 목록은 기존 그대로). `ProbeScreensRenderTest` 26/26 통과(3개 초과 미노출·undated 버킷 분리 포함).
+- 공지 체인: 합성 app/web record → NoticeGrouping → CandidateActionPlanner → applyAutomaticPlansFrom → evidence 첨부 task를 `NoticeCaptureChainTest` 5건으로 검증(같은 공식 문서 재수집 시 중복 없음, 제목만 같은 다른 공식 문서는 분리, 정보성 공지 자동 task 없음, 완료 상태가 resync에 유지). HWP/HWPX·웹 추출 단위 커버리지는 기존 그대로.
+- 에뮬레이터 계측 재실행: `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest` · mama_qa_api35(Android 15) — 권위 XML **tests=28, pass=26, skipped=2, failures=0, errors=0**(skip 2개는 opt-in 공개 fixture). CI 베이스라인과 동일.
+- **NOT_RUN**: 실기기 STT(마이크·RecognitionService 실동작·generic fallback 동의 UX의 실기기 확인), 실제 학교 앱/개인 e알리미 알림 수집, QS Tile의 실제 타일 추가·탭 UX, signed release, 부모 사용성 조사 — 이전과 동일하게 미실행이다.
+
 ## A–N 결함 수정 (자동, 신규)
 
 `android/design/DEFECT_TRACKING_1.1.md`가 수락 기준과 테스트 매핑을 추적한다. 각 항목은 재현 테스트(수정 전 실패) → 최소 수정 → 회귀 검증을 거쳤으며, 커밋 `f16380c`(task/data 계층), `8846640`(UI/activity 계층), `11a9c86`+`7bffff2`+`1e62ab4`+`9e513f4`(기기 QA 안전 경계, 저널 내구성, cold-start replay, 알림 조회 실패 hard-fail)에 나뉘어 있다. 요약:
