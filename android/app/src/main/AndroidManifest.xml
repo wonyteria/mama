@@ -7,8 +7,10 @@
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <queries>
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
         <intent><action android:name="android.intent.action.SET_ALARM" /></intent>
         <intent>
             <action android:name="android.intent.action.INSERT" />
@@ -41,6 +43,7 @@
         <activity android:name=".reminder.BriefingActivity" android:exported="false" />
         <activity android:name=".reminder.TaskAlarmActivity" android:exported="false" />
         <activity android:name=".task.AssistantTasksActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".voice.VoiceQuickCaptureActivity" android:exported="false" android:theme="@style/Theme.MomProbe.VoiceCapture" />
         <receiver android:name=".reminder.BriefingReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

@@ -8,4 +8,8 @@
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher</item>
         <item name="android:windowBackground">#F6F4F0</item>
     </style>
+    <style name="Theme.MomProbe.VoiceCapture" parent="android:style/Theme.Material.Light.Dialog.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowMinWidthMajor">60%</item>
+    </style>
 </resources>
