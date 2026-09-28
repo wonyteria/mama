@@ -47,6 +47,7 @@ object Clay {
     val Muted = Color(0xFF60756C)
     val Green = Color(0xFF326D5E)
     val Sage = Color(0xFFDDEDE2)
+    val Sky = Color(0xFFDCE9F2)
     val Peach = Color(0xFFF7D5C6)
     val Coral = Color(0xFFE96361)
     val CoralDark = Color(0xFFB93F42)

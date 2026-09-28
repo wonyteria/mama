@@ -392,10 +392,11 @@ private fun ResultCard(
             Text(transcript, style = MaterialTheme.typography.bodyLarge, color = Clay.Ink)
             if (plan != null) {
                 if (plan.labels.isNotEmpty() || plan.disposition != null) {
+                    // Provenance stays high-contrast — never a pastel hint.
                     Text(
                         (listOfNotNull(plan.disposition?.label) + plan.labels).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Clay.Muted,
+                        color = Clay.Green,
                     )
                 }
                 if (plan.reply.message.isNotBlank()) {

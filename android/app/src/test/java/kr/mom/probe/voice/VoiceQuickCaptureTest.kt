@@ -46,6 +46,7 @@ private class FakeAdapter : RecognizerAdapter {
     val events = mutableListOf<String>()
     var listener: VoiceRecognizerCallback? = null
     var destroyedCount = 0
+    var startThrows: Throwable? = null
 
     private fun record(name: String) {
         check(Looper.myLooper() == Looper.getMainLooper()) { "$name called off main thread" }
@@ -58,6 +59,7 @@ private class FakeAdapter : RecognizerAdapter {
     override fun start() {
         record("start")
         checkNotNull(listener) { "listener must be installed before start" }
+        startThrows?.let { throw it }
     }
     override fun stop() = record("stop")
     override fun cancel() = record("cancel")
@@ -70,13 +72,15 @@ private class FakeFactory(
     var throwOnOnDeviceCreate: Throwable? = null,
     var throwOnGenericCreate: Throwable? = null,
 ) : SpeechRecognizerFactory {
+    /** When set, every on-device adapter created afterwards throws on start. */
+    var onDeviceStartThrows: Throwable? = null
     val createdOnDevice = mutableListOf<FakeAdapter>()
     val createdGeneric = mutableListOf<FakeAdapter>()
     override fun isRecognitionAvailable() = recognitionAvailable
     override fun isOnDeviceAvailable() = onDeviceAvailable
     override fun createOnDevice(): RecognizerAdapter {
         throwOnOnDeviceCreate?.let { throw it }
-        return FakeAdapter().also { createdOnDevice += it }
+        return FakeAdapter().also { it.startThrows = onDeviceStartThrows; createdOnDevice += it }
     }
     override fun createGeneric(): RecognizerAdapter {
         throwOnGenericCreate?.let { throw it }
@@ -311,6 +315,39 @@ class VoiceQuickCaptureActivityTest {
         compose.onNodeWithText("음성 인식이 중단됐어요. 다시 시도해 주세요.").assertIsDisplayed()
         assertEquals(0, saver.calls.size)
         compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
+    }
+
+    @Test fun `stop capture lands in THINKING even when the recognizer never calls back`() {
+        launch()
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        compose.onNodeWithTag("voice-headline").assert(hasText("듣고 있어요"))
+
+        // Second tap ends the capture — and no callback ever arrives.
+        tapMic()
+        compose.onNodeWithTag("voice-headline").assert(hasText("정리하고 있어요"))
+        val adapter = factory.createdOnDevice[0]
+        assertEquals(listOf("setCallback", "start", "stop"), adapter.events)
+        compose.onNodeWithTag("voice-mic").assertIsNotEnabled()
+    }
+
+    @Test fun `adapter start failure restores idle so a cancelled disclosure still retries`() {
+        launch()
+        factory.onDeviceStartThrows = RuntimeException("start failed")
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+
+        // Disclosure is up, and the session is back at IDLE — not stuck in LISTENING.
+        compose.onNodeWithTag("voice-headline").assert(hasText("마이크를 눌러 말해주세요"))
+        compose.onNodeWithTag("voice-consent-cancel").performClick()
+        compose.waitForIdle()
+
+        // A later tap retries cleanly: fix the adapter, tap again, LISTENING.
+        factory.onDeviceStartThrows = null
+        tapMic()
+        compose.onNodeWithTag("voice-headline").assert(hasText("듣고 있어요"))
+        assertEquals(listOf("setCallback", "start"), factory.createdOnDevice[1].events)
+        assertEquals(listOf("setCallback", "start", "destroy"), factory.createdOnDevice[0].events)
     }
 
     @Test fun `recreation destroys the session once and does not re-listen`() {

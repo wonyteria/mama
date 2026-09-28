@@ -28,9 +28,11 @@ class NoticeCaptureChainTest {
         itemId: String? = null,
         notificationKey: String = "key-${title}",
         postedAt: Long = now,
+        packageName: String = "kr.test.school",
+        appLabel: String = "학교",
     ) = ProbeRecord(
         id = "id-$title-$itemId-$postedAt",
-        packageName = "kr.test.school", appLabel = "학교",
+        packageName = packageName, appLabel = appLabel,
         postedAt = postedAt, receivedAt = postedAt,
         title = title, text = text, bigText = "", textLines = emptyList(),
         subText = null, summaryText = null, category = null, channelId = null,
@@ -117,11 +119,82 @@ class NoticeCaptureChainTest {
         assertTrue(afterSecond.size > afterFirst.size)
     }
 
+    @Test fun `identical text on different official documents still stays separate`() {
+        // Same fingerprint, disjoint official ids — the fingerprint alone
+        // must never merge two distinct school notices.
+        val a = record("체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
+            itemId = "42", notificationKey = "n-42")
+        val b = record("체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
+            itemId = "77", notificationKey = "n-77")
+
+        val (afterA, _) = apply(a, emptyList())
+        val (afterB, _) = apply(b, afterA)
+        assertTrue(afterB.size > afterA.size)
+    }
+
     @Test fun `informational notice produces no automatic task`() {
         val notice = record("학교 소식", "다음 주 화요일은 개교기념일로 쉬는 날입니다.", itemId = "9")
         assertTrue(CandidateActionPlanner.plans(notice, now = now).isEmpty())
         val (tasks, _) = apply(notice, emptyList())
         assertTrue(tasks.isEmpty())
+    }
+
+    @Test fun `every allowlisted source app chains to an evidence-linked task`() {
+        // The five shipped allowlist identities — pinned against the catalog
+        // so a package rename fails here rather than silently in production.
+        val sources = listOf(
+            "com.schoolbell_e.schoolbell_e" to "학교종이",
+            "com.ewut.allealimi" to "e알리미",
+            "com.iscreammedia.app.hiclass.android" to "하이클래스",
+            "com.vaultmicro.kidsnote" to "키즈노트",
+            "com.classnote.android.release" to "클래스노트",
+        )
+        val catalog = kr.mom.probe.ui.SourceCatalog.candidates.map { it.packageName }
+        sources.forEach { (pkg, label) ->
+            assertTrue("catalog missing $label", pkg in catalog)
+        }
+
+        sources.forEachIndexed { index, (pkg, label) ->
+            val notice = record(
+                "체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
+                itemId = "item-$index", notificationKey = "n-$index",
+                packageName = pkg, appLabel = label,
+            )
+            val plans = CandidateActionPlanner.plans(notice, now = now)
+            assertTrue("$label: no candidate plan", plans.isNotEmpty())
+
+            val (tasks, _) = apply(notice, emptyList())
+            assertTrue("$label: no task created", tasks.isNotEmpty())
+            val task = tasks.first()
+            assertEquals("$label: app label lost", label, task.sourceLabel)
+            assertTrue("$label: evidence missing", !task.evidenceText.isNullOrBlank())
+            assertTrue("$label: group keys missing", task.noticeGroupKeys.isNotEmpty())
+        }
+    }
+
+    @Test fun `scope-mismatched notice is never promoted into the task chain`() {
+        // A notice declared for 5–6th grade must stay in history/evidence —
+        // the coordinator suspends rather than creating a task for a
+        // 2nd-grade child. The unit-level pin: the decision marks it
+        // ineligible and its group keys stay intact.
+        val outOfScope = record(
+            "체험학습 안내", "준비물: 도시락. 내일 오전 9시까지",
+            itemId = "55",
+        ).let { r ->
+            r.copy(sourceMetadata = r.sourceMetadata!!.copy(
+                audienceFacts = listOf(kr.mom.probe.sync.SourceAudienceFact(
+                    applicability = kr.mom.probe.data.NoticeApplicability.APPLIES,
+                    schoolLevel = kr.mom.probe.data.SchoolLevel.ELEMENTARY,
+                    gradeStart = 5, gradeEnd = 6,
+                    evidence = kr.mom.probe.sync.SourceEvidence("html", "5~6학년 대상"),
+                )),
+            ))
+        }
+        val secondGrade = ChildNoticeProfile(schoolLevel = kr.mom.probe.data.SchoolLevel.ELEMENTARY, grade = 2)
+        val decision = kr.mom.probe.data.NoticeDecisionEngine.decide(outOfScope, secondGrade)
+        assertEquals(kr.mom.probe.data.NoticeApplicability.INELIGIBLE, decision.applicability)
+        // History/evidence identity is preserved even though no task may form.
+        assertTrue(kr.mom.probe.data.NoticeGrouping.keys(outOfScope, "").isNotEmpty())
     }
 
     @Test fun `completion survives a resync of the same source`() {

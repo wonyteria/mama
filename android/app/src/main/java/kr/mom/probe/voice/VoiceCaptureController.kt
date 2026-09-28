@@ -89,12 +89,18 @@ class VoiceCaptureController(
         onChanged()
     }
 
-    /** Second tap while listening ends capture early and moves to THINKING. */
+    /**
+     * Second tap while listening ends capture early. The state moves to
+     * THINKING immediately — a recognizer that never calls back must not
+     * leave the session stuck in LISTENING.
+     */
     fun stopCapture() {
         val a = adapter ?: return
         if (state != VoiceCaptureState.LISTENING) return
         try {
             a.stop()
+            state = VoiceCaptureState.THINKING
+            onChanged()
         } catch (t: Throwable) {
             teardown(a)
             fail("음성 인식이 중단됐어요. 다시 시도해 주세요.")
@@ -251,11 +257,18 @@ class VoiceCaptureController(
                     )
                 }
             })
-            state = VoiceCaptureState.LISTENING
             a.start()
-            onChanged()
+            // A callback may have already run (or torn the session down)
+            // inside start() — only mark LISTENING if it is still ours.
+            if (adapter === a) {
+                state = VoiceCaptureState.LISTENING
+                onChanged()
+            }
         } catch (t: Throwable) {
+            // Restore IDLE so a failed start leaves a clean retry path —
+            // callers decide between disclosure and an error state.
             teardown(a)
+            state = VoiceCaptureState.IDLE
             throw t
         }
     }

@@ -384,14 +384,16 @@ fun TodayScreen(
                 Text("할 일 모두 보기  ›")
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            BentoCard(Modifier.weight(1f).clickable(role = Role.Button, onClick = onOpenNews), Clay.Sage) {
+        // Single-column attention stack: side-by-side bento would break at
+        // 360dp/200% text, so the two summary cards stack full-width.
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            BentoCard(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onOpenNews), Clay.Sage) {
                 Text("새 소식", color = Clay.Green, style = MaterialTheme.typography.bodySmall)
                 Text("${unreadCount}개", style = MaterialTheme.typography.titleLarge)
                 Text(if (unreadCount > 0) "읽지 않은 소식" else "모두 확인했어요", color = Clay.Muted, style = MaterialTheme.typography.bodySmall)
             }
-            BentoCard(Modifier.weight(1f), Clay.Peach) {
-                Text("일정", color = Clay.CoralDark, style = MaterialTheme.typography.bodySmall)
+            BentoCard(Modifier.fillMaxWidth(), Clay.Sky) {
+                Text("일정", color = Clay.Green, style = MaterialTheme.typography.bodySmall)
                 Text("${sourceAgenda.size}개", style = MaterialTheme.typography.titleLarge)
                 Text(
                     sourceAgenda.firstOrNull()?.let { "${briefDate(it.dateIso)} ${it.title}" } ?: "저장된 학교 일정 없음",

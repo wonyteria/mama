@@ -191,8 +191,10 @@ listening, no audio-file persistence. Any write (task, reminder, calendar,
 capture record) requires explicit user confirmation of the previewed
 transcript first.
 
-Quiet capture (inspired by KUU, translated for MAMA — not copied): every
-spoken utterance lands in exactly one quiet bucket shown on the preview —
+Quiet capture (inspired by KUU's calm single-action rhythm, translated for
+MAMA — the four-quadrant grid, ADHD/mental-health positioning, and
+multi-card dashboard layouts are explicitly not adopted): every spoken
+utterance lands in exactly one quiet bucket shown on the preview —
 오늘 챙길 일, 나중에 확인, 메모만, 엄마 확인 필요, or 내려놓기/저장 안 함.
 Not every thought becomes a task: questions are answered inline and stored
 as nothing, plain reflections stay memo-only, and ambiguous or externally
@@ -201,9 +203,30 @@ the parent confirms. The confirmed transcript is kept as text under the
 existing encrypted store (bounded retention, cleared by delete-all) so prior
 utterances can be reviewed — audio itself is never written. Every preview
 and Today card carries its provenance label (엄마가 직접 말함, 학교 공지에서
-확인, 날짜 확인 필요, AI/규칙 추정) so a parent can always tell what Ravi
-knows from what it guessed. Today shows a calm 오늘은 이것만 queue of at
-most three items rather than a quadrant grid.
+확인, 날짜 확인 필요, 규칙 추정) so a parent can always tell what Ravi
+knows from what it guessed.
+
+Organized results are always a single vertical stack of cards in one of
+five canonical buckets — 오늘 처리, 내일·이번 주, 날짜 없음, 확인 필요,
+메모·보류 — never a grid. Today is a single-column attention stack
+(오늘은 이것만 queue of at most three items, then later work); at 360dp
+width, 200% font scale, or landscape, side-by-side bento cards are not
+allowed.
+
+Surfaces are soft sky, cream, or green pastels with strong navy/green
+(ink) text; provenance and state labels must keep strong text contrast —
+low-contrast pastel-on-pastel labels are forbidden.
+
+Every source-backed item carries one honest source state: 본문 확인됨
+(verified body), 알림만 수집 (notification-only), 첨부 확인 필요
+(attachment-only), 대상 아님 (scope mismatch), 인증 필요 (auth required),
+지원 안 함 (unsupported), or 일부 추출 (partial). An attachment-only notice
+may only claim 첨부 본문 확인 필요 — dates, items, and deadlines must
+never be invented. A scope-mismatched notice stays in history/evidence and
+is never promoted to Today or Todo.
+
+The 1.1 scope is one primary child. Folders/topics are a context view over
+canonical items, not a second copy of stored data.
 
 - Backgrounds: neutral warm surfaces with strong text contrast.
 - Primary accent: calm green or teal for safe/complete states.
