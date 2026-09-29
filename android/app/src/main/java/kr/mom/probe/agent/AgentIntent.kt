@@ -96,9 +96,28 @@ data class CaptureClause(
 ) {
     val disposition: CaptureDisposition? get() = dispositionOverride ?: plan.disposition
     val intent: AgentIntent get() = intentOverride ?: plan.intent
+
+    /**
+     * The due time the parent confirmed — tri-state on [dateInput]:
+     * untouched (null) follows the parsed proposal, explicit blank means
+     * deliberately cleared and stays null, a parsed edit wins. Writers must
+     * use this, never `dueAt ?: plan.reply.proposedDueAt`.
+     */
+    val effectiveDueAt: Long?
+        get() = if (dateInput == null) dueAt ?: plan.reply.proposedDueAt else dueAt
+
+    /**
+     * A calendar clause whose start the parent explicitly cleared — an
+     * event cannot exist without a start, so the clause stays non-writable
+     * until the parent enters a date or drops it. Never silently reused.
+     */
+    val calendarMissingStart: Boolean
+        get() = intent == AgentIntent.CALENDAR && dateInput != null && effectiveDueAt == null
+
     /** Writable = kept + saveable + resolved out of the confirm bucket. */
     val writable: Boolean
-        get() = !dropped && !dateParseFailed && (saveableOverride ?: plan.saveable) &&
+        get() = !dropped && !dateParseFailed && !calendarMissingStart &&
+            (saveableOverride ?: plan.saveable) &&
             disposition != null && disposition != CaptureDisposition.NEEDS_CONFIRM
     /** Kept but not yet writable — blocks batch confirmation. */
     val needsReview: Boolean get() = !dropped && !writable

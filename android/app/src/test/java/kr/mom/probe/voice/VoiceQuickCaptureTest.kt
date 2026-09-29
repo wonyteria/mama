@@ -186,7 +186,7 @@ class VoiceQuickCaptureActivityTest {
      * assertions on that tree live in VoiceCaptureScreenLayoutTest).
      */
     private fun listenToResultNoIdle(result: String) {
-        val adapter = factory.createdOnDevice[0]
+        val adapter = factory.createdOnDevice.last()
         compose.runOnIdle {
             adapter.listener!!.onReady()
             adapter.listener!!.onSpeechEnded()
@@ -532,6 +532,39 @@ class VoiceQuickCaptureActivityTest {
         ShadowLooper.idleMainLooper()
         assertEquals(1, saver.calls.size)
         assertEquals(AgentIntent.MEMO, saver.calls.last().clauses.first().intent)
+        assertEquals(VoiceCaptureState.SAVED, c.state)
+    }
+
+    @Test fun `non-retryable failure does not poison the next fresh capture`() {
+        val saver = FakeSaver(VoiceSaveResult.Failed("앱에서 처음 설정을 마쳐주세요.", retryable = false))
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan().toBatch() }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        listenToResultNoIdle("첫 번째 부탁")
+
+        compose.runOnUiThread { compose.activity.onSave() }
+        ShadowLooper.idleMainLooper()
+        val c = compose.activity.captureController!!
+        assertFalse(c.saveRetryable)
+
+        // A brand-new mic capture is a new session — the previous failure's
+        // non-retryable flag must not hide the new saveable preview's save.
+        saver.result = VoiceSaveResult.Saved
+        compose.runOnUiThread { compose.activity.onMicTap() }
+        ShadowLooper.idleMainLooper()
+        listenToResultNoIdle("두 번째 부탁")
+
+        assertEquals(VoiceCaptureState.DONE, c.state)
+        assertTrue(c.saveRetryable)
+        assertTrue(c.batch!!.saveable)
+        compose.runOnUiThread { compose.activity.onSave() }
+        ShadowLooper.idleMainLooper()
+        // Both captures reached the saver — the second carried the fresh
+        // session's transcript, and its save action worked.
+        assertEquals(2, saver.calls.size)
+        assertEquals("두 번째 부탁", saver.transcripts.last())
         assertEquals(VoiceCaptureState.SAVED, c.state)
     }
 

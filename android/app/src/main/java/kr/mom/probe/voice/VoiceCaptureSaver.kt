@@ -93,8 +93,8 @@ class LocalVoiceCaptureSaver(
         require(clause.intent != AgentIntent.MEMO) { "메모는 할 일로 저장하지 않아요." }
         val key = "voice:$captureId:${clause.index}"
         store.tasks.value.firstOrNull { it.sourceNotificationId == key }?.let { return it.id }
-        val text = clause.action ?: clause.plan.reply.proposedTask ?: clause.transcript
-        taskStoreAdd(store, key, text, clause)
+        val spec = taskWriteSpecFor(clause)
+        taskStoreAdd(store, key, spec)
         // addTask returns null when a retry hits the dedup branch — the
         // already-written task is still the durable outcome.
         return store.tasks.value.firstOrNull { it.sourceNotificationId == key }?.id
@@ -103,18 +103,17 @@ class LocalVoiceCaptureSaver(
     private fun taskStoreAdd(
         store: AssistantTaskStore,
         key: String,
-        text: String,
-        clause: CaptureClause,
+        spec: TaskWriteSpec,
     ) {
         try {
             store.addTask(
-                text.ifBlank { clause.transcript },
+                spec.text,
                 sourceNotificationId = key,
-                dueAt = clause.dueAt ?: clause.plan.reply.proposedDueAt,
-                remindAt = clause.remindAt ?: clause.plan.reply.proposedRemindAt,
+                dueAt = spec.dueAt,
+                remindAt = spec.remindAt,
                 sourceKind = kr.mom.probe.task.AssistantTaskSource.USER_LOCAL,
                 actionKind = "voice",
-                evidenceText = "음성 입력: ${clause.transcript.take(300)}",
+                evidenceText = spec.evidenceText,
             )
         } catch (error: Exception) {
             throw CaptureWriteException(
@@ -143,17 +142,48 @@ class LocalVoiceCaptureSaver(
 }
 
 /**
+ * The task values the parent actually confirmed — tri-state date edit:
+ * untouched follows the parsed proposal, an explicit blank clears BOTH
+ * due and remind (a silent leftover alarm would violate what the parent
+ * saw), a parsed edit wins. Pure and testable.
+ */
+internal data class TaskWriteSpec(
+    val text: String,
+    val dueAt: Long?,
+    val remindAt: Long?,
+    val evidenceText: String,
+)
+
+internal fun taskWriteSpecFor(clause: CaptureClause): TaskWriteSpec {
+    val cleared = clause.dateInput?.isBlank() == true
+    val text = (clause.action ?: clause.plan.reply.proposedTask ?: clause.transcript)
+        .ifBlank { clause.transcript }
+    return TaskWriteSpec(
+        text = text,
+        dueAt = if (cleared) null else clause.effectiveDueAt,
+        remindAt = if (cleared) null else clause.remindAt ?: clause.plan.reply.proposedRemindAt,
+        evidenceText = "음성 입력: ${clause.transcript.take(300)}",
+    )
+}
+
+/**
  * The payload the parent actually confirmed: clause edits win over the
  * engine's proposal — action becomes the event title, dueAt becomes the
  * start (duration preserved), zone/end semantics come from the parse.
- * Pure and testable; returns null when the clause has no calendar command.
+ * An explicitly cleared start returns null so the write fails closed —
+ * the old parsed start is never silently reused.
+ * Pure and testable; returns null when the clause has no calendar command
+ * or no usable start.
  */
 internal fun calendarPayloadFor(clause: CaptureClause): SchedulePayload? {
     val command = clause.plan.reply.scheduleCommand as? CalendarCreateCommand ?: return null
     val base = command.payload
     val title = (clause.action?.ifBlank { null } ?: clause.plan.reply.proposedTask
         ?: base.title).take(120)
-    val start = clause.dueAt ?: base.startMillis
+    val start = when {
+        clause.dateInput != null -> clause.dueAt ?: return null
+        else -> clause.dueAt ?: base.startMillis
+    }
     val duration = (base.endMillis - base.startMillis).coerceAtLeast(0L)
     return base.copy(
         title = title.ifBlank { base.title },

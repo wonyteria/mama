@@ -11,6 +11,7 @@ import kr.mom.probe.agent.LocalAgentReply
 import kr.mom.probe.agent.SchedulePayload
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -264,5 +265,85 @@ class CaptureWriteCoordinatorTest {
         val payload = calendarPayloadFor(calendarClause(0))!!
         assertEquals("학부모 상담", payload.title)
         assertEquals(1_800_000_000_000L, payload.startMillis)
+    }
+
+    private fun datedClause(
+        index: Int,
+        proposedDueAt: Long? = 1_800_000_000_000L,
+        proposedRemindAt: Long? = null,
+        dateInput: String? = null,
+        dueAt: Long? = null,
+        remindAt: Long? = null,
+    ): CaptureClause {
+        val base = clause(index)
+        return base.copy(
+            dateInput = dateInput, dueAt = dueAt, remindAt = remindAt,
+            plan = base.plan.copy(
+                reply = base.plan.reply.copy(
+                    proposedDueAt = proposedDueAt, proposedRemindAt = proposedRemindAt,
+                ),
+            ),
+        )
+    }
+
+    @Test fun `untouched task date follows the parsed proposal`() {
+        val spec = taskWriteSpecFor(
+            datedClause(0, proposedDueAt = 1_800_000_000_000L, proposedRemindAt = 1_800_000_500_000L),
+        )
+        assertEquals(1_800_000_000_000L, spec.dueAt)
+        assertEquals(1_800_000_500_000L, spec.remindAt)
+    }
+
+    @Test fun `edited task date wins over the proposal`() {
+        val spec = taskWriteSpecFor(
+            datedClause(0, proposedDueAt = 1_800_000_000_000L,
+                dateInput = "모레 오전 9시", dueAt = 1_900_000_000_000L),
+        )
+        assertEquals(1_900_000_000_000L, spec.dueAt)
+    }
+
+    @Test fun `explicitly blank task date persists null and clears the reminder`() {
+        // The parent cleared the date in the preview — the write must not
+        // resurrect the parsed proposal or leave a silent reminder behind.
+        val spec = taskWriteSpecFor(
+            datedClause(0, proposedDueAt = 1_800_000_000_000L,
+                proposedRemindAt = 1_800_000_500_000L, dateInput = ""),
+        )
+        assertEquals(null, spec.dueAt)
+        assertEquals(null, spec.remindAt)
+    }
+
+    @Test fun `cleared calendar start is non-writable and the payload fails closed`() {
+        // Blank clear on a calendar clause: the event needs a start, so the
+        // clause stays non-saveable and the payload builder refuses reuse.
+        val cleared = calendarClause(0).copy(dateInput = "")
+        assertFalse(cleared.writable)
+        assertTrue(cleared.needsReview)
+        assertNull(calendarPayloadFor(cleared))
+        // The durable boundary refuses the batch with zero writes.
+        val sink = MemSink()
+        val events = SpyWriter()
+        val (records, recordWriter) = recorder()
+        assertThrows(CaptureWriteException::class.java) {
+            CaptureWriteCoordinator(sink, SpyWriter(), events, recordWriter)
+                .commit(batchOf("cap-cal", cleared), "t")
+        }
+        assertTrue(events.writes.isEmpty())
+        assertTrue(records.isEmpty())
+    }
+
+    @Test fun `cleared date still commits as an undated task`() {
+        // The same blank clear on a TASK clause is legitimate — it writes
+        // the task with no due/remind, honoring what the parent saw.
+        val sink = MemSink()
+        val tasks = SpyWriter()
+        val (records, recordWriter) = recorder()
+        val cleared = datedClause(0, proposedDueAt = 1_800_000_000_000L, dateInput = "")
+        assertTrue(cleared.writable)
+        val journal = CaptureWriteCoordinator(sink, tasks, SpyWriter(), recordWriter)
+            .commit(batchOf("cap-clr", cleared), "t")
+        assertEquals(listOf("cap-clr" to 0), tasks.writes)
+        assertTrue(journal.complete)
+        assertEquals(1, records.size)
     }
 }

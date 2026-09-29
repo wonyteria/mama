@@ -101,6 +101,9 @@ class VoiceCaptureController(
         batch = null
         classificationFailed = false
         saveClaimed = false
+        // A fresh capture is a new session — a previous batch's non-retryable
+        // failure must not poison the new preview's save affordance.
+        saveRetryable = true
         needsFallbackConsent = false
         if (!factory.isRecognitionAvailable()) {
             fail("이 기기에서는 음성 인식을 지원하지 않아요.")
