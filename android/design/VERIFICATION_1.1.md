@@ -60,7 +60,7 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 
 `b2f6a61` 리뷰의 계약 결함 1건을 수정했다.
 
-- **편집된 리마인더는 편집된 시각에 울린다**: 날짜를 명시적으로 편집한 clause는 낡은 `proposedRemindAt`을 절대 재사용하지 않는다 — `effectiveRemindAt`이 같은 tri-state를 따른다. REMINDER clause("알려줘" — 알림이 곧 목적)의 날짜 편집은 알람을 편집된 시각으로 이동하고, 비-REMINDER의 편집은 숨은 알람을 남기지 않는다(명시 `setClauseTimes` remind만 유지). 비우면 due와 remind가 함께 null이다. 회귀: `edited reminder date moves the alarm never reuses the stale proposal`·`edited non-reminder task drops the stale proposal reminder`(production `taskWriteSpecFor` 심).
+- **편집된 리마인더는 편집된 시각에 울린다**: 날짜를 명시적으로 편집한 clause는 낡은 `proposedRemindAt`을 절대 재사용하지 않는다 — `effectiveRemindAt`이 같은 tri-state를 따른다. REMINDER clause("알려줘" — 알림이 곧 목적)의 날짜 편집은 알람을 편집된 시각으로 이동하고, 비-REMINDER의 편집은 숨은 알람을 남기지 않는다(명시 `setClauseTimes` remind만 유지). 비우면 due와 remind가 함께 null이다. 미리보기도 같은 tri-state를 그린다 — 날짜 필드는 `dateInput ?: effectiveDueAt`을 표시하므로 `setClauseTimes(i,null,null)` 후에는 낡은 제안 날짜가 아닌 빈 필드를 보여준다. 회귀: `edited reminder date moves the alarm never reuses the stale proposal`·`edited non-reminder task drops the stale proposal reminder`(production `taskWriteSpecFor` 심)·`programmatic null times clear the date without restoring the proposal`(모델 + `clause-date-0` 빈 필드·편집 포맷 UI 단언).
 
 ## A–N 결함 수정 (자동, 신규)
 

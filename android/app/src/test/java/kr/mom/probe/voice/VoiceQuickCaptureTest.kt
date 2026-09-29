@@ -16,6 +16,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -920,9 +921,20 @@ class VoiceCaptureScreenLayoutTest {
         assertTrue(clause.dateEdited)
         assertEquals(null, clause.dueAt)
         assertEquals(null, clause.effectiveDueAt)
+        // The preview shows what will actually be written: blank, not the
+        // stale proposed date the parent just removed.
+        compose.waitForIdle()
+        compose.onNodeWithTag("clause-date-0").assertTextEquals("")
         // Picked times mark the edit the same way typed text does.
         driven.controller.setClauseTimes(0, 1_900_000_000_000L, null)
         assertEquals(1_900_000_000_000L, driven.controller.batch!!.clauses[0].effectiveDueAt)
+        compose.waitForIdle()
+        compose.onNodeWithTag("clause-date-0").assertTextEquals(
+            java.time.Instant.ofEpochMilli(1_900_000_000_000L)
+                .atZone(java.time.ZoneId.of("Asia/Seoul")).let {
+                    "${it.monthValue}월 ${it.dayOfMonth}일 %02d:%02d".format(it.hour, it.minute)
+                },
+        )
     }
 
     @Test fun `drop hides a clause from the batch and keep restores it`() {

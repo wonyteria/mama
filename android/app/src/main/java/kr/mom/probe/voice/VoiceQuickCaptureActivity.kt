@@ -505,8 +505,12 @@ private fun ClauseCard(clause: CaptureClause, editable: Boolean, cb: ClauseCallb
                 )
                 Text("날짜·시간 (예: 내일 오후 3시)", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
                 ClauseField(
+                    // Same tri-state as the writer: typed text verbatim,
+                    // picker edit/clear via effectiveDueAt, untouched follows
+                    // the proposal. A cleared date shows blank — never the
+                    // stale proposed date the parent just removed.
                     value = clause.dateInput
-                        ?: (clause.dueAt ?: clause.plan.reply.proposedDueAt)?.let(::formatDue).orEmpty(),
+                        ?: clause.effectiveDueAt?.let(::formatDue).orEmpty(),
                     onValueChange = { cb.date(i, it) },
                     tag = "clause-date-$i",
                     style = MaterialTheme.typography.bodyMedium.copy(
