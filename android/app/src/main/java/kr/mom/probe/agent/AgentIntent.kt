@@ -60,3 +60,65 @@ data class CapturePlan(
     val labels: List<String>,
     val saveable: Boolean,
 )
+
+/**
+ * One editable clause inside a captured brain-dump. The engine produces
+ * the initial classification; the parent may rewrite the transcript,
+ * action, due/remind time, and disposition before confirming — or drop
+ * the clause entirely. A clause is writable only when it is kept, its
+ * plan is saveable, and it no longer sits in NEEDS_CONFIRM.
+ */
+data class CaptureClause(
+    val index: Int,
+    val transcript: String,
+    val plan: CapturePlan,
+    /** Editable action text; defaults to the plan's proposed task. */
+    val action: String? = null,
+    /** Editable due time; defaults to the plan's proposal. */
+    val dueAt: Long? = null,
+    /** Raw text of the parent's due-date edit; null = untouched. */
+    val dateInput: String? = null,
+    /** Editable reminder time; defaults to the plan's proposal. */
+    val remindAt: Long? = null,
+    /** Editable disposition override; null follows the plan. */
+    val dispositionOverride: CaptureDisposition? = null,
+    /** Editable write-permission override set only by explicit resolution. */
+    val saveableOverride: Boolean? = null,
+    /** Editable intent override set only by explicit resolution. */
+    val intentOverride: AgentIntent? = null,
+    val dropped: Boolean = false,
+    /** True once the parent explicitly resolved a NEEDS_CONFIRM clause. */
+    val resolved: Boolean = false,
+    /** A typed date/time edit could not be parsed — blocks writing. */
+    val dateParseFailed: Boolean = false,
+    /** Edits applied after the engine run — provenance stays honest. */
+    val editedByUser: Boolean = false,
+) {
+    val disposition: CaptureDisposition? get() = dispositionOverride ?: plan.disposition
+    val intent: AgentIntent get() = intentOverride ?: plan.intent
+    /** Writable = kept + saveable + resolved out of the confirm bucket. */
+    val writable: Boolean
+        get() = !dropped && !dateParseFailed && (saveableOverride ?: plan.saveable) &&
+            disposition != null && disposition != CaptureDisposition.NEEDS_CONFIRM
+    /** Kept but not yet writable — blocks batch confirmation. */
+    val needsReview: Boolean get() = !dropped && !writable
+}
+
+/**
+ * Ordered result of a multi-clause capture: the engine splits a brain-dump
+ * into clauses conservatively — it never invents child, date, time, or
+ * action — and the batch may be written only after an explicit batch
+ * confirmation once every kept clause is writable.
+ */
+data class CaptureBatch(
+    val captureId: String,
+    val clauses: List<CaptureClause>,
+) {
+    val kept: List<CaptureClause> get() = clauses.filter { !it.dropped }
+    val unresolved: List<CaptureClause> get() = clauses.filter { it.needsReview }
+    /** The single gate for any persistence: every kept clause resolved. */
+    val saveable: Boolean get() = kept.isNotEmpty() && unresolved.isEmpty()
+
+    fun updateClause(index: Int, transform: (CaptureClause) -> CaptureClause): CaptureBatch =
+        copy(clauses = clauses.map { if (it.index == index) transform(it) else it })
+}

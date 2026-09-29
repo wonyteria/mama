@@ -234,6 +234,42 @@ class LocalAgentEngine(
         )
     }
 
+    /**
+     * Splits a brain-dump utterance into ordered clauses and classifies each
+     * one independently. Splitting is deliberately conservative — only real
+     * sentence boundaries (`.`, `!`, `?`, `…`, newline), comma-separated
+     * joins, and standalone conjunction tokens (그리고/또한/그 다음/또) —
+     * so a clause never invents child, date, time, context, or action that
+     * was not in the spoken words.
+     */
+    fun captureBatch(rawText: String, context: LocalAgentContext, captureId: String): CaptureBatch {
+        val clauses = splitClauses(rawText)
+        return CaptureBatch(
+            captureId = captureId,
+            clauses = clauses.mapIndexed { index, clauseText ->
+                CaptureClause(index = index, transcript = clauseText, plan = capture(clauseText, context))
+            },
+        )
+    }
+
+    /**
+     * Deterministic conservative clause splitter. Splits on sentence-ending
+     * punctuation and newlines, on commas that join clauses, and on
+     * standalone conjunction words at a word boundary. Never merges,
+     * reorders, or rewrites the spoken text — a fragment stays a fragment
+     * and lands in memo/review rather than being turned into an action.
+     */
+    internal fun splitClauses(text: String): List<String> {
+        // Hard boundaries first: sentence-ending punctuation and line breaks.
+        // Then soft joins: a comma, or a standalone conjunction token at a
+        // word boundary ("그리고", "또한", "그 다음", or bare "또" between
+        // spaces — never inside a word like 또박또박).
+        return text.split(hardBoundary)
+            .flatMap { it.split(softJoin) }
+            .map { it.trim().trim(',', '，', '、') }
+            .filter { it.isNotBlank() }
+    }
+
     private fun plan(
         transcript: String,
         reply: LocalAgentReply,
@@ -504,6 +540,10 @@ class LocalAgentEngine(
         private const val MAX_RESULTS = 5
         private const val MAX_PROPOSED_TASK_LENGTH = 280
         private val whitespace = Regex("\\s+")
+        private val hardBoundary = Regex("[.!?…。\\n]+")
+        private val softJoin = Regex(
+            "[,，、]|(?:^|\\s)(?:그리고|또한|그\\s*다음(?:에)?|또)\\s+",
+        )
         private val taskCommand = Regex("^(.+?)\\s*(챙겨\\s*줘|기억해\\s*줘|추가해\\s*줘|알려\\s*줘)[.!?~\\s]*$")
         private val relativeCommandDate = Regex("(오늘|내일|모레)(?:\\s*(오전|오후)?\\s*(\\d{1,2})(?::(\\d{2}))?\\s*시)?")
         private val taskListPrefix = Regex("^(?:부탁(?:\\s*목록)?|할\\s*일|준비물)(?:에|으로)?\\s+")
@@ -523,6 +563,53 @@ class LocalAgentEngine(
         private val submitQuestion = Regex("제출|신청|회신|납부|입금")
         private val deadlineQuestion = Regex("마감|기한|언제까지")
         private val dueWords = listOf("오늘", "내일", "모레", "이번 주", "다음 주")
+
+        private val isoDate = Regex("""^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?$""")
+        private val koreanDate = Regex("""^(\d{1,2})월\s*(\d{1,2})일(?:\s*(오전|오후)?\s*(\d{1,2})시(?:\s*(\d{1,2})분)?)?$""")
+        private val relativeDay = Regex("""^(오늘|내일|모레)(?:\s*(오전|오후)?\s*(\d{1,2})(?::(\d{1,2}))?\s*시(?:\s*(\d{1,2})분)?)?$""")
+
+        /**
+         * Parses a user-edited date/time field: `yyyy-MM-dd [HH:mm]`,
+         * `M월 d일 [오전/오후 h시[mm분]]`, or `오늘/내일/모레 [오전/오후 h시[mm분]]`.
+         * Returns null on blank or unparseable input — never guesses.
+         */
+        fun parseEditableDateTime(
+            input: String,
+            nowMillis: Long = System.currentTimeMillis(),
+            zoneId: ZoneId = ZoneId.of("Asia/Seoul"),
+        ): Long? {
+            val text = input.trim().replace(whitespace, " ")
+            if (text.isEmpty()) return null
+            fun atTime(year: Int, month: Int, day: Int, meridiem: String?, hour: Int?, minute: Int?): Long? {
+                val h = when {
+                    hour == null -> 9 // undated-time default: morning, shown as date-only
+                    meridiem == "오전" -> if (hour == 12) 0 else hour
+                    meridiem == "오후" -> if (hour == 12) 12 else hour + 12
+                    else -> hour
+                }
+                return runCatching {
+                    LocalDate.of(year, month, day).atTime(LocalTime.of(h, minute ?: 0))
+                        .atZone(zoneId).toInstant().toEpochMilli()
+                }.getOrNull()
+            }
+            isoDate.matchEntire(text)?.let { m ->
+                return atTime(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt(),
+                    null, m.groupValues[4].toIntOrNull(), m.groupValues[5].toIntOrNull())
+            }
+            koreanDate.matchEntire(text)?.let { m ->
+                val year = Instant.ofEpochMilli(nowMillis).atZone(zoneId).year
+                return atTime(year, m.groupValues[1].toInt(), m.groupValues[2].toInt(),
+                    m.groupValues[3].ifBlank { null }, m.groupValues[4].toIntOrNull(), m.groupValues[5].toIntOrNull())
+            }
+            relativeDay.matchEntire(text)?.let { m ->
+                val base = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+                val date = base.plusDays(when (m.groupValues[1]) { "오늘" -> 0; "내일" -> 1; else -> 2 })
+                return atTime(date.year, date.monthValue, date.dayOfMonth,
+                    m.groupValues[2].ifBlank { null }, m.groupValues[3].toIntOrNull(), m.groupValues[5].toIntOrNull()
+                        ?: m.groupValues[4].toIntOrNull())
+            }
+            return null
+        }
     }
 }
 

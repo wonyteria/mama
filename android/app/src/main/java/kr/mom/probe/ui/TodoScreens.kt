@@ -310,9 +310,12 @@ fun TodayScreen(
     var editSaveError by remember { mutableStateOf<String?>(null) }
     val overdue = remember(tasks, now) { TodoSelectors.overdue(tasks, now) }
     val dueSoon = remember(tasks, now) { TodoSelectors.dueSoon(tasks, now, daysAhead = 1) }
-    val undated = remember(tasks) { TodoSelectors.undated(tasks) }
+    val thisWeek = remember(tasks, now) { TodoSelectors.thisWeek(tasks, now) }
+    val review = remember(tasks) { TodoSelectors.undatedOrReview(tasks) }
     val openCount = remember(tasks) { TodoSelectors.openCount(tasks) }
-    val shownTasks = remember(overdue, dueSoon, undated) { (overdue + dueSoon + undated).distinctBy { it.id } }
+    val shownTasks = remember(overdue, dueSoon, thisWeek, review) {
+        (overdue + dueSoon + thisWeek + review).distinctBy { it.id }
+    }
     Page {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Brand() }
@@ -371,12 +374,32 @@ fun TodayScreen(
                     { snoozeTarget = it }, { editTarget = it }, onExclude)
             }
         }
-        if (undated.isNotEmpty()) {
-            Eyebrow("나중에 확인")
-            undated.take(5).forEach { task ->
-                TaskRow(task, now, expandedId == task.id, busy, onToggle, onToggleItem,
-                    { expandedId = if (expandedId == it.id) null else it.id },
-                    { snoozeTarget = it }, { editTarget = it }, onExclude)
+        // Ordered attention buckets continue the stack below the focus
+        // cards: 기한 지남 → 오늘·내일 → 이번 주 → 나중에 확인. Every bucket
+        // is capped; the complete path is always "할 일 모두 보기".
+        val focusIds = remember(focus) { focus.mapTo(HashSet()) { it.id } }
+        val buckets = remember(overdue, dueSoon, thisWeek, review, focusIds) {
+            val shown = HashSet<String>()
+            shown += focusIds
+            // A needsReview task is never hidden under a date bucket — it
+            // always lands in 나중에 확인 unless it already made the focus stack.
+            listOf(
+                "기한 지남" to overdue.filter { !it.needsReview },
+                "오늘·내일" to dueSoon.filter { !it.needsReview },
+                "이번 주" to thisWeek.filter { !it.needsReview },
+                "나중에 확인" to review,
+            ).map { (label, bucket) ->
+                label to bucket.filter { shown.add(it.id) }
+            }
+        }
+        buckets.forEach { (label, bucket) ->
+            if (bucket.isNotEmpty()) {
+                Eyebrow(label)
+                bucket.take(5).forEach { task ->
+                    TaskRow(task, now, expandedId == task.id, busy, onToggle, onToggleItem,
+                        { expandedId = if (expandedId == it.id) null else it.id },
+                        { snoozeTarget = it }, { editTarget = it }, onExclude)
+                }
             }
         }
         if (openCount > shownTasks.size || openCount > 0) {

@@ -123,67 +123,92 @@ object CandidateActionPlanner {
 }
 
 object AutoActionCoordinator {
-    fun handle(context: android.content.Context, record: ProbeRecord, settings: ProbeSettings) {
-        val child = NoticeDecisionEngine.childProfile(settings)
+    /** What the coordinator will do with a record — shared by handle and tests. */
+    internal enum class Route { APPLY, SUSPEND, REVIEW }
+
+    internal data class Routing(
+        val route: Route,
+        val decision: kr.mom.probe.data.NoticeDecision,
+        val plans: List<CandidateActionPlan>,
+        val groupKeys: Set<String>,
+        val sourceNotificationId: String,
+    )
+
+    /**
+     * The context-free half of [handle]: decide + group + plan, then pick the
+     * route. Tests drive this with a synthetic record to exercise the exact
+     * promotion/suspension gate the live capture path applies.
+     */
+    internal fun routeFor(
+        record: ProbeRecord,
+        child: ChildNoticeProfile,
+        institution: String,
+        now: Long = System.currentTimeMillis(),
+    ): Routing {
         val decision = NoticeDecisionEngine.decide(record, child)
-        val institution = NoticeGrouping.institution(settings)
         val groupKeys = NoticeGrouping.keys(record, institution)
         val sourceNotificationId = NoticeGrouping.groupId(record, institution)
+        if (decision.contentState !in setOf(NoticeContentState.NOTIFICATION_ONLY, NoticeContentState.VERIFIED)) {
+            return Routing(Route.REVIEW, decision, emptyList(), groupKeys, sourceNotificationId)
+        }
+        if (decision.applicability == NoticeApplicability.INELIGIBLE ||
+            decision.obligation in setOf(NoticeObligation.INFORMATIONAL, NoticeObligation.OPTIONAL_OPPORTUNITY)
+        ) {
+            return Routing(Route.SUSPEND, decision, emptyList(), groupKeys, sourceNotificationId)
+        }
+        val plans = CandidateActionPlanner.plans(record, now = now, child = child, institution = institution)
+        if (plans.isEmpty()) {
+            val cancels = decision.dates.any { it.role == kr.mom.probe.data.NoticeDateRole.CANCELLATION }
+            return Routing(if (cancels) Route.SUSPEND else Route.REVIEW, decision, plans, groupKeys, sourceNotificationId)
+        }
+        return Routing(Route.APPLY, decision, plans, groupKeys, sourceNotificationId)
+    }
+
+    fun handle(context: android.content.Context, record: ProbeRecord, settings: ProbeSettings) {
+        val child = NoticeDecisionEngine.childProfile(settings)
+        val institution = NoticeGrouping.institution(settings)
+        val routing = routeFor(record, child, institution)
         runCatching {
             val store = AssistantTaskStore.get(context)
             store.load()
             // The record is already committed; journal the source until the task
             // reconcile below finishes so a crash or failed save replays later.
-            ReconcileJournal.markPending(context, sourceNotificationId)
-            if (decision.contentState !in setOf(NoticeContentState.NOTIFICATION_ONLY, NoticeContentState.VERIFIED)) {
-                // Ambiguous or incomplete content must not hide a known obligation:
-                // keep the last trusted task state and flag it for user review.
-                store.markAutomaticSourcesNeedReview(sourceNotificationId, record.id, groupKeys)
-                ReconcileJournal.clearPending(context, sourceNotificationId)
-                return
-            }
-            if (decision.applicability == NoticeApplicability.INELIGIBLE ||
-                decision.obligation in setOf(NoticeObligation.INFORMATIONAL, NoticeObligation.OPTIONAL_OPPORTUNITY)
-            ) {
-                kr.mom.probe.reminder.AssistantAlertNotifier.cancel(context, record)
-                store.suspendAutomaticSource(sourceNotificationId, record.id, groupKeys)
-                ReconcileJournal.clearPending(context, sourceNotificationId)
-                return
-            }
-            val plans = CandidateActionPlanner.plans(record, child = child, institution = institution)
-            if (plans.isEmpty()) {
-                if (decision.dates.any { it.role == kr.mom.probe.data.NoticeDateRole.CANCELLATION }) {
-                    // An explicit cancellation is a clear signal: the obligation is gone.
-                    kr.mom.probe.reminder.AssistantAlertNotifier.cancel(context, record)
-                    store.suspendAutomaticSource(sourceNotificationId, record.id, groupKeys)
-                } else {
-                    // A clear revision without any required action could not confirm
-                    // the previous obligation; keep it visible for review.
-                    store.markAutomaticSourcesNeedReview(sourceNotificationId, record.id, groupKeys)
-                }
-                ReconcileJournal.clearPending(context, sourceNotificationId)
-                return
-            }
-            store.applyAutomaticPlans(
-                sourceNotificationId,
-                record.id,
-                noticeGroupKeys = groupKeys,
-                plans = plans.map { plan ->
-                    AutoTaskPlan(
-                        actionKind = plan.actionKind ?: "submit",
-                        text = plan.text,
-                        checklist = plan.checklist,
-                        dueAt = plan.dueAt,
-                        remindAt = plan.remindAt,
-                        evidenceText = plan.evidenceText,
-                        sourceTitle = plan.sourceTitle,
-                        sourceLabel = plan.sourceLabel,
-                        sourceCapturedAt = plan.sourceCapturedAt,
-                        audienceLabel = plan.audienceLabel,
+            ReconcileJournal.markPending(context, routing.sourceNotificationId)
+            when (routing.route) {
+                Route.REVIEW -> {
+                    // Ambiguous or incomplete content must not hide a known obligation:
+                    // keep the last trusted task state and flag it for user review.
+                    store.markAutomaticSourcesNeedReview(
+                        routing.sourceNotificationId, record.id, routing.groupKeys,
                     )
-                },
-            )
-            ReconcileJournal.clearPending(context, sourceNotificationId)
+                }
+                Route.SUSPEND -> {
+                    kr.mom.probe.reminder.AssistantAlertNotifier.cancel(context, record)
+                    store.suspendAutomaticSource(
+                        routing.sourceNotificationId, record.id, routing.groupKeys,
+                    )
+                }
+                Route.APPLY -> store.applyAutomaticPlans(
+                    routing.sourceNotificationId,
+                    record.id,
+                    noticeGroupKeys = routing.groupKeys,
+                    plans = routing.plans.map { plan ->
+                        AutoTaskPlan(
+                            actionKind = plan.actionKind ?: "submit",
+                            text = plan.text,
+                            checklist = plan.checklist,
+                            dueAt = plan.dueAt,
+                            remindAt = plan.remindAt,
+                            evidenceText = plan.evidenceText,
+                            sourceTitle = plan.sourceTitle,
+                            sourceLabel = plan.sourceLabel,
+                            sourceCapturedAt = plan.sourceCapturedAt,
+                            audienceLabel = plan.audienceLabel,
+                        )
+                    },
+                )
+            }
+            ReconcileJournal.clearPending(context, routing.sourceNotificationId)
         }.onFailure {
             android.util.Log.w("AutoActionCoordinator", "auto-action failed for ${record.id}", it)
         }

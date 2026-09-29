@@ -291,35 +291,33 @@ class ProbeRepository private constructor(context: Context) {
                 hasNotificationAccess(), ongoing, summary)) return@action
         // Extras are read only after consent, selected-package and live OS access checks.
         val extras = value.extras
-        var truncated = false
-        fun bounded(value: String): String {
-            if (value.length > 32_768) truncated = true
-            return value.take(32_768)
-        }
         fun rawField(key: String) = extras.getCharSequence(key)?.toString().orEmpty()
-        fun field(key: String) = bounded(rawField(key))
-        val title = field(Notification.EXTRA_TITLE)
-        val text = field(Notification.EXTRA_TEXT)
-        val bigText = field(Notification.EXTRA_BIG_TEXT)
         val originalLines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES).orEmpty()
-        if (originalLines.size > 100) truncated = true
-        val lines = originalLines.take(100).map { bounded(it.toString()) }
-        val subText = field(Notification.EXTRA_SUB_TEXT).ifEmpty { null }
-        val summaryText = field(Notification.EXTRA_SUMMARY_TEXT).ifEmpty { null }
-        // Hash the actual payload, including omitted suffixes, so updates beyond the storage limit
-        // remain distinct revisions rather than being silently mistaken for duplicate callbacks.
-        val rawHash = ProbeRules.digest(JSONObject().put("title", rawField(Notification.EXTRA_TITLE))
-            .put("text", rawField(Notification.EXTRA_TEXT)).put("bigText", rawField(Notification.EXTRA_BIG_TEXT))
-            .put("lines", JSONArray(originalLines.map { it.toString() }))
-            .put("subText", rawField(Notification.EXTRA_SUB_TEXT))
-            .put("summaryText", rawField(Notification.EXTRA_SUMMARY_TEXT)).toString())
-        val id = ProbeRules.revisionId(notification.packageName, notification.key, notification.postTime, rawHash)
-        if (dao.isDeleted(id) > 0) return@action
         val label = try { app.packageManager.getApplicationLabel(app.packageManager.getApplicationInfo(notification.packageName, 0)).toString() }
             catch (_: android.content.pm.PackageManager.NameNotFoundException) { notification.packageName }
-        val record = ProbeRecord(id, notification.packageName, label, notification.postTime, System.currentTimeMillis(),
-            title, text, bigText, lines, subText, summaryText, value.category, value.channelId,
-            notification.id, notification.key, ongoing, summary, rawHash, truncated)
+        // One normalization boundary shared with the synthetic-ingest seam.
+        val record = NotificationRecordAssembler.assemble(
+            NotificationRecordAssembler.Input(
+                packageName = notification.packageName,
+                key = notification.key,
+                postTime = notification.postTime,
+                notificationId = notification.id,
+                ongoing = ongoing,
+                groupSummary = summary,
+                appLabel = label,
+                category = value.category,
+                channelId = value.channelId,
+                title = rawField(Notification.EXTRA_TITLE),
+                text = rawField(Notification.EXTRA_TEXT),
+                bigText = rawField(Notification.EXTRA_BIG_TEXT),
+                textLines = originalLines.map { it.toString() },
+                subText = rawField(Notification.EXTRA_SUB_TEXT),
+                summaryText = rawField(Notification.EXTRA_SUMMARY_TEXT),
+            ),
+            receivedAt = System.currentTimeMillis(),
+        )
+        val id = record.id
+        if (dao.isDeleted(id) > 0) return@action
         if (epoch.get() != expectedEpoch || !hasNotificationAccess()) return@action
         // Journal BEFORE the row commits: a failed journal write aborts the
         // capture with nothing persisted, and a crash between this mark and the

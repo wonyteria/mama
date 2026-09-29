@@ -194,9 +194,17 @@ transcript first.
 Quiet capture (inspired by KUU's calm single-action rhythm, translated for
 MAMA — the four-quadrant grid, ADHD/mental-health positioning, and
 multi-card dashboard layouts are explicitly not adopted): every spoken
-utterance lands in exactly one quiet bucket shown on the preview —
+clause lands in exactly one quiet bucket shown on the preview —
 오늘 챙길 일, 나중에 확인, 메모만, 엄마 확인 필요, or 내려놓기/저장 안 함.
-Not every thought becomes a task: questions are answered inline and stored
+A brain-dump utterance may carry several clauses: the engine splits it
+deterministically on conservative conjunction/punctuation boundaries
+(그리고, 또, commas, sentence ends) — never inventing a child, date, time,
+or action — and renders an ordered vertical stack of editable clause
+cards (transcript, action, date/time, disposition, drop/keep). Nothing is
+written until the parent explicitly confirms the batch; an ambiguous or
+unresolvable clause stays non-saveable until the parent resolves it, and
+a failed save preserves every edit for a visible retry. Not every thought
+becomes a task: questions are answered inline and stored
 as nothing, plain reflections stay memo-only, and ambiguous or externally
 effecting requests (alarms, unparseable dates) stop at 엄마 확인 필요 until
 the parent confirms. The confirmed transcript is kept as text under the
@@ -208,8 +216,10 @@ knows from what it guessed.
 
 Organized results are always a single vertical stack of cards in one of
 five canonical buckets — 오늘 처리, 내일·이번 주, 날짜 없음, 확인 필요,
-메모·보류 — never a grid. Today is a single-column attention stack
-(오늘은 이것만 queue of at most three items, then later work); at 360dp
+메모·보류 — never a grid. Today is a single-column attention stack:
+the 오늘은 이것만 queue of at most three items, then the ordered buckets
+기한 지남 → 오늘·내일 → 이번 주 → 나중에 확인, each capped, with
+할 일 모두 보기 as the complete all-items path. At 360dp
 width, 200% font scale, or landscape, side-by-side bento cards are not
 allowed.
 

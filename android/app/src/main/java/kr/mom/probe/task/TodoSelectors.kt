@@ -35,8 +35,22 @@ object TodoSelectors {
             .sortedBy { it.dueAt }
     }
 
+    /** Dated work due after tomorrow but within this week (today + 7 days). */
+    fun thisWeek(tasks: List<AssistantTask>, now: Long = System.currentTimeMillis()): List<AssistantTask> {
+        val today = today(now)
+        val end = today.plusDays(7)
+        return open(tasks).filter {
+            it.dueAt != null && dateOf(it.dueAt).let { d -> d.isAfter(today.plusDays(1)) && !d.isAfter(end) }
+        }.sortedBy { it.dueAt }
+    }
+
     fun undated(tasks: List<AssistantTask>): List<AssistantTask> =
         open(tasks).filter { it.dueAt == null }.sortedByDescending { it.createdAt }
+
+    /** Undated work plus anything flagged for review — Today's last bucket. */
+    fun undatedOrReview(tasks: List<AssistantTask>): List<AssistantTask> =
+        open(tasks).filter { it.dueAt == null || it.needsReview }
+            .sortedByDescending { it.createdAt }
 
     fun completed(tasks: List<AssistantTask>): List<AssistantTask> =
         tasks.filter { it.completed && !it.suspended }.sortedByDescending { it.completedAt ?: it.createdAt }

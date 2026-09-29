@@ -18,14 +18,19 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import java.io.File
 import kr.mom.probe.agent.AgentIntent
+import kr.mom.probe.agent.CaptureBatch
+import kr.mom.probe.agent.CaptureClause
 import kr.mom.probe.agent.CaptureDisposition
 import kr.mom.probe.agent.CaptureLabels
 import kr.mom.probe.agent.CapturePlan
@@ -47,6 +52,8 @@ private class FakeAdapter : RecognizerAdapter {
     var listener: VoiceRecognizerCallback? = null
     var destroyedCount = 0
     var startThrows: Throwable? = null
+    /** When set, stop() synchronously delivers a final result — the race C guards. */
+    var syncResultOnStop: String? = null
 
     private fun record(name: String) {
         check(Looper.myLooper() == Looper.getMainLooper()) { "$name called off main thread" }
@@ -61,7 +68,10 @@ private class FakeAdapter : RecognizerAdapter {
         checkNotNull(listener) { "listener must be installed before start" }
         startThrows?.let { throw it }
     }
-    override fun stop() = record("stop")
+    override fun stop() {
+        record("stop")
+        syncResultOnStop?.let { listener?.onResult(it) }
+    }
     override fun cancel() = record("cancel")
     override fun destroy() { record("destroy"); destroyedCount++ }
 }
@@ -152,22 +162,35 @@ class VoiceQuickCaptureActivityTest {
         saveable = false,
     )
 
+    /** Single-clause batch wrapping one classified plan. */
+    private fun CapturePlan.toBatch(text: String = transcript) = CaptureBatch(
+        captureId = "test-capture",
+        clauses = listOf(CaptureClause(0, text, this)),
+    )
+
     private class FakeSaver(var result: VoiceSaveResult = VoiceSaveResult.Saved) : VoiceCaptureSaver {
-        val calls = mutableListOf<Triple<String, String, String>>()
-        override suspend fun save(plan: CapturePlan, transcript: String, captureId: String): VoiceSaveResult {
-            calls += Triple(plan.intent.name, transcript, captureId)
+        val calls = mutableListOf<CaptureBatch>()
+        val transcripts = mutableListOf<String>()
+        override suspend fun save(batch: CaptureBatch, transcript: String): VoiceSaveResult {
+            calls += batch
+            transcripts += transcript
             return result
         }
     }
 
-    private fun listenToResult(result: String) {
+    /**
+     * Delivers a final result WITHOUT waiting for compose idle afterwards —
+     * the DONE tree hosts editable text fields, which never idle under
+     * Robolectric's paused looper in a real-activity composition (visual
+     * assertions on that tree live in VoiceCaptureScreenLayoutTest).
+     */
+    private fun listenToResultNoIdle(result: String) {
         val adapter = factory.createdOnDevice[0]
         compose.runOnIdle {
             adapter.listener!!.onReady()
             adapter.listener!!.onSpeechEnded()
             adapter.listener!!.onResult(result)
         }
-        compose.waitForIdle()
     }
 
     @Test fun `cold create never listens and shows the tap entry point`() {
@@ -217,15 +240,18 @@ class VoiceQuickCaptureActivityTest {
         shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
         tapMic()
         val adapter = factory.createdOnDevice[0]
+        // The DONE tree renders editable text fields, which never idle under
+        // Robolectric's paused looper with a real-activity composition — assert
+        // the state machine directly; rendering is covered by layout tests.
         compose.runOnIdle {
             adapter.listener!!.onReady()
             adapter.listener!!.onPartial("체육복")
             adapter.listener!!.onSpeechEnded()
             adapter.listener!!.onResult("금요일까지 체육복 사야 돼")
         }
-        compose.waitForIdle()
-        compose.onNodeWithText("금요일까지 체육복 사야 돼").assertIsDisplayed()
-        compose.onNodeWithText("지금은 아직 아무것도 쓰지 않았어요.", substring = true).assertIsDisplayed()
+        val c = compose.activity.captureController!!
+        assertEquals(VoiceCaptureState.DONE, c.state)
+        assertEquals("금요일까지 체육복 사야 돼", c.transcript)
         assertEquals(listOf("setCallback", "start", "destroy"), adapter.events)
     }
 
@@ -387,77 +413,88 @@ class VoiceQuickCaptureActivityTest {
         val saver = FakeSaver()
         launch()
         VoiceQuickCaptureActivity.saverOverride = saver
-        VoiceQuickCaptureActivity.classifierOverride = { _, text -> taskPlan().copy(transcript = text) }
+        VoiceQuickCaptureActivity.classifierOverride = { _, text -> taskPlan().toBatch(text) }
         shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
         tapMic()
-        listenToResult("내일 물티슈 챙겨줘")
+        listenToResultNoIdle("내일 물티슈 챙겨줘")
 
-        // Preview is honest: transcript + labels + not-yet-written copy.
-        compose.onNodeWithTag("voice-result-card").assertIsDisplayed()
-        compose.onNodeWithText("엄마가 직접 말함 · 할 일", substring = true).assertExists()
-        compose.onNodeWithText("지금은 아직 아무것도 쓰지 않았어요.", substring = true).assertExists()
+        val c = compose.activity.captureController!!
+        // Preview holds the batch; nothing is written before confirmation.
+        assertEquals(VoiceCaptureState.DONE, c.state)
+        assertTrue(c.batch!!.saveable)
+        assertTrue(c.batch!!.clauses.first().plan.labels.contains(CaptureLabels.USER_SPOKE))
         assertEquals(0, saver.calls.size)
 
-        compose.onNodeWithTag("voice-save").performClick()
-        compose.waitForIdle()
+        compose.runOnUiThread { compose.activity.onSave() }
         ShadowLooper.idleMainLooper()
-        compose.waitForIdle()
         assertEquals(1, saver.calls.size)
-        compose.onNodeWithText("저장했어요.", substring = true).assertExists()
+        assertEquals("내일 물티슈 챙겨줘", saver.transcripts.first())
+        assertEquals(VoiceCaptureState.SAVED, c.state)
     }
 
     @Test fun `duplicate confirm taps submit exactly once`() {
         val saver = FakeSaver()
         launch()
         VoiceQuickCaptureActivity.saverOverride = saver
-        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan() }
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan().toBatch() }
         shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
         tapMic()
-        listenToResult("물통 챙겨줘")
+        listenToResultNoIdle("물통 챙겨줘")
 
         // The write path disappears the instant the save is claimed — there is
         // no second tap to double-submit.
-        compose.onNodeWithTag("voice-save").performClick()
+        // The claim is taken synchronously — a second save request is refused.
+        compose.runOnUiThread { compose.activity.onSave() }
+        compose.runOnUiThread { compose.activity.onSave() }
         ShadowLooper.idleMainLooper()
-        compose.waitForIdle()
-        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
         assertEquals(1, saver.calls.size)
+        assertEquals(VoiceCaptureState.SAVED, compose.activity.captureController!!.state)
     }
 
     @Test fun `save failure keeps transcript and offers retry`() {
         val saver = FakeSaver(VoiceSaveResult.Failed("저장 실패", retryable = true))
         launch()
         VoiceQuickCaptureActivity.saverOverride = saver
-        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan() }
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan().toBatch() }
         shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
         tapMic()
-        listenToResult("물통 챙겨줘")
+        listenToResultNoIdle("물통 챙겨줘")
 
-        compose.onNodeWithTag("voice-save").performClick()
+        compose.runOnUiThread { compose.activity.onSave() }
         ShadowLooper.idleMainLooper()
-        compose.waitForIdle()
-        compose.onNodeWithText("저장 실패").assertIsDisplayed()
-        compose.onNodeWithText("물통 챙겨줘").assertIsDisplayed()
+        val c = compose.activity.captureController!!
+        assertEquals(VoiceCaptureState.DONE, c.state)
+        assertEquals("저장 실패", c.errorText)
+        // Edits are preserved across the failed write.
+        compose.runOnUiThread { c.setClauseTranscript(0, "수정된 물통") }
+        assertEquals("수정된 물통", c.batch!!.clauses.first().transcript)
 
         saver.result = VoiceSaveResult.Saved
-        compose.onNodeWithTag("voice-save").performClick()
+        compose.runOnUiThread { compose.activity.onSave() }
         ShadowLooper.idleMainLooper()
-        compose.waitForIdle()
         assertEquals(2, saver.calls.size)
-        compose.onNodeWithText("저장했어요.", substring = true).assertExists()
+        assertEquals("수정된 물통", saver.calls.last().clauses.first().transcript)
+        assertEquals(VoiceCaptureState.SAVED, c.state)
     }
 
     @Test fun `question answers inline with no save button`() {
         val saver = FakeSaver()
         launch()
         VoiceQuickCaptureActivity.saverOverride = saver
-        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> questionPlan() }
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> questionPlan().toBatch() }
         shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
         tapMic()
-        listenToResult("이번 주 준비물 뭐야?")
+        listenToResultNoIdle("이번 주 준비물 뭐야?")
 
-        compose.onNodeWithText("저장된 알림에서 ‘도시락, 물통’을 찾았어요.").assertIsDisplayed()
-        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
+        val c = compose.activity.captureController!!
+        assertEquals(VoiceCaptureState.DONE, c.state)
+        assertEquals(AgentIntent.QUESTION, c.batch!!.clauses.first().intent)
+        assertEquals("저장된 알림에서 ‘도시락, 물통’을 찾았어요.",
+            c.batch!!.clauses.first().plan.reply.message)
+        assertTrue(!c.batch!!.saveable)
+        // Questions can never be written.
+        compose.runOnUiThread { compose.activity.onSave() }
+        ShadowLooper.idleMainLooper()
         assertEquals(0, saver.calls.size)
     }
 
@@ -465,36 +502,116 @@ class VoiceQuickCaptureActivityTest {
         val saver = FakeSaver()
         launch()
         VoiceQuickCaptureActivity.saverOverride = saver
-        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan() }
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan().toBatch() }
         shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
         tapMic()
-        listenToResult("물통 챙겨줘")
+        listenToResultNoIdle("물통 챙겨줘")
 
-        compose.onNodeWithTag("voice-discard").performClick()
-        compose.waitForIdle()
+        compose.runOnUiThread { compose.activity.captureController!!.discard() }
+        assertEquals(VoiceCaptureState.IDLE, compose.activity.captureController!!.state)
         assertEquals(0, saver.calls.size)
-        compose.onNodeWithText("마이크를 눌러 말해주세요").assertIsDisplayed()
     }
 
-    @Test fun `unclassifiable capture only writes through the memo opt-in`() {
+    @Test fun `unresolved clause only writes through the explicit memo resolution`() {
         val saver = FakeSaver()
         launch()
         VoiceQuickCaptureActivity.saverOverride = saver
-        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan(saveable = false) }
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan(saveable = false).toBatch() }
         shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
         tapMic()
-        listenToResult("다음주 화요일 3시 상담")
+        listenToResultNoIdle("다음주 화요일 3시 상담")
 
-        // No silent write; the only write path is the explicit memo opt-in.
-        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
-        assertEquals(0, saver.calls.size)
-        compose.onNodeWithTag("voice-save-memo").performClick()
-        compose.waitForIdle()
-        compose.onNodeWithTag("voice-save").performClick()
+        // No silent write; the clause must be explicitly resolved first.
+        val c = compose.activity.captureController!!
+        assertTrue(c.batch!!.unresolved.isNotEmpty())
+        compose.runOnUiThread { compose.activity.onSave() }
         ShadowLooper.idleMainLooper()
-        compose.waitForIdle()
+        assertEquals(0, saver.calls.size)
+        // Explicitly choosing 메모로 둘래요 resolves the clause; save then works.
+        compose.runOnUiThread { c.resolveClause(0, CaptureDisposition.MEMO_ONLY) }
+        compose.runOnUiThread { compose.activity.onSave() }
+        ShadowLooper.idleMainLooper()
         assertEquals(1, saver.calls.size)
-        assertEquals(AgentIntent.MEMO.name, saver.calls[0].first)
+        assertEquals(AgentIntent.MEMO, saver.calls[0].kept.first().intent)
+    }
+
+    @Test fun `stop with a synchronous final result lands in DONE not THINKING`() {
+        launch()
+        VoiceQuickCaptureActivity.classifierOverride = { _, text -> taskPlan().toBatch(text) }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        val adapter = factory.createdOnDevice[0]
+        adapter.syncResultOnStop = "내일 물티슈 챙겨줘"
+
+        // Second tap ends capture — stop() synchronously delivers the result.
+        compose.runOnUiThread { compose.activity.onMicTap() }
+        val c = compose.activity.captureController!!
+        assertEquals(VoiceCaptureState.DONE, c.state)
+        assertEquals("내일 물티슈 챙겨줘", c.transcript)
+        assertTrue(c.batch != null)
+        assertEquals(listOf("setCallback", "start", "stop", "destroy"), adapter.events)
+    }
+
+    @Test fun `classifier failure is an explicit non-saveable review state`() {
+        val saver = FakeSaver()
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> error("classifier blew up") }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        listenToResultNoIdle("내일 물티슈 챙겨줘")
+
+        // The transcript stays visible but nothing is saveable silently —
+        // only explicit retry or memo conversion unlocks a write.
+        val c = compose.activity.captureController!!
+        assertEquals(VoiceCaptureState.DONE, c.state)
+        assertTrue(c.classificationFailed)
+        assertEquals("내일 물티슈 챙겨줘", c.transcript)
+        assertTrue(c.batch == null || !c.batch!!.saveable)
+        compose.runOnUiThread { compose.activity.onSave() }
+        ShadowLooper.idleMainLooper()
+        assertEquals(0, saver.calls.size)
+
+        // Retry with a healthy classifier lands in the editable preview.
+        VoiceQuickCaptureActivity.classifierOverride = { _, text -> taskPlan().toBatch(text) }
+        compose.runOnUiThread { c.retryClassification() }
+        assertTrue(!c.classificationFailed)
+        assertTrue(c.batch!!.saveable)
+    }
+
+    @Test fun `multi-clause preview edits and drops before a single batch save`() {
+        val saver = FakeSaver()
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ ->
+            CaptureBatch(
+                captureId = "multi-1",
+                clauses = listOf(
+                    CaptureClause(0, "내일 물티슈 챙겨줘", taskPlan()),
+                    CaptureClause(1, "금요일 체육복 사야 돼", taskPlan()),
+                ),
+            )
+        }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        listenToResultNoIdle("내일 물티슈 챙겨줘. 금요일 체육복 사야 돼")
+
+        // Ordered editable preview — zero writes before confirmation.
+        val c = compose.activity.captureController!!
+        assertEquals(VoiceCaptureState.DONE, c.state)
+        assertEquals(2, c.batch!!.clauses.size)
+        assertEquals("내일 물티슈 챙겨줘", c.batch!!.clauses[0].transcript)
+        assertEquals("금요일 체육복 사야 돼", c.batch!!.clauses[1].transcript)
+        assertEquals(0, saver.calls.size)
+
+        // Drop the second clause — only clause 0 is written.
+        compose.runOnUiThread { c.dropClause(1) }
+        compose.runOnUiThread { compose.activity.onSave() }
+        ShadowLooper.idleMainLooper()
+        assertEquals(1, saver.calls.size)
+        assertEquals(1, saver.calls[0].kept.size)
+        assertEquals(0, saver.calls[0].kept.first().index)
+        assertEquals(VoiceCaptureState.SAVED, c.state)
     }
 
     @Test fun `manifest declares RECORD_AUDIO, recognition query, and non-exported activity`() {
@@ -554,9 +671,254 @@ class VoiceCaptureScreenLayoutTest {
         compose.onNodeWithTag("voice-mic").assertIsNotEnabled()
     }
 
+    private fun planOf(
+        text: String,
+        intent: AgentIntent = AgentIntent.TASK,
+        disposition: CaptureDisposition? = CaptureDisposition.KEEP_TODAY,
+        saveable: Boolean = true,
+        dueAt: Long? = null,
+        task: String? = null,
+        message: String = "",
+    ) = CapturePlan(
+        transcript = text,
+        reply = kr.mom.probe.agent.LocalAgentReply(
+            message = message, proposedTask = task ?: text,
+            intent = intent, proposedDueAt = dueAt,
+        ),
+        intent = intent, disposition = disposition,
+        labels = listOf(CaptureLabels.USER_SPOKE, intent.label),
+        saveable = saveable,
+    )
+
+    private fun batchOf(vararg clauses: CaptureClause) =
+        CaptureBatch(captureId = "layout-test", clauses = clauses.toList())
+
+    /**
+     * A REAL controller driven through the fake recognizer into DONE, with
+     * the composable's edit callbacks bound to it — every assertion reads
+     * controller state, so UI↔controller wiring is fully exercised.
+     */
+    private class DrivenScreen(
+        val controller: VoiceCaptureController,
+        var adapter: FakeAdapter,
+        var saveTaps: Int = 0,
+        var memoTaps: Int = 0,
+        var discardTaps: Int = 0,
+        var retryTaps: Int = 0,
+    )
+
+    private fun driveToDone(batch: CaptureBatch, fontScale: Float = 1f): DrivenScreen {
+        val factory = FakeFactory()
+        val controller = VoiceCaptureController { factory }
+        controller.classifier = { batch }
+        val driven = DrivenScreen(controller, FakeAdapter())
+        lateinit var renderedBatch: androidx.compose.runtime.MutableState<CaptureBatch?>
+        lateinit var renderedState: androidx.compose.runtime.MutableState<VoiceCaptureState>
+        compose.setContent {
+            renderedState = androidx.compose.runtime.remember {
+                androidx.compose.runtime.mutableStateOf(controller.state)
+            }
+            renderedBatch = androidx.compose.runtime.remember {
+                androidx.compose.runtime.mutableStateOf(controller.batch)
+            }
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+                kr.mom.probe.ui.MomTheme {
+                    Surface(Modifier.fillMaxSize()) {
+                        VoiceCaptureScreen(
+                            state = renderedState.value,
+                            transcript = controller.transcript,
+                            batch = renderedBatch.value,
+                            classificationFailed = controller.classificationFailed,
+                            errorText = controller.errorText,
+                            permissionDenied = false,
+                            needsFallbackConsent = false,
+                            onMicTap = {},
+                            onConsentContinue = {}, onConsentCancel = {},
+                            onClose = {},
+                            onSave = { driven.saveTaps++ },
+                            onSaveMemo = { controller.convertToMemo(); driven.memoTaps++ },
+                            onDiscard = { controller.discard(); driven.discardTaps++ },
+                            onRetryClassification = { controller.retryClassification(); driven.retryTaps++ },
+                            onClauseTranscript = controller::setClauseTranscript,
+                            onClauseAction = controller::setClauseAction,
+                            onClauseDate = controller::setClauseDate,
+                            onClauseResolve = controller::resolveClause,
+                            onClauseDrop = controller::dropClause,
+                            onClauseKeep = controller::keepClause,
+                        )
+                    }
+                }
+            }
+        }
+        controller.onChanged = {
+            renderedState.value = controller.state
+            renderedBatch.value = controller.batch
+        }
+        controller.startCapture()
+        val adapter = factory.createdOnDevice.first()
+        adapter.listener!!.onResult("캡처")
+        driven.adapter = adapter
+        compose.waitForIdle()
+        assertEquals(VoiceCaptureState.DONE, controller.state)
+        return driven
+    }
+
+    @Test fun `ordered clauses render as separate editable vertical cards`() {
+        driveToDone(
+            batchOf(
+                CaptureClause(0, "내일 물티슈 챙겨줘", planOf("내일 물티슈 챙겨줘")),
+                CaptureClause(1, "금요일 체육복 사야 돼", planOf("금요일 체육복 사야 돼", intent = AgentIntent.SHOPPING)),
+                CaptureClause(2, "그냥 메모", planOf("그냥 메모", intent = AgentIntent.MEMO,
+                    disposition = CaptureDisposition.MEMO_ONLY)),
+            ),
+        )
+        compose.onNodeWithTag("voice-clause-0").assertIsDisplayed()
+        compose.onNodeWithTag("voice-clause-1").assertIsDisplayed()
+        compose.onNodeWithTag("voice-clause-2").performScrollTo().assertIsDisplayed()
+        // Provenance labels stay visible; batch confirm requires all resolved.
+        compose.onAllNodesWithText("엄마가 직접 말함", substring = true).assertCountEquals(3)
+        compose.onNodeWithText("지금은 아직 아무것도 쓰지 않았어요.", substring = true).assertExists()
+        compose.onNodeWithTag("voice-save").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("voice-discard").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun `editing transcript action and date fields updates the controller`() {
+        val driven = driveToDone(batchOf(
+            CaptureClause(0, "내일 물티슈 챙겨줘", planOf("내일 물티슈 챙겨줘")),
+        ))
+        compose.onNodeWithTag("clause-text-0")
+            .performTextReplacement("모레 물티슈 챙겨줘")
+        compose.onNodeWithTag("clause-action-0")
+            .performTextReplacement("물티슈 두 팩")
+        compose.onNodeWithTag("clause-date-0")
+            .performTextReplacement("모레 오전 9시")
+        assertEquals("모레 물티슈 챙겨줘", driven.controller.batch!!.clauses[0].transcript)
+        assertEquals("물티슈 두 팩", driven.controller.batch!!.clauses[0].action)
+        assertEquals("모레 오전 9시", driven.controller.batch!!.clauses[0].dateInput)
+        assertTrue(driven.controller.batch!!.clauses[0].editedByUser)
+    }
+
+    @Test fun `unparseable date input blocks the batch save`() {
+        val driven = driveToDone(batchOf(
+            CaptureClause(0, "내일 물티슈 챙겨줘", planOf("내일 물티슈 챙겨줘")),
+        ))
+        compose.onNodeWithTag("clause-date-0")
+            .performTextReplacement("이상한 날짜")
+        compose.waitForIdle()
+        assertTrue(driven.controller.batch!!.clauses[0].dateParseFailed)
+        assertTrue(driven.controller.batch!!.unresolved.isNotEmpty())
+        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
+        // Clearing the field removes the block.
+        compose.onNodeWithTag("clause-date-0").performTextReplacement("")
+        compose.waitForIdle()
+        compose.onNodeWithTag("voice-save").assertIsDisplayed()
+    }
+
+    @Test fun `drop hides a clause from the batch and keep restores it`() {
+        val driven = driveToDone(
+            batchOf(
+                CaptureClause(0, "첫 번째", planOf("첫 번째")),
+                CaptureClause(1, "두 번째", planOf("두 번째")),
+            ),
+        )
+        compose.onNodeWithTag("clause-drop-1").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertTrue(driven.controller.batch!!.clauses[1].dropped)
+        assertEquals(listOf(0), driven.controller.batch!!.kept.map { it.index })
+        compose.onNodeWithText("이 부분은 저장하지 않아요.").assertIsDisplayed()
+        compose.onNodeWithTag("clause-keep-1").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(0, 1), driven.controller.batch!!.kept.map { it.index })
+    }
+
+    @Test fun `needs-review clause blocks save until explicitly resolved`() {
+        val driven = driveToDone(batchOf(
+            CaptureClause(0, "모르겠는데 뭔가 있었어", planOf(
+                "모르겠는데 뭔가 있었어", disposition = CaptureDisposition.NEEDS_CONFIRM,
+                saveable = false,
+            )),
+        ))
+        assertTrue(driven.controller.batch!!.unresolved.isNotEmpty())
+        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
+        compose.onNodeWithTag("clause-memo-0").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertTrue(driven.controller.batch!!.unresolved.isEmpty())
+        assertEquals(AgentIntent.MEMO, driven.controller.batch!!.clauses[0].intent)
+        compose.onNodeWithTag("voice-save").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun `question clause shows its answer and never offers a write`() {
+        driveToDone(batchOf(
+            CaptureClause(0, "이번 주 준비물 뭐야?", planOf(
+                "이번 주 준비물 뭐야?", intent = AgentIntent.QUESTION,
+                disposition = null, saveable = false,
+                message = "도시락과 물통이 등록되어 있어요.",
+            )),
+        ))
+        compose.onNodeWithText("도시락과 물통이 등록되어 있어요.").assertIsDisplayed()
+        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
+    }
+
+    @Test fun `save and discard fire exactly once per tap`() {
+        val driven = driveToDone(batchOf(
+            CaptureClause(0, "내일 물티슈 챙겨줘", planOf("내일 물티슈 챙겨줘")),
+        ))
+        compose.onNodeWithTag("voice-save").performScrollTo().performClick()
+        assertEquals(1, driven.saveTaps)
+        compose.onNodeWithTag("voice-discard").performScrollTo().performClick()
+        assertEquals(1, driven.discardTaps)
+        assertEquals(VoiceCaptureState.IDLE, driven.controller.state)
+    }
+
+    @Test fun `classification failure offers only retry or explicit memo`() {
+        var retryTaps = 0
+        var memoTaps = 0
+        renderScreen(
+            state = VoiceCaptureState.DONE, batch = null, classificationFailed = true,
+            onRetryClassification = { retryTaps++ }, onSaveMemo = { memoTaps++ },
+        )
+        compose.onNodeWithTag("voice-retry-classify").assertIsDisplayed()
+        compose.onNodeWithTag("voice-save-memo").assertIsDisplayed()
+        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
+        compose.onNodeWithTag("voice-retry-classify").performClick()
+        compose.onNodeWithTag("voice-save-memo").performClick()
+        assertEquals(1, retryTaps)
+        assertEquals(1, memoTaps)
+    }
+
+    @Test fun `editable clause cards stay reachable at 200 percent font scale`() {
+        driveToDone(
+            batchOf(
+                CaptureClause(0, "내일 물티슈 챙겨줘", planOf("내일 물티슈 챙겨줘")),
+                CaptureClause(1, "금요일 체육복 사야 돼", planOf("금요일 체육복 사야 돼")),
+            ),
+            fontScale = 2f,
+        )
+        compose.onNodeWithTag("clause-text-0").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("clause-drop-0").performScrollTo().assertHeightIsAtLeast(48.dp)
+        compose.onNodeWithTag("clause-memo-0").performScrollTo().assertHeightIsAtLeast(48.dp)
+        compose.onNodeWithTag("voice-save").performScrollTo().assertHeightIsAtLeast(48.dp)
+    }
+
+    @Config(qualifiers = "ko-rKR-land-xhdpi")
+    @Test fun `landscape keeps every clause control reachable`() {
+        driveToDone(batchOf(
+            CaptureClause(0, "내일 물티슈 챙겨줘", planOf("내일 물티슈 챙겨줘")),
+        ))
+        compose.onNodeWithTag("voice-clause-0").performScrollTo().assertExists()
+        compose.onNodeWithTag("clause-drop-0").performScrollTo().assertExists()
+        compose.onNodeWithTag("voice-save").performScrollTo().assertExists()
+        compose.onNodeWithText("닫기").performScrollTo().assertExists()
+    }
+
     private fun renderScreen(
         fontScale: Float = 1f,
         state: VoiceCaptureState = VoiceCaptureState.IDLE,
+        batch: CaptureBatch? = null,
+        classificationFailed: Boolean = false,
+        onRetryClassification: () -> Unit = {},
+        onSaveMemo: () -> Unit = {},
     ) {
         compose.setContent {
             val density = LocalDensity.current
@@ -566,13 +928,15 @@ class VoiceCaptureScreenLayoutTest {
                         VoiceCaptureScreen(
                             state = state,
                             transcript = "",
-                            plan = null,
+                            batch = batch,
+                            classificationFailed = classificationFailed,
                             errorText = null,
                             permissionDenied = false,
                             needsFallbackConsent = false,
                             onMicTap = {}, onConsentContinue = {},
                             onConsentCancel = {}, onClose = {},
-                            onSave = {}, onSaveMemo = {}, onDiscard = {},
+                            onSave = {}, onSaveMemo = onSaveMemo, onDiscard = {},
+                            onRetryClassification = onRetryClassification,
                         )
                     }
                 }

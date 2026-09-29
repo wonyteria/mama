@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
@@ -23,6 +24,7 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -33,6 +35,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import java.io.File
 import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.data.ProbeRecord
@@ -160,13 +163,20 @@ class ProbeScreensRenderTest {
         }
         render { today(tasks = overdueTasks) }
         compose.onNodeWithText("오늘은 이것만").performScrollTo().assertIsDisplayed()
-        // At most three priority cards, oldest overdue first — the rest stay
-        // in Todo, not dumped here.
-        compose.onNodeWithText("기한 지난 일 5").assertExists()
-        compose.onNodeWithText("기한 지난 일 4").assertExists()
-        compose.onNodeWithText("기한 지난 일 3").assertExists()
-        compose.onAllNodesWithText("기한 지난 일 1").assertCountEquals(0)
-        compose.onAllNodesWithText("기한 지난 일 2").assertCountEquals(0)
+        // The focus stack still caps at three (oldest overdue first); the
+        // overflow continues in the "기한 지남" bucket — never duplicated.
+        val bucketY = compose.onNodeWithText("기한 지남").assertExists()
+            .fetchSemanticsNode().positionInRoot.y
+        listOf("기한 지난 일 5", "기한 지난 일 4", "기한 지난 일 3").forEach { text ->
+            val y = compose.onNodeWithText(text).assertExists()
+                .fetchSemanticsNode().positionInRoot.y
+            assertTrue("$text must sit in the focus stack above 기한 지남", y < bucketY)
+        }
+        listOf("기한 지난 일 2", "기한 지난 일 1").forEach { text ->
+            val y = compose.onNodeWithText(text).assertExists()
+                .fetchSemanticsNode().positionInRoot.y
+            assertTrue("$text must sit in the 기한 지남 bucket", y > bucketY)
+        }
         screenshot("today-quiet-queue")
     }
 
@@ -183,6 +193,113 @@ class ProbeScreensRenderTest {
         compose.onNodeWithText("오늘은 이것만").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("나중에 확인").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("언젠가 확인할 일").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun todayOrdersAttentionBucketsAndCapsFocusStack() {
+        val tasks = (1..4).map { task(id = "o$it", text = "지난 일 $it", dueAt = NOW - it * 86_400_000L) } +
+            listOf(
+                task(id = "s1", text = "내일 도시락", dueAt = dueOn(1)),
+                task(id = "w1", text = "금요일 체육복", dueAt = dueOn(4)),
+                task(id = "u1", text = "날짜 없는 일"),
+            )
+        render { today(tasks = tasks) }
+        // Ordered eyebrows: focus stack → 기한 지남 → 오늘·내일 → 이번 주 → 나중에 확인.
+        val ys = listOf("오늘은 이것만", "기한 지남", "오늘·내일", "이번 주", "나중에 확인")
+            .map { label ->
+                compose.onNodeWithText(label).assertExists()
+                    .fetchSemanticsNode().positionInRoot.y
+            }
+        assertTrue(ys.zipWithNext().all { (a, b) -> a < b })
+        // Focus stack still caps at 3 — the 4th (newest) overdue lands in
+        // the 기한 지남 bucket, exactly once.
+        compose.onAllNodesWithText("지난 일 4").assertCountEquals(1)
+        compose.onAllNodesWithText("지난 일 1").assertCountEquals(1)
+        // Each bucket's item appears exactly once, ordered.
+        compose.onAllNodesWithText("내일 도시락").assertCountEquals(1)
+        compose.onAllNodesWithText("금요일 체육복").assertCountEquals(1)
+        compose.onAllNodesWithText("날짜 없는 일").assertCountEquals(1)
+        // Complete all-items path stays visible.
+        compose.onNodeWithTag("open-todo-all").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun todayRoutesNeedsReviewIntoTheReviewBucketOnly() {
+        render {
+            today(
+                tasks = listOf(
+                    task(id = "r1", text = "수정된 급식 안내", dueAt = dueOn(4), needsReview = true),
+                    task(id = "w1", text = "이번 주 도시락", dueAt = dueOn(4)),
+                ),
+            )
+        }
+        // Dated + needsReview never duplicates into 이번 주 — it surfaces
+        // once, in 나중에 확인.
+        compose.onAllNodesWithText("수정된 급식 안내").assertCountEquals(1)
+        val weekY = compose.onNodeWithText("이번 주").fetchSemanticsNode().positionInRoot.y
+        val reviewItemY = compose.onNodeWithText("수정된 급식 안내")
+            .fetchSemanticsNode().positionInRoot.y
+        assertTrue(reviewItemY > weekY)
+        // Status is carried by text, not color alone.
+        compose.onNodeWithText("수정 공지 확인 필요", substring = true).assertExists()
+    }
+
+    @Test
+    fun todayStatusTextDoesNotDependOnColor() {
+        render {
+            today(
+                tasks = listOf(
+                    task(id = "o1", text = "지난 회신", dueAt = NOW - 86_400_000L),
+                    task(id = "u1", text = "언젠가 할 일"),
+                ),
+            )
+        }
+        // Every row exposes a textual status + due label — never color-only.
+        compose.onAllNodesWithText("진행 중", substring = true).fetchSemanticsNodes()
+            .also { assertTrue(it.isNotEmpty()) }
+        compose.onNodeWithText("날짜 없음", substring = true).assertExists()
+        // Checkbox exposes a TalkBack label carrying the task name + action.
+        val cd = compose.onNodeWithTag("task-check-o1").fetchSemanticsNode()
+            .config.getOrNull(SemanticsProperties.ContentDescription)
+        assertTrue(cd != null && cd.any { it.contains("지난 회신") && it.contains("완료") })
+        compose.onNodeWithTag("task-check-o1")
+            .assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test
+    fun todayBucketsStayReachableAt200PercentFont() {
+        render(fontScale = 2f) {
+            today(
+                tasks = listOf(
+                    task(id = "o1", text = "지난 회신", dueAt = NOW - 86_400_000L),
+                    task(id = "u1", text = "언젠가 할 일"),
+                ),
+            )
+        }
+        compose.onNodeWithText("오늘은 이것만").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("나중에 확인").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("open-todo-all").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("task-check-u1").performScrollTo()
+            .assertHeightIsAtLeast(48.dp)
+    }
+
+    @Config(qualifiers = "ko-rKR-land-xhdpi")
+    @Test
+    fun todayBucketsStayReachableInLandscape() {
+        render {
+            today(
+                tasks = (1..4).map { task(id = "o$it", text = "지난 회신 $it", dueAt = NOW - it * 86_400_000L) } +
+                    listOf(
+                        task(id = "s1", text = "내일 도시락", dueAt = dueOn(1)),
+                        task(id = "w1", text = "이번 주 일", dueAt = dueOn(4)),
+                        task(id = "u1", text = "언젠가 할 일"),
+                    ),
+            )
+        }
+        listOf("오늘은 이것만", "기한 지남", "오늘·내일", "이번 주", "나중에 확인").forEach {
+            compose.onNodeWithText(it).performScrollTo().assertIsDisplayed()
+        }
+        compose.onNodeWithTag("open-todo-all").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -667,6 +784,7 @@ class ProbeScreensRenderTest {
         sourceNotificationId: String? = null,
         checklist: List<kr.mom.probe.task.TaskChecklistItem> = emptyList(),
         dueAt: Long? = null,
+        needsReview: Boolean = false,
     ) = kr.mom.probe.task.AssistantTask(
         id = id,
         text = text,
@@ -675,7 +793,14 @@ class ProbeScreensRenderTest {
         sourceNotificationId = sourceNotificationId,
         checklist = checklist,
         dueAt = dueAt,
+        needsReview = needsReview,
     )
+
+    /** Seoul-date math matching TodoSelectors: 9am on today+days. */
+    private fun dueOn(daysFromNow: Long): Long =
+        java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul"))
+            .plusDays(daysFromNow).atTime(9, 0)
+            .atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli()
 
     private fun render(fontScale: Float = 1f, content: @Composable () -> Unit) {
         compose.setContent {

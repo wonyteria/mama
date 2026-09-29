@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.border
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,7 +58,8 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.agent.AgentIntent
-import kr.mom.probe.agent.CapturePlan
+import kr.mom.probe.agent.CaptureBatch
+import kr.mom.probe.agent.CaptureClause
 import kr.mom.probe.agent.CaptureDisposition
 import kr.mom.probe.agent.LocalAgentContext
 import kr.mom.probe.agent.LocalAgentEngine
@@ -83,9 +87,14 @@ import kr.mom.probe.ui.minTouchTarget
 class VoiceQuickCaptureActivity : ComponentActivity() {
 
     private lateinit var controller: VoiceCaptureController
+
+    /** Test seam: unit tests drive the state machine without compose idle waits. */
+    internal val captureController: VoiceCaptureController?
+        get() = if (::controller.isInitialized) controller else null
     private var captureState by mutableStateOf(VoiceCaptureState.IDLE)
     private var transcript by mutableStateOf("")
-    private var plan by mutableStateOf<CapturePlan?>(null)
+    private var batch by mutableStateOf<CaptureBatch?>(null)
+    private var classificationFailed by mutableStateOf(false)
     private var errorText by mutableStateOf<String?>(null)
     private var needsFallbackConsent by mutableStateOf(false)
     private var permissionDenied by mutableStateOf(false)
@@ -115,14 +124,14 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
             (factoryOverride ?: ::SystemSpeechRecognizerFactory)(this)
         }
         controller.classifier = classifier@{ text ->
-            (classifierOverride?.invoke(this, text)) ?: runCatching {
-                LocalAgentEngine().capture(text, buildContext())
-            }.getOrNull()
+            classifierOverride?.invoke(this, text) ?:
+                LocalAgentEngine().captureBatch(text, buildContext(), captureId)
         }
         controller.onChanged = {
             captureState = controller.state
             transcript = controller.transcript
-            plan = controller.plan
+            batch = controller.batch
+            classificationFailed = controller.classificationFailed
             errorText = controller.errorText
             needsFallbackConsent = controller.needsFallbackConsent
         }
@@ -137,7 +146,8 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
                 VoiceCaptureScreen(
                     state = captureState,
                     transcript = transcript,
-                    plan = plan,
+                    batch = batch,
+                    classificationFailed = classificationFailed,
                     errorText = errorText,
                     permissionDenied = permissionDenied,
                     needsFallbackConsent = needsFallbackConsent,
@@ -148,6 +158,13 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
                     onSaveMemo = { controller.convertToMemo() },
                     onDiscard = { controller.discard() },
                     onClose = ::finish,
+                    onRetryClassification = { controller.retryClassification() },
+                    onClauseTranscript = controller::setClauseTranscript,
+                    onClauseAction = controller::setClauseAction,
+                    onClauseDate = controller::setClauseDate,
+                    onClauseResolve = controller::resolveClause,
+                    onClauseDrop = controller::dropClause,
+                    onClauseKeep = controller::keepClause,
                 )
             }
         }
@@ -165,7 +182,7 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
         )
     }
 
-    private fun onMicTap() {
+    internal fun onMicTap() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
         ) {
@@ -175,6 +192,7 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
                 VoiceCaptureState.SAVING, VoiceCaptureState.THINKING -> Unit
                 else -> {
                     captureId = VoiceCaptureStore.newCaptureId()
+                    controller.captureId = captureId
                     controller.startCapture()
                 }
             }
@@ -183,12 +201,12 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
         }
     }
 
-    private fun onSave() {
-        val current = plan ?: return
+    internal fun onSave() {
+        val current = batch ?: return
         if (!controller.requestSave()) return
         val saver = saverOverride ?: LocalVoiceCaptureSaver(this)
         lifecycleScope.launch {
-            when (val result = saver.save(current, transcript, captureId)) {
+            when (val result = saver.save(current, transcript)) {
                 VoiceSaveResult.Saved -> controller.finishSave(true)
                 is VoiceSaveResult.Failed -> controller.finishSave(false, result.message)
             }
@@ -208,7 +226,7 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
         /** Test seam: unit/Robolectric tests swap in a fake factory. */
         var factoryOverride: ((Context) -> SpeechRecognizerFactory)? = null
         /** Test seam: replaces LocalAgentEngine classification. */
-        var classifierOverride: ((Context, String) -> CapturePlan?)? = null
+        var classifierOverride: ((Context, String) -> CaptureBatch?)? = null
         /** Test seam: replaces the durable write. */
         var saverOverride: VoiceCaptureSaver? = null
     }
@@ -236,7 +254,8 @@ private fun headlineFor(state: VoiceCaptureState): String = when (state) {
 internal fun VoiceCaptureScreen(
     state: VoiceCaptureState,
     transcript: String,
-    plan: CapturePlan?,
+    batch: CaptureBatch?,
+    classificationFailed: Boolean,
     errorText: String?,
     permissionDenied: Boolean,
     needsFallbackConsent: Boolean,
@@ -247,6 +266,13 @@ internal fun VoiceCaptureScreen(
     onSaveMemo: () -> Unit,
     onDiscard: () -> Unit,
     onClose: () -> Unit,
+    onRetryClassification: () -> Unit = {},
+    onClauseTranscript: (Int, String) -> Unit = { _, _ -> },
+    onClauseAction: (Int, String) -> Unit = { _, _ -> },
+    onClauseDate: (Int, String) -> Unit = { _, _ -> },
+    onClauseResolve: (Int, CaptureDisposition) -> Unit = { _, _ -> },
+    onClauseDrop: (Int) -> Unit = {},
+    onClauseKeep: (Int) -> Unit = {},
 ) {
     Box(Modifier.fillMaxSize().background(Clay.Background)) {
         Column(
@@ -275,8 +301,12 @@ internal fun VoiceCaptureScreen(
                 permissionDenied -> PermissionDeniedBody(onMicTap)
                 needsFallbackConsent -> FallbackConsentBody(onConsentContinue, onConsentCancel)
                 else -> CaptureBody(
-                    state, transcript, plan, errorText,
-                    onMicTap, onSave, onSaveMemo, onDiscard,
+                    state, transcript, batch, classificationFailed, errorText,
+                    onMicTap, onSave, onSaveMemo, onDiscard, onRetryClassification,
+                    ClauseCallbacks(
+                        onClauseTranscript, onClauseAction, onClauseDate,
+                        onClauseResolve, onClauseDrop, onClauseKeep,
+                    ),
                 )
             }
             Spacer(Modifier.height(20.dp))
@@ -325,21 +355,44 @@ private fun FallbackConsentBody(onContinue: () -> Unit, onCancel: () -> Unit) {
     }
 }
 
+private class ClauseCallbacks(
+    val transcript: (Int, String) -> Unit,
+    val action: (Int, String) -> Unit,
+    val date: (Int, String) -> Unit,
+    val resolve: (Int, CaptureDisposition) -> Unit,
+    val drop: (Int) -> Unit,
+    val keep: (Int) -> Unit,
+)
+
 @Composable
 private fun CaptureBody(
     state: VoiceCaptureState,
     transcript: String,
-    plan: CapturePlan?,
+    batch: CaptureBatch?,
+    classificationFailed: Boolean,
     errorText: String?,
     onMicTap: () -> Unit,
     onSave: () -> Unit,
     onSaveMemo: () -> Unit,
     onDiscard: () -> Unit,
+    onRetryClassification: () -> Unit,
+    clauses: ClauseCallbacks,
 ) {
+    val editable = state == VoiceCaptureState.DONE
     if (state == VoiceCaptureState.DONE || state == VoiceCaptureState.SAVING ||
         state == VoiceCaptureState.SAVED
     ) {
-        ResultCard(transcript, plan, state, errorText)
+        when {
+            classificationFailed -> ClassificationFailedCard(transcript, errorText)
+            batch != null -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Ordered vertical preview — one editable card per clause.
+                batch.clauses.forEach { clause ->
+                    ClauseCard(clause, editable, clauses)
+                }
+                BatchFooter(batch, state, errorText)
+            }
+            else -> UnclassifiedCard(transcript, errorText)
+        }
         Spacer(Modifier.height(14.dp))
     }
     if (state == VoiceCaptureState.ERROR && errorText != null) {
@@ -372,17 +425,152 @@ private fun CaptureBody(
     }
     if (state == VoiceCaptureState.DONE) {
         Spacer(Modifier.height(12.dp))
-        DoneActions(plan, onSave, onSaveMemo, onDiscard)
+        DoneActions(
+            batch, classificationFailed,
+            onSave, onSaveMemo, onDiscard, onRetryClassification,
+        )
+    }
+}
+
+private fun formatDue(millis: Long): String =
+    java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.of("Asia/Seoul")).let {
+        "${it.monthValue}월 ${it.dayOfMonth}일 %02d:%02d".format(it.hour, it.minute)
+    }
+
+@Composable
+private fun ClauseCard(clause: CaptureClause, editable: Boolean, cb: ClauseCallbacks) {
+    val i = clause.index
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (clause.dropped) Clay.Background else Clay.Paper,
+        ),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().testTag("voice-clause-$i"),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (editable) {
+                ClauseField(
+                    value = clause.transcript,
+                    onValueChange = { cb.transcript(i, it) },
+                    tag = "clause-text-$i",
+                    style = MaterialTheme.typography.bodyLarge.copy(color = Clay.Ink),
+                    enabled = !clause.dropped,
+                )
+            } else {
+                Text(clause.transcript, style = MaterialTheme.typography.bodyLarge, color = Clay.Ink)
+            }
+            val labels = listOfNotNull(clause.disposition?.label) + clause.plan.labels +
+                listOfNotNull("수정됨".takeIf { clause.editedByUser })
+            if (labels.isNotEmpty()) {
+                // Provenance stays high-contrast — never a pastel hint.
+                Text(
+                    labels.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Clay.Green,
+                )
+            }
+            if (clause.dropped) {
+                Text("이 부분은 저장하지 않아요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+                TextButton(
+                    onClick = { cb.keep(i) },
+                    modifier = Modifier.minTouchTarget().testTag("clause-keep-$i"),
+                ) { Text("다시 살리기", color = Clay.Green) }
+                return@Column
+            }
+            if (clause.needsReview) {
+                Text(
+                    if (clause.dateParseFailed) "날짜를 읽지 못했어요 — 지우거나 다시 적어 주세요."
+                    else "확인 필요 — 저장할지 아래에서 정해 주세요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Clay.CoralDark,
+                )
+            }
+            val message = clause.plan.reply.message
+            if (message.isNotBlank() && clause.intent == AgentIntent.QUESTION) {
+                Text(message, style = MaterialTheme.typography.bodyMedium, color = Clay.Ink)
+            }
+            if (editable) {
+                Text("할 일", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+                ClauseField(
+                    value = clause.action ?: clause.plan.reply.proposedTask ?: "",
+                    onValueChange = { cb.action(i, it) },
+                    tag = "clause-action-$i",
+                    style = MaterialTheme.typography.bodyMedium.copy(color = Clay.Ink),
+                )
+                Text("날짜·시간 (예: 내일 오후 3시)", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+                ClauseField(
+                    value = clause.dateInput
+                        ?: (clause.dueAt ?: clause.plan.reply.proposedDueAt)?.let(::formatDue).orEmpty(),
+                    onValueChange = { cb.date(i, it) },
+                    tag = "clause-date-$i",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = if (clause.dateParseFailed) Clay.Error else Clay.Ink,
+                    ),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        CaptureDisposition.KEEP_TODAY to "clause-today-$i",
+                        CaptureDisposition.REVIEW_LATER to "clause-later-$i",
+                        CaptureDisposition.MEMO_ONLY to "clause-memo-$i",
+                    ).forEach { (disp, tag) ->
+                        val selected = clause.disposition == disp && clause.writable
+                        TextButton(
+                            onClick = { cb.resolve(i, disp) },
+                            modifier = Modifier.minTouchTarget().testTag(tag),
+                        ) {
+                            Text(
+                                (if (selected) "✓ " else "") + disp.label,
+                                color = if (selected) Clay.Green else Clay.Muted,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+                }
+                TextButton(
+                    onClick = { cb.drop(i) },
+                    modifier = Modifier.minTouchTarget().testTag("clause-drop-$i"),
+                ) { Text("이 부분 버리기", color = Clay.Muted) }
+            }
+        }
     }
 }
 
 @Composable
-private fun ResultCard(
-    transcript: String,
-    plan: CapturePlan?,
-    state: VoiceCaptureState,
-    errorText: String?,
-) {
+private fun BatchFooter(batch: CaptureBatch, state: VoiceCaptureState, errorText: String?) {
+    when (state) {
+        VoiceCaptureState.DONE -> Text(
+            when {
+                batch.unresolved.isNotEmpty() ->
+                    "확인 필요 ${batch.unresolved.size}개를 정하면 저장할 수 있어요."
+                batch.saveable ->
+                    "확인하면 ${batch.kept.size}개를 저장해요. 지금은 아직 아무것도 쓰지 않았어요."
+                else -> "저장할 항목이 없어요."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = Clay.Muted,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+        )
+        VoiceCaptureState.SAVING -> Text(
+            "저장하고 있어요…",
+            style = MaterialTheme.typography.bodySmall,
+            color = Clay.Muted,
+        )
+        VoiceCaptureState.SAVED -> Text(
+            "저장했어요. 부탁 목록에서 확인할 수 있어요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Clay.Green,
+        )
+        else -> Unit
+    }
+    errorText?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = Clay.Error)
+    }
+}
+
+/** Explicit non-saveable review state — classification never silently became a memo. */
+@Composable
+private fun ClassificationFailedCard(transcript: String, errorText: String?) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Clay.Paper),
         shape = RoundedCornerShape(16.dp),
@@ -390,69 +578,63 @@ private fun ResultCard(
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(transcript, style = MaterialTheme.typography.bodyLarge, color = Clay.Ink)
-            if (plan != null) {
-                if (plan.labels.isNotEmpty() || plan.disposition != null) {
-                    // Provenance stays high-contrast — never a pastel hint.
-                    Text(
-                        (listOfNotNull(plan.disposition?.label) + plan.labels).joinToString(" · "),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Clay.Green,
-                    )
-                }
-                if (plan.reply.message.isNotBlank()) {
-                    Text(
-                        plan.reply.message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (plan.intent == AgentIntent.QUESTION) Clay.Ink else Clay.Muted,
-                    )
-                }
-            } else {
-                Text("분류를 확인하지 못했어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
-            }
-            when (state) {
-                VoiceCaptureState.DONE -> Text(
-                    if (plan?.saveable == true) "확인하면 저장해요. 지금은 아직 아무것도 쓰지 않았어요."
-                    else "이 내용은 확인 없이 저장하지 않아요.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Clay.Muted,
-                )
-                VoiceCaptureState.SAVING -> Text(
-                    "저장하고 있어요…",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Clay.Muted,
-                )
-                VoiceCaptureState.SAVED -> Text(
-                    "저장했어요. 부탁 목록에서 확인할 수 있어요.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Clay.Green,
-                )
-                else -> Unit
-            }
-            errorText?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = Clay.Error)
-            }
+            Text(
+                errorText ?: "정리하는 중 문제가 생겨 아무것도 저장하지 않았어요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Clay.Error,
+            )
+            Text(
+                "다시 분류하거나, 그대로 메모로만 남길 수 있어요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Clay.Muted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UnclassifiedCard(transcript: String, errorText: String?) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Clay.Paper),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().testTag("voice-result-card"),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(transcript, style = MaterialTheme.typography.bodyLarge, color = Clay.Ink)
+            Text("분류를 확인하지 못했어요.", style = MaterialTheme.typography.bodySmall, color = Clay.Muted)
+            errorText?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Clay.Error) }
         }
     }
 }
 
 @Composable
 private fun DoneActions(
-    plan: CapturePlan?,
+    batch: CaptureBatch?,
+    classificationFailed: Boolean,
     onSave: () -> Unit,
     onSaveMemo: () -> Unit,
     onDiscard: () -> Unit,
+    onRetryClassification: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        if (plan != null && plan.saveable && plan.intent != AgentIntent.QUESTION) {
-            Button(
+        when {
+            classificationFailed || (batch == null) -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (classificationFailed) {
+                    Button(
+                        onClick = onRetryClassification,
+                        modifier = Modifier.minTouchTarget().testTag("voice-retry-classify"),
+                    ) { Text("다시 분류") }
+                }
+                Button(
+                    onClick = onSaveMemo,
+                    modifier = Modifier.minTouchTarget().testTag("voice-save-memo"),
+                ) { Text("메모로 저장") }
+            }
+            batch.saveable -> Button(
                 onClick = onSave,
                 modifier = Modifier.minTouchTarget().testTag("voice-save"),
             ) { Text("저장하기") }
-        } else if (plan == null || plan.disposition == CaptureDisposition.NEEDS_CONFIRM) {
-            Button(
-                onClick = onSaveMemo,
-                modifier = Modifier.minTouchTarget().testTag("voice-save-memo"),
-            ) { Text("메모로 저장") }
+            else -> Unit
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TextButton(
@@ -461,6 +643,29 @@ private fun DoneActions(
             ) { Text("내려놓기", color = Clay.Muted) }
         }
     }
+}
+
+@Composable
+private fun ClauseField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    tag: String,
+    style: androidx.compose.ui.text.TextStyle,
+    enabled: Boolean = true,
+) {
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        enabled = enabled,
+        singleLine = true,
+        textStyle = style,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .border(1.dp, Clay.Muted.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .testTag(tag),
+    )
 }
 
 @Composable

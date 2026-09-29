@@ -2,8 +2,10 @@ package kr.mom.probe.task
 
 import kr.mom.probe.data.ChildNoticeProfile
 import kr.mom.probe.data.NoticeContentState
+import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.NoticeObligation
 import kr.mom.probe.data.ProbeRecord
+import kr.mom.probe.data.SchoolLevel
 import kr.mom.probe.sync.RecordSourceMetadata
 import kr.mom.probe.sync.SourceKind
 import kr.mom.probe.sync.SourceOrigin
@@ -14,132 +16,218 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * End-to-end synthetic chain: app/web record -> decision+plans ->
- * applyAutomaticPlansFrom -> stored task. Pins the dedup contract —
- * the same official document can never produce a second task, and a
- * same-title different official document can never collapse into one.
+ * End-to-end synthetic chain through the real capture boundary:
+ * synthetic notification -> allowlist (ProbeRules.canCapture) ->
+ * normalization (NotificationRecordAssembler) -> canonical grouping ->
+ * AutoActionCoordinator.routeFor -> applyAutomaticPlansFrom ->
+ * evidence-linked task. No real notification is ever read or cancelled —
+ * inputs are constructed payloads only.
  */
 class NoticeCaptureChainTest {
     private val now = 1_789_300_000_000L
+    private val institution = "테스트학교"
 
-    private fun record(
+    /** A synthetic app notification through the real allowlist+normalizer. */
+    private fun appRecord(
         title: String,
         text: String,
-        itemId: String? = null,
-        notificationKey: String = "key-${title}",
+        packageName: String,
+        appLabel: String,
+        key: String,
         postedAt: Long = now,
-        packageName: String = "kr.test.school",
-        appLabel: String = "학교",
+    ): ProbeRecord = requireNotNull(
+        SyntheticNotificationIngest.accept(
+            SyntheticNotificationIngest.notification(
+                packageName = packageName, appLabel = appLabel,
+                title = title, text = text, key = key, postTime = postedAt,
+            ),
+            SyntheticNotificationIngest.settingsFor(packageName),
+        ),
+    ) { "allowlist rejected synthetic notification for $packageName" }
+
+    /**
+     * A public web notice — mirrors FetchedNotice.toProbeRecord exactly:
+     * source:<sourceId> package, itemId as key, source revision id, real
+     * source metadata (never used to fake app notifications).
+     */
+    private fun webRecord(
+        title: String,
+        text: String,
+        itemId: String,
+        dateFacts: List<kr.mom.probe.sync.SourceDateFact> = emptyList(),
+        postedAt: Long = now,
     ) = ProbeRecord(
-        id = "id-$title-$itemId-$postedAt",
-        packageName = packageName, appLabel = appLabel,
+        id = kr.mom.probe.data.ProbeRules.sourceRevisionId("school-board", itemId, "rev-$itemId"),
+        packageName = "source:school-board", appLabel = "학교 홈페이지",
         postedAt = postedAt, receivedAt = postedAt,
-        title = title, text = text, bigText = "", textLines = emptyList(),
-        subText = null, summaryText = null, category = null, channelId = null,
-        notificationId = 1, notificationKey = notificationKey,
-        isOngoing = false, isGroupSummary = false, rawHash = "h-$itemId",
-        sourceMetadata = itemId?.let { id ->
-            RecordSourceMetadata(
-                kind = SourceKind.SCHOOL_WEBSITE, sourceId = "school-board",
-                itemId = id, revisionHash = "rev-$id",
-                origin = SourceOrigin(
-                    canonicalUrl = "https://school.example/notice/$id",
-                    host = "school.example", rawId = id,
-                ),
-                contentState = NoticeContentState.VERIFIED,
-                obligation = NoticeObligation.REQUIRED,
-                firstSeenAt = postedAt, lastFetchedAt = postedAt,
-            )
-        },
+        title = title, text = text, bigText = text, textLines = emptyList(),
+        subText = "https://school.example/notice/$itemId", summaryText = null,
+        category = "source", channelId = "school-board",
+        notificationId = 0, notificationKey = itemId,
+        isOngoing = false, isGroupSummary = false, rawHash = "rev-$itemId",
+        sourceMetadata = RecordSourceMetadata(
+            kind = SourceKind.SCHOOL_WEBSITE, sourceId = "school-board",
+            itemId = itemId, revisionHash = "rev-$itemId",
+            origin = SourceOrigin(
+                canonicalUrl = "https://school.example/notice/$itemId",
+                host = "school.example", rawId = itemId,
+            ),
+            contentState = NoticeContentState.VERIFIED,
+            obligation = NoticeObligation.REQUIRED,
+            dateFacts = dateFacts,
+            firstSeenAt = postedAt, lastFetchedAt = postedAt,
+        ),
     )
 
-    private fun apply(record: ProbeRecord, tasks: List<AssistantTask>): Pair<List<AssistantTask>, Boolean> {
-        val plans = CandidateActionPlanner.plans(record, now = now, child = ChildNoticeProfile())
-        return AssistantTaskStore.applyAutomaticPlansFrom(
-            tasks = tasks,
-            sourceNotificationId = plans.firstOrNull()?.sourceNotificationId
-                ?: kr.mom.probe.data.NoticeGrouping.groupId(record, ""),
-            sourceRevisionId = record.id,
-            plans = plans.map {
-                AutoTaskPlan(
-                    actionKind = it.actionKind ?: "submit",
-                    text = it.text, checklist = it.checklist,
-                    dueAt = it.dueAt, remindAt = it.remindAt,
-                    evidenceText = it.evidenceText, sourceTitle = it.sourceTitle,
-                    sourceLabel = it.sourceLabel, sourceCapturedAt = it.sourceCapturedAt,
-                    audienceLabel = it.audienceLabel,
-                )
-            },
-            noticeGroupKeys = plans.firstOrNull()?.noticeGroupKeys
-                ?: kr.mom.probe.data.NoticeGrouping.keys(record, ""),
-            now = now,
-            idProvider = { "gen-${tasks.size}-${plans.size}" },
-        )
+    private fun toAutoPlan(it: CandidateActionPlan) = AutoTaskPlan(
+        actionKind = it.actionKind ?: "submit",
+        text = it.text, checklist = it.checklist,
+        dueAt = it.dueAt, remindAt = it.remindAt,
+        evidenceText = it.evidenceText, sourceTitle = it.sourceTitle,
+        sourceLabel = it.sourceLabel, sourceCapturedAt = it.sourceCapturedAt,
+        audienceLabel = it.audienceLabel,
+    )
+
+    /**
+     * Runs the coordinator's real routing gate, then the store's real apply
+     * — the same sequence AutoActionCoordinator.handle performs.
+     */
+    private fun coordinate(
+        record: ProbeRecord,
+        tasks: List<AssistantTask>,
+        child: ChildNoticeProfile = ChildNoticeProfile(),
+    ): Pair<List<AssistantTask>, AutoActionCoordinator.Route> {
+        val routing = AutoActionCoordinator.routeFor(record, child, institution, now)
+        val next = when (routing.route) {
+            AutoActionCoordinator.Route.APPLY -> AssistantTaskStore.applyAutomaticPlansFrom(
+                tasks = tasks,
+                sourceNotificationId = routing.sourceNotificationId,
+                sourceRevisionId = record.id,
+                plans = routing.plans.map(::toAutoPlan),
+                noticeGroupKeys = routing.groupKeys,
+                now = now,
+                idProvider = { "gen-${tasks.size}-${routing.plans.size}" },
+            ).first
+            AutoActionCoordinator.Route.SUSPEND -> AssistantTaskStore.suspendAutomaticSourcesForTest(
+                tasks, setOf(routing.sourceNotificationId),
+            )
+            AutoActionCoordinator.Route.REVIEW -> AssistantTaskStore.markNeedsReviewForTest(
+                tasks, routing.sourceNotificationId, record.id, routing.groupKeys,
+            )
+        }
+        return next to routing.route
     }
 
-    @Test fun `required dated notice chains into a stored task with evidence`() {
-        val notice = record("체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지", itemId = "42")
-        val (tasks, changed) = apply(notice, emptyList())
+    @Test fun `required dated app notification chains into a stored task with evidence`() {
+        val notice = appRecord(
+            "체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
+            packageName = "com.schoolbell_e.schoolbell_e", appLabel = "학교종이", key = "app-1",
+        )
+        val (tasks, route) = coordinate(notice, emptyList())
 
-        assertTrue(changed)
+        assertEquals(AutoActionCoordinator.Route.APPLY, route)
         assertTrue(tasks.isNotEmpty())
         val task = tasks.first()
         assertTrue(task.noticeGroupKeys.isNotEmpty())
         assertNotNull(task.evidenceText)
-        assertEquals("학교", task.sourceLabel)
+        assertEquals("학교종이", task.sourceLabel)
     }
 
-    @Test fun `re-ingesting the same official document never duplicates the task`() {
-        val appCopy = record("체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
-            itemId = "42", notificationKey = "app-1")
-        val webCopy = record("체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
-            itemId = "42", notificationKey = "web-1")
+    @Test fun `re-ingesting the same notification never duplicates the task`() {
+        val first = appRecord(
+            "체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
+            "com.schoolbell_e.schoolbell_e", "학교종이", key = "n-1",
+        )
+        val resend = appRecord(
+            "체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
+            "com.schoolbell_e.schoolbell_e", "학교종이", key = "n-1",
+        )
 
-        val (afterApp, _) = apply(appCopy, emptyList())
-        val (afterWeb, _) = apply(webCopy, afterApp)
+        val (afterFirst, _) = coordinate(first, emptyList())
+        val (afterSecond, _) = coordinate(resend, afterFirst)
 
-        // Same official item id → shared strong keys → same group → no dup.
-        assertEquals(afterApp.size, afterWeb.size)
+        assertEquals(afterFirst.size, afterSecond.size)
     }
 
-    @Test fun `same title on different official documents stays separate`() {
-        val first = record("체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
-            itemId = "42", notificationKey = "n-42")
-        val second = record("체험학습 준비물", "준비물: 모자, 간식. 내일 오후 2시까지",
-            itemId = "77", notificationKey = "n-77")
+    @Test fun `same title from a different app notification stays separate`() {
+        val first = appRecord(
+            "체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
+            "com.schoolbell_e.schoolbell_e", "학교종이", key = "n-1",
+        )
+        val second = appRecord(
+            "체험학습 준비물", "준비물: 모자, 간식. 내일 오후 2시까지",
+            "com.vaultmicro.kidsnote", "키즈노트", key = "n-2",
+        )
 
-        val plansTwo = CandidateActionPlanner.plans(second, now = now)
-        assertTrue(plansTwo.isNotEmpty())
-        assertTrue(kr.mom.probe.data.NoticeGrouping.keys(first, "")
-            .intersect(kr.mom.probe.data.NoticeGrouping.keys(second, "")).isEmpty())
+        assertTrue(NoticeGrouping.keys(first, institution)
+            .intersect(NoticeGrouping.keys(second, institution)).isEmpty())
 
-        val (afterFirst, _) = apply(first, emptyList())
-        val (afterSecond, _) = apply(second, afterFirst)
+        val (afterFirst, _) = coordinate(first, emptyList())
+        val (afterSecond, _) = coordinate(second, afterFirst)
 
         assertTrue(afterSecond.size > afterFirst.size)
     }
 
-    @Test fun `identical text on different official documents still stays separate`() {
-        // Same fingerprint, disjoint official ids — the fingerprint alone
-        // must never merge two distinct school notices.
-        val a = record("체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
-            itemId = "42", notificationKey = "n-42")
-        val b = record("체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
-            itemId = "77", notificationKey = "n-77")
+    @Test fun `duplicate app and web copies of one official item merge`() {
+        // App and web copies share nothing except identical content — the
+        // content fingerprint (institution + title + date + body start) is
+        // the only honest merge key. The web record carries the same parsed
+        // due date the app side extracts from the identical body.
+        val appCopy = appRecord(
+            "체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
+            "com.schoolbell_e.schoolbell_e", "학교종이", key = "app-42",
+        )
+        // "내일" resolves against the fixture clock (receivedAt = now), not
+        // the wall clock — the app-side fingerprint parses the body with it.
+        val tomorrow = java.time.Instant.ofEpochMilli(now)
+            .atZone(java.time.ZoneId.of("Asia/Seoul"))
+            .toLocalDate().plusDays(1).toString()
+        val webCopy = webRecord(
+            "체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
+            itemId = "42",
+            dateFacts = listOf(kr.mom.probe.sync.SourceDateFact(
+                role = kr.mom.probe.data.NoticeDateRole.DUE,
+                text = "내일 오전 9시까지",
+                dateIso = tomorrow,
+                hasExplicitTime = true,
+            )),
+        )
 
-        val (afterA, _) = apply(a, emptyList())
-        val (afterB, _) = apply(b, afterA)
-        assertTrue(afterB.size > afterA.size)
+        // Sanity: the copies share a fingerprint key but disjoint strong ids.
+        assertTrue(NoticeGrouping.keys(appCopy, institution)
+            .any { it.startsWith("fp:") && it in NoticeGrouping.keys(webCopy, institution) })
+
+        val (afterApp, _) = coordinate(appCopy, emptyList())
+        val (afterWeb, _) = coordinate(webCopy, afterApp)
+
+        assertEquals(afterApp.size, afterWeb.size)
     }
 
-    @Test fun `informational notice produces no automatic task`() {
-        val notice = record("학교 소식", "다음 주 화요일은 개교기념일로 쉬는 날입니다.", itemId = "9")
-        assertTrue(CandidateActionPlanner.plans(notice, now = now).isEmpty())
-        val (tasks, _) = apply(notice, emptyList())
+    @Test fun `same title on different official web documents stays separate`() {
+        val first = webRecord(
+            "체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지", itemId = "42",
+        )
+        val second = webRecord(
+            "체험학습 준비물", "준비물: 모자, 간식. 내일 오후 2시까지", itemId = "77",
+        )
+
+        val (afterFirst, _) = coordinate(first, emptyList())
+        val (afterSecond, _) = coordinate(second, afterFirst)
+
+        assertTrue(afterSecond.size > afterFirst.size)
+    }
+
+    @Test fun `informational app notification produces no automatic task`() {
+        val notice = appRecord(
+            "학교 소식", "다음 주 화요일은 개교기념일로 쉬는 날입니다.",
+            "com.schoolbell_e.schoolbell_e", "학교종이", key = "info-1",
+        )
+        val (tasks, route) = coordinate(notice, emptyList())
+        assertEquals(AutoActionCoordinator.Route.SUSPEND, route)
         assertTrue(tasks.isEmpty())
     }
 
-    @Test fun `every allowlisted source app chains to an evidence-linked task`() {
+    @Test fun `every allowlisted app identity chains through the real capture boundary`() {
         // The five shipped allowlist identities — pinned against the catalog
         // so a package rename fails here rather than silently in production.
         val sources = listOf(
@@ -155,15 +243,24 @@ class NoticeCaptureChainTest {
         }
 
         sources.forEachIndexed { index, (pkg, label) ->
-            val notice = record(
-                "체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
-                itemId = "item-$index", notificationKey = "n-$index",
-                packageName = pkg, appLabel = label,
+            // A non-allowlisted package never reaches normalization.
+            assertNull(
+                SyntheticNotificationIngest.accept(
+                    SyntheticNotificationIngest.notification(
+                        pkg, label, "제목", "본문", "bad-$index", now,
+                    ),
+                    SyntheticNotificationIngest.settingsFor("kr.unrelated.app"),
+                ),
             )
-            val plans = CandidateActionPlanner.plans(notice, now = now)
-            assertTrue("$label: no candidate plan", plans.isNotEmpty())
-
-            val (tasks, _) = apply(notice, emptyList())
+            val notice = appRecord(
+                "체험학습 준비물", "준비물: 도시락, 물통. 내일 오전 9시까지",
+                pkg, label, key = "n-$index",
+            )
+            // App notifications carry notification identity, never
+            // fabricated web-source metadata.
+            assertNull("$label: fabricated sourceMetadata", notice.sourceMetadata)
+            val (tasks, route) = coordinate(notice, emptyList())
+            assertEquals("$label: not promoted", AutoActionCoordinator.Route.APPLY, route)
             assertTrue("$label: no task created", tasks.isNotEmpty())
             val task = tasks.first()
             assertEquals("$label: app label lost", label, task.sourceLabel)
@@ -173,35 +270,36 @@ class NoticeCaptureChainTest {
     }
 
     @Test fun `scope-mismatched notice is never promoted into the task chain`() {
-        // A notice declared for 5–6th grade must stay in history/evidence —
-        // the coordinator suspends rather than creating a task for a
-        // 2nd-grade child. The unit-level pin: the decision marks it
-        // ineligible and its group keys stay intact.
-        val outOfScope = record(
-            "체험학습 안내", "준비물: 도시락. 내일 오전 9시까지",
-            itemId = "55",
-        ).let { r ->
-            r.copy(sourceMetadata = r.sourceMetadata!!.copy(
-                audienceFacts = listOf(kr.mom.probe.sync.SourceAudienceFact(
-                    applicability = kr.mom.probe.data.NoticeApplicability.APPLIES,
-                    schoolLevel = kr.mom.probe.data.SchoolLevel.ELEMENTARY,
-                    gradeStart = 5, gradeEnd = 6,
-                    evidence = kr.mom.probe.sync.SourceEvidence("html", "5~6학년 대상"),
-                )),
-            ))
-        }
-        val secondGrade = ChildNoticeProfile(schoolLevel = kr.mom.probe.data.SchoolLevel.ELEMENTARY, grade = 2)
-        val decision = kr.mom.probe.data.NoticeDecisionEngine.decide(outOfScope, secondGrade)
-        assertEquals(kr.mom.probe.data.NoticeApplicability.INELIGIBLE, decision.applicability)
+        // A notification declared for middle-school grade 1 runs the full
+        // apply path with a 2nd-grade elementary child — the coordinator
+        // suspends, zero tasks form, and the record's evidence identity is
+        // preserved for history.
+        val outOfScope = appRecord(
+            "입학 설명회", "중학교 1학년 대상. 준비물: 필기도구. 내일 오전 9시까지",
+            "com.schoolbell_e.schoolbell_e", "학교종이", key = "scope-1",
+        )
+        val secondGrade = ChildNoticeProfile(schoolLevel = SchoolLevel.ELEMENTARY, grade = 2)
+        val (tasks, route) = coordinate(outOfScope, emptyList(), secondGrade)
+
+        assertEquals(AutoActionCoordinator.Route.SUSPEND, route)
+        assertTrue(tasks.isEmpty())
         // History/evidence identity is preserved even though no task may form.
-        assertTrue(kr.mom.probe.data.NoticeGrouping.keys(outOfScope, "").isNotEmpty())
+        assertTrue(NoticeGrouping.keys(outOfScope, institution).isNotEmpty())
     }
 
     @Test fun `completion survives a resync of the same source`() {
-        val notice = record("체험학습 준비물", "준비물: 도시락. 내일 오전 9시까지", itemId = "42")
-        val (afterApply, _) = apply(notice, emptyList())
+        val notice = appRecord(
+            "체험학습 준비물", "준비물: 도시락. 내일 오전 9시까지",
+            "com.schoolbell_e.schoolbell_e", "학교종이", key = "resync-1",
+        )
+        val (afterApply, _) = coordinate(notice, emptyList())
         val done = afterApply.map { it.copy(completed = true, completedAt = now) }
-        val (afterResync, _) = apply(notice.copy(id = "rev-2"), done)
+        // A same-key resend resolves to the same record identity.
+        val resend = appRecord(
+            "체험학습 준비물", "준비물: 도시락. 내일 오전 9시까지",
+            "com.schoolbell_e.schoolbell_e", "학교종이", key = "resync-1",
+        )
+        val (afterResync, _) = coordinate(resend, done)
 
         assertTrue(afterResync.all { it.completed })
         assertEquals(done.size, afterResync.size)

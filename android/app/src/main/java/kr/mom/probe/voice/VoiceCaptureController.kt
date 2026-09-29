@@ -1,7 +1,13 @@
 package kr.mom.probe.voice
 
 import android.speech.SpeechRecognizer
+import kr.mom.probe.agent.AgentIntent
+import kr.mom.probe.agent.CaptureBatch
+import kr.mom.probe.agent.CaptureClause
+import kr.mom.probe.agent.CaptureDisposition
+import kr.mom.probe.agent.CaptureLabels
 import kr.mom.probe.agent.CapturePlan
+import kr.mom.probe.agent.LocalAgentReply
 
 /**
  * Tap-driven voice capture state machine.
@@ -39,8 +45,20 @@ class VoiceCaptureController(
         private set
     var errorText: String? = null
         private set
-    /** Classified preview produced when the final transcript arrives. */
-    var plan: CapturePlan? = null
+    /**
+     * Ordered editable clause batch produced when the final transcript
+     * arrives. Writes happen only through [requestSave] and only when
+     * every kept clause is resolved.
+     */
+    var batch: CaptureBatch? = null
+        private set
+
+    /**
+     * True when the classifier itself threw — an explicit non-saveable
+     * review state, never silently collapsed into a memo offer. The parent
+     * may retry classification or explicitly choose 메모로 저장.
+     */
+    var classificationFailed: Boolean = false
         private set
 
     /** True while the generic system RecognitionService needs explicit consent. */
@@ -49,10 +67,17 @@ class VoiceCaptureController(
 
     /**
      * Classification seam — set by the owning component to the single
-     * LocalAgentEngine.capture call. Returning null leaves the transcript
-     * visible without an interpretation.
+     * LocalAgentEngine.captureBatch call. Returning null (or throwing)
+     * leaves the transcript visible in the explicit review state.
      */
-    var classifier: (String) -> CapturePlan? = { null }
+    var classifier: (String) -> CaptureBatch? = { null }
+
+    /**
+     * Idempotency key for the capture in flight — the owner assigns it per
+     * mic tap and the saver writes it into durable stores. A batch produced
+     * without a classifier (e.g. explicit memo conversion) falls back to it.
+     */
+    var captureId: String = ""
 
     private var adapter: RecognizerAdapter? = null
     private var session = 0
@@ -70,7 +95,8 @@ class VoiceCaptureController(
         if (released || adapter != null || state == VoiceCaptureState.SAVING) return
         transcript = ""
         errorText = null
-        plan = null
+        batch = null
+        classificationFailed = false
         saveClaimed = false
         needsFallbackConsent = false
         if (!factory.isRecognitionAvailable()) {
@@ -99,8 +125,14 @@ class VoiceCaptureController(
         if (state != VoiceCaptureState.LISTENING) return
         try {
             a.stop()
-            state = VoiceCaptureState.THINKING
-            onChanged()
+            // stop() may have synchronously delivered a final result or
+            // error — those paths already tore the session down and moved
+            // to DONE/ERROR. Only an untouched live session needs the
+            // explicit THINKING marker so it cannot stall in LISTENING.
+            if (adapter === a && state == VoiceCaptureState.LISTENING) {
+                state = VoiceCaptureState.THINKING
+                onChanged()
+            }
         } catch (t: Throwable) {
             teardown(a)
             fail("음성 인식이 중단됐어요. 다시 시도해 주세요.")
@@ -122,13 +154,97 @@ class VoiceCaptureController(
         }
     }
 
+    // --- Editable clause preview -------------------------------------
+
+    private fun editClause(index: Int, transform: (CaptureClause) -> CaptureClause) {
+        if (state != VoiceCaptureState.DONE) return
+        val current = batch ?: return
+        batch = current.updateClause(index) { transform(it).copy(editedByUser = true) }
+        onChanged()
+    }
+
+    /** Parent rewrites the clause text — used verbatim as the memo/task source. */
+    fun setClauseTranscript(index: Int, text: String) =
+        editClause(index) { it.copy(transcript = text.take(MAX_CLAUSE_TEXT)) }
+
+    /** Parent rewrites the stored action text for this clause. */
+    fun setClauseAction(index: Int, action: String) =
+        editClause(index) { it.copy(action = action.take(MAX_CLAUSE_TEXT).ifBlank { null }) }
+
+    /** Parent adjusts the parsed due/remind times (null clears them). */
+    fun setClauseTimes(index: Int, dueAt: Long?, remindAt: Long?) =
+        editClause(index) { it.copy(dueAt = dueAt, remindAt = remindAt, dateParseFailed = false) }
+
+    /**
+     * Parent edits the due date/time as text — ISO, `M월 d일`, or
+     * 오늘/내일/모레 + optional 시/분. Blank clears the date; unparseable
+     * input flags the clause so it cannot be written until fixed.
+     */
+    fun setClauseDate(index: Int, rawInput: String) =
+        editClause(index) { clause ->
+            val raw = rawInput.trim()
+            val parsed = if (raw.isEmpty()) null else
+                kr.mom.probe.agent.LocalAgentEngine.parseEditableDateTime(raw)
+            if (raw.isNotEmpty() && parsed == null) {
+                clause.copy(dateInput = rawInput, dateParseFailed = true)
+            } else {
+                clause.copy(dueAt = parsed, dateInput = rawInput, dateParseFailed = false)
+            }
+        }
+
+    /**
+     * Explicit per-clause resolution — the only way a NEEDS_CONFIRM or
+     * non-saveable clause becomes writable. Choosing a real disposition
+     * marks the clause resolved; dropping removes it from the batch.
+     */
+    fun resolveClause(index: Int, disposition: CaptureDisposition) {
+        if (disposition == CaptureDisposition.NEEDS_CONFIRM) return
+        editClause(index) { clause ->
+            val intent = when (disposition) {
+                CaptureDisposition.MEMO_ONLY -> AgentIntent.MEMO
+                else -> if (clause.intent == AgentIntent.QUESTION) AgentIntent.TASK else clause.intent
+            }
+            clause.copy(
+                dispositionOverride = disposition,
+                intentOverride = intent,
+                saveableOverride = true,
+                resolved = true,
+            )
+        }
+    }
+
+    /** Drop/keep control — a dropped clause is never written. */
+    fun dropClause(index: Int) = editClause(index) { it.copy(dropped = true) }
+    fun keepClause(index: Int) = editClause(index) { it.copy(dropped = false) }
+
+    /**
+     * Re-runs the classifier on the kept transcript after a classification
+     * failure — the explicit retry path out of the review state.
+     */
+    fun retryClassification() {
+        if (state != VoiceCaptureState.DONE || !classificationFailed) return
+        classifyNow()
+    }
+
+    private fun classifyNow() {
+        val result = runCatching { classifier(transcript) }
+        result.onSuccess { value ->
+            classificationFailed = value == null
+            batch = value
+        }.onFailure {
+            classificationFailed = true
+            batch = null
+        }
+        onChanged()
+    }
+
     /**
      * Explicit save request from the preview card. Fires at most once per
      * capture — the caller reports the outcome through [finishSave].
      */
     fun requestSave(): Boolean {
         if (released || state != VoiceCaptureState.DONE || saveClaimed) return false
-        if (plan?.saveable != true) return false
+        if (batch?.saveable != true) return false
         saveClaimed = true
         errorText = null
         state = VoiceCaptureState.SAVING
@@ -152,34 +268,29 @@ class VoiceCaptureController(
 
     /**
      * Lets the parent explicitly keep an unclassifiable capture as a memo —
-     * the only write path out of NEEDS_CONFIRM, and still user-initiated.
+     * still user-initiated, and now the explicit choice offered alongside
+     * the classification-failure retry state.
      */
     fun convertToMemo() {
         if (state != VoiceCaptureState.DONE) return
-        val current = plan
-        if (current?.saveable == true) return
-        val base = current ?: CapturePlan(
+        if (batch?.saveable == true) return
+        val memoPlan = CapturePlan(
             transcript = transcript,
-            reply = kr.mom.probe.agent.LocalAgentReply(""),
-            intent = kr.mom.probe.agent.AgentIntent.MEMO,
-            disposition = null,
-            labels = emptyList(),
-            saveable = false,
-        )
-        plan = base.copy(
-            intent = kr.mom.probe.agent.AgentIntent.MEMO,
-            disposition = kr.mom.probe.agent.CaptureDisposition.MEMO_ONLY,
-            reply = base.reply.copy(
-                proposedTask = base.transcript.ifBlank { transcript },
-                proposedDueAt = null,
-                proposedRemindAt = null,
-                scheduleCommand = null,
-                intent = kr.mom.probe.agent.AgentIntent.MEMO,
+            reply = LocalAgentReply(
+                message = "",
+                proposedTask = transcript,
+                intent = AgentIntent.MEMO,
             ),
-            labels = (base.labels - kr.mom.probe.agent.CaptureLabels.NO_SAVE) +
-                kr.mom.probe.agent.AgentIntent.MEMO.label,
+            intent = AgentIntent.MEMO,
+            disposition = CaptureDisposition.MEMO_ONLY,
+            labels = listOf(CaptureLabels.USER_SPOKE, AgentIntent.MEMO.label),
             saveable = true,
         )
+        batch = CaptureBatch(
+            captureId = batch?.captureId ?: captureId,
+            clauses = listOf(CaptureClause(0, transcript, memoPlan, resolved = true)),
+        )
+        classificationFailed = false
         onChanged()
     }
 
@@ -187,7 +298,8 @@ class VoiceCaptureController(
     fun discard() {
         if (released) return
         transcript = ""
-        plan = null
+        batch = null
+        classificationFailed = false
         errorText = null
         saveClaimed = false
         needsFallbackConsent = false
@@ -241,7 +353,7 @@ class VoiceCaptureController(
                     if (transcript.isBlank()) {
                         fail("알아듣지 못했어요. 다시 말해주세요.")
                     } else {
-                        plan = runCatching { classifier(transcript) }.getOrNull()
+                        classifyNow()
                         state = VoiceCaptureState.DONE
                         onChanged()
                     }
@@ -282,5 +394,9 @@ class VoiceCaptureController(
         state = VoiceCaptureState.ERROR
         errorText = message
         onChanged()
+    }
+
+    companion object {
+        private const val MAX_CLAUSE_TEXT = 300
     }
 }
