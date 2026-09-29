@@ -45,6 +45,9 @@ class VoiceCaptureController(
         private set
     var errorText: String? = null
         private set
+    /** False after a non-retryable save failure — the UI must not offer the same save again. */
+    var saveRetryable: Boolean = true
+        private set
     /**
      * Ordered editable clause batch produced when the final transcript
      * arrives. Writes happen only through [requestSave] and only when
@@ -246,20 +249,28 @@ class VoiceCaptureController(
         if (released || state != VoiceCaptureState.DONE || saveClaimed) return false
         if (batch?.saveable != true) return false
         saveClaimed = true
+        saveRetryable = true
         errorText = null
         state = VoiceCaptureState.SAVING
         onChanged()
         return true
     }
 
-    /** Caller reports the write result; failure keeps the transcript for retry. */
-    fun finishSave(success: Boolean, message: String? = null) {
+    /**
+     * Caller reports the write result; failure keeps the transcript for
+     * retry. `retryable` is preserved to the UI: a retryable failure offers
+     * the same save again, a non-retryable one (setup, permission,
+     * destination) hides the save button so no false retry is promised.
+     */
+    fun finishSave(success: Boolean, message: String? = null, retryable: Boolean = true) {
         if (state != VoiceCaptureState.SAVING) return
         if (success) {
             state = VoiceCaptureState.SAVED
             errorText = null
+            saveRetryable = true
         } else {
             saveClaimed = false
+            saveRetryable = retryable
             state = VoiceCaptureState.DONE
             errorText = message ?: "저장하지 못했어요. 다시 시도해 주세요."
         }
@@ -291,6 +302,7 @@ class VoiceCaptureController(
             clauses = listOf(CaptureClause(0, transcript, memoPlan, resolved = true)),
         )
         classificationFailed = false
+        saveRetryable = true
         onChanged()
     }
 
@@ -302,6 +314,7 @@ class VoiceCaptureController(
         classificationFailed = false
         errorText = null
         saveClaimed = false
+        saveRetryable = true
         needsFallbackConsent = false
         state = VoiceCaptureState.IDLE
         onChanged()

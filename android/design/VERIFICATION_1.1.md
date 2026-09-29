@@ -19,7 +19,7 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 
 `8083878`(탭 기반 음성 캡처) 이후 Stage 4/5 — KUU의 "말하기 우선·모든 말을 할 일로 만들지 않음"을 MAMA 정책으로 번역했다(4분면 격자·ADHD 포지셔닝 복제 아님, 근거/확인 중심 유지).
 
-- fresh clean `testDebugUnitTest` XML 합계: **tests=403, pass=401, skipped=2, failures=0, errors=0**(이번 라운드 +25: 멀티클로즈·editable preview·저널 멱등·동기 stop·버킷 순서·분류 실패). lint **오류 0 / 경고 101**(신규 파일에 추가된 경고 없음 — 기존 싱글톤/`.edit()` 패턴과 동일 계열). debug·androidTest APK 조립 성공.
+- fresh clean `testDebugUnitTest` XML 합계: **tests=411, pass=409, skipped=2, failures=0, errors=0**(follow-up 라운드 +8: 메모 라우팅·캘린더 편집 payload·unresolved fail-fast·non-retryable UI). lint **오류 0 / 경고 101**(신규 파일에 추가된 경고 없음 — 기존 싱글톤/`.edit()` 패턴과 동일 계열). debug·androidTest APK 조립 성공.
 - 발화 분류: `LocalAgentEngine.capture()`가 MEMO/TASK/REMINDER/CALENDAR/SHOPPING/QUESTION으로 분류하고 preview는 `오늘 챙길 일`·`나중에 확인`·`메모만`·`엄마 확인 필요`·`내려놓기/저장 안 함` 버킷 중 하나를 표시한다. 질문형은 저장 없이 인라인 답변만, 알람·날짜 불명확·파싱 불가는 확인 없이 쓰지 않는다(`CaptureClassificationTest` 13건).
 - 리뷰 라운드 blocker 수정: `stopCapture()`는 `adapter.stop()` 성공 직후 즉시 THINKING+`onChanged()`(callback 지연/부재에도 LISTENING 잔류 불가), `begin()`의 `adapter.start()` 예외는 teardown → IDLE 복구 → fallback disclosure 표시이며 취소 후 다음 mic 탭으로 재시도 가능(`VoiceQuickCaptureTest` 회귀 2건 추가).
 - 저장 경로: 미리보기 → 명시 일괄 확인 → `VoiceCaptureSaver` → `CaptureWriteCoordinator`(captureId 저널) → 기존 `AssistantTaskStore`/`CalendarGateway`. 저장 실패 시 transcript+edit 보존·재시도, `voice:<captureId>:<index>` source key로 실제 task write까지 멱등, 내려놓기는 아무것도 쓰지 않는다(`VoiceQuickCaptureActivityTest` 25건 — 권한 거부/재시도·on-device 부재 disclosure·generic 취소·빈 결과·중복 탭·회전·stale callback·동기 stop 회귀·start 예외 fallback 재시도·edit 보존·분류 실패 포함).
@@ -43,6 +43,15 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 - F 분류 실패 명시: classifier 예외는 `classificationFailed` 상태로 분리되어 `다시 분류`/`메모로 저장` 명시 선택만 제공한다 — plan==null로 접어 저장 가능처럼 보이지 않는다.
 - Robolectric 경계(정직 기록): 실제 Activity `setContent` 안의 editable `TextField`가 Robolectric에서 영구 `pendingMeasureOrLayout`을 일으켜 `waitForIdle`이 교착한다. 이를 우회하기 위해 Activity 테스트는 DONE 이후 controller 상태를 직접 단언하고(`compose.setContent`가 아닌 실 경로), editable UI 편집·버킷·a11y 계약은 `compose.setContent` 호스트의 `VoiceCaptureScreenLayoutTest`/`ProbeScreensRenderTest`가 커버한다. Compose idle 자체의 앱 논리 결함은 아니다.
 - 검증 숫자는 아래 "자동 검증 (PC, 최신 실행)"의 최신 실행 행을 갱신한다.
+
+### 계약 결함 수정 (자동, follow-up 라운드)
+
+`c265744` 리뷰의 계약 결함 4건을 수정했다.
+
+- **메모는 절대 task가 되지 않는다**: `CaptureWriteCoordinator`는 TASK/REMINDER/SHOPPING만 taskWriter, CALENDAR만 calendarWriter로 보낸다. MEMO clause는 per-clause write가 없고 `VoiceCaptureRecord`(확인된 transcript)에만 남는다 — Todo/Today 노출 0건. `LocalVoiceCaptureSaver.writeTask`에도 `require(intent != MEMO)` 방어선을 뒀다. 회귀: `memo clauses write only the record never a task`(writer 호출·record 내용·journal 완료 단언) + `memo-only batch writes the record without ever creating a task`(분류 실패 → `메모로 저장` → MEMO_ONLY clause가 saver까지 도달).
+- **캘린더 편집이 실제 저장값이다**: `calendarPayloadFor`가 부모가 확인한 편집을 payload에 반영한다 — `clause.action`→제목, `clause.dueAt`→시작 시각(파싱된 duration 유지), zone/명시 종료는 파스 결과를 따른다. 회귀: `calendar payload honors the edits the parent confirmed`(편집 제목·시작·보존 duration·zone 단언).
+- **내구 경계가 saveable을 강제한다**: `commit()`은 `batch.saveable`이 아니면 어느 write도 시작하지 않고 non-retryable로 fail-fast한다(kept-but-unresolved 부분 commit 금지, dropped만 있으면 허용). kept QUESTION도 pre-validation에서 거부한다. 회귀: `unresolved kept clause fails fast with zero writes`·`dropped clause alone does not block the commit`·`kept question clause fails fast before any write`.
+- **retryable이 UI까지 간다**: `VoiceSaveResult.Failed.retryable` → `controller.saveRetryable` → 화면. retryable 실패만 같은 저장 재시도를 제공하고, non-retryable(setup·permission·destination)은 저장 버튼을 철회하고 "다시 시도해도 저장되지 않아요" 복구 안내를 표시한다 — false success/retry 없음. 회귀: `non-retryable save failure preserves edits but withdraws the retry`·`non-retryable failure hides the save retry and explains recovery`.
 
 ## A–N 결함 수정 (자동, 신규)
 

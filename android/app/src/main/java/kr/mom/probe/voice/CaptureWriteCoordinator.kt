@@ -56,10 +56,33 @@ class CaptureWriteCoordinator(
     ): CaptureWriteJournal {
         var journal = journals.journalFor(batch.captureId)
         if (journal.complete) return journal
-        batch.clauses.filter { it.writable }.forEach { clause ->
+        // Durable boundary enforces the same gate as the UI: a batch with a
+        // kept-but-unresolved clause fails fast with zero writes — partial
+        // commits of unreviewed work are never journaled as complete.
+        if (!batch.saveable) {
+            throw CaptureWriteException(
+                "확인되지 않은 항목이 있어 아무것도 저장하지 않았어요.", retryable = false,
+            )
+        }
+        // Pre-validate intent routing before any write: a kept QUESTION is a
+        // classification defect that must never reach a writer mid-batch.
+        if (batch.kept.any { it.intent == AgentIntent.QUESTION }) {
+            throw CaptureWriteException(
+                "질문은 저장하지 않아요. 항목을 다시 확인해 주세요.", retryable = false,
+            )
+        }
+        batch.kept.forEach { clause ->
             if (clause.index in journal.completedWrites) return@forEach
-            val writer = if (clause.intent == AgentIntent.CALENDAR) calendarWriter else taskWriter
-            val writtenId = writer.write(batch.captureId, clause)
+            // Routing contract: TASK/REMINDER/SHOPPING -> the task store,
+            // CALENDAR -> CalendarGateway, MEMO -> no row (the transcript
+            // record below is the memo itself — a thought never becomes a
+            // task).
+            val writer = when (clause.intent) {
+                AgentIntent.CALENDAR -> calendarWriter
+                AgentIntent.MEMO -> null
+                else -> taskWriter
+            }
+            val writtenId = writer?.write(batch.captureId, clause)
             journal = journal.copy(
                 completedWrites = journal.completedWrites + clause.index,
                 writtenTaskIds = writtenId?.let { journal.writtenTaskIds + (clause.index to it) }

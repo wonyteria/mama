@@ -36,6 +36,7 @@ import kr.mom.probe.agent.CaptureLabels
 import kr.mom.probe.agent.CapturePlan
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -477,6 +478,63 @@ class VoiceQuickCaptureActivityTest {
         assertEquals(VoiceCaptureState.SAVED, c.state)
     }
 
+    @Test fun `non-retryable save failure preserves edits but withdraws the retry`() {
+        val saver = FakeSaver(VoiceSaveResult.Failed("앱에서 처음 설정을 마쳐주세요.", retryable = false))
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> taskPlan().toBatch() }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        listenToResultNoIdle("물통 챙겨줘")
+
+        compose.runOnUiThread { compose.activity.onSave() }
+        ShadowLooper.idleMainLooper()
+        val c = compose.activity.captureController!!
+        assertEquals(VoiceCaptureState.DONE, c.state)
+        // The failure is surfaced honestly — retryable=false reaches the UI
+        // so no false retry is offered, but nothing was lost.
+        assertFalse(c.saveRetryable)
+        assertEquals("앱에서 처음 설정을 마쳐주세요.", c.errorText)
+        assertTrue(c.batch!!.clauses.first().transcript.isNotBlank())
+        // The claim is released — a fixed environment may save again.
+        compose.runOnUiThread {
+            saver.result = VoiceSaveResult.Saved
+            compose.activity.onSave()
+        }
+        ShadowLooper.idleMainLooper()
+        assertEquals(2, saver.calls.size)
+        assertEquals(VoiceCaptureState.SAVED, c.state)
+    }
+
+    @Test fun `memo-only batch writes the record without ever creating a task`() {
+        // The explicit classification-failure memo path: convertToMemo makes a
+        // MEMO/MEMO_ONLY clause — the saver must still run, but the durable
+        // boundary is what decides nothing reaches the task store. The
+        // coordinator-level proof lives in CaptureWriteCoordinatorTest; here
+        // we pin that the UI save path completes with a memo clause intact.
+        val saver = FakeSaver()
+        launch()
+        VoiceQuickCaptureActivity.saverOverride = saver
+        VoiceQuickCaptureActivity.classifierOverride = { _, _ -> throw RuntimeException("offline") }
+        shadowOf(compose.activity.application).grantPermissions(Manifest.permission.RECORD_AUDIO)
+        tapMic()
+        listenToResultNoIdle("그냥 기록해두고 싶은 생각")
+
+        val c = compose.activity.captureController!!
+        assertTrue(c.classificationFailed)
+        compose.runOnUiThread { c.convertToMemo() }
+        val memo = c.batch!!.clauses.first()
+        assertEquals(AgentIntent.MEMO, memo.intent)
+        assertEquals(CaptureDisposition.MEMO_ONLY, memo.disposition)
+        assertTrue(c.batch!!.saveable)
+
+        compose.runOnUiThread { compose.activity.onSave() }
+        ShadowLooper.idleMainLooper()
+        assertEquals(1, saver.calls.size)
+        assertEquals(AgentIntent.MEMO, saver.calls.last().clauses.first().intent)
+        assertEquals(VoiceCaptureState.SAVED, c.state)
+    }
+
     @Test fun `question answers inline with no save button`() {
         val saver = FakeSaver()
         launch()
@@ -901,6 +959,20 @@ class VoiceCaptureScreenLayoutTest {
         compose.onNodeWithTag("voice-save").performScrollTo().assertHeightIsAtLeast(48.dp)
     }
 
+    @Test fun `non-retryable failure hides the save retry and explains recovery`() {
+        renderScreen(
+            state = VoiceCaptureState.DONE,
+            batch = batchOf(
+                CaptureClause(0, "내일 물티슈 챙겨줘", planOf("내일 물티슈 챙겨줘")),
+            ),
+            saveRetryable = false,
+        )
+        compose.onAllNodesWithTag("voice-save").assertCountEquals(0)
+        compose.onNodeWithTag("voice-save-blocked").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("앱에서 처음 설정을 마쳐주세요.").performScrollTo().assertExists()
+        compose.onNodeWithTag("voice-discard").performScrollTo().assertIsDisplayed()
+    }
+
     @Config(qualifiers = "ko-rKR-land-xhdpi")
     @Test fun `landscape keeps every clause control reachable`() {
         driveToDone(batchOf(
@@ -917,6 +989,7 @@ class VoiceCaptureScreenLayoutTest {
         state: VoiceCaptureState = VoiceCaptureState.IDLE,
         batch: CaptureBatch? = null,
         classificationFailed: Boolean = false,
+        saveRetryable: Boolean = true,
         onRetryClassification: () -> Unit = {},
         onSaveMemo: () -> Unit = {},
     ) {
@@ -930,7 +1003,8 @@ class VoiceCaptureScreenLayoutTest {
                             transcript = "",
                             batch = batch,
                             classificationFailed = classificationFailed,
-                            errorText = null,
+                            errorText = if (!saveRetryable) "앱에서 처음 설정을 마쳐주세요." else null,
+                            saveRetryable = saveRetryable,
                             permissionDenied = false,
                             needsFallbackConsent = false,
                             onMicTap = {}, onConsentContinue = {},

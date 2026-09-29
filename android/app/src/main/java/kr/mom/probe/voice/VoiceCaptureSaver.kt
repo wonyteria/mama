@@ -5,6 +5,7 @@ import kr.mom.probe.agent.AgentIntent
 import kr.mom.probe.agent.CalendarCreateCommand
 import kr.mom.probe.agent.CaptureBatch
 import kr.mom.probe.agent.CaptureClause
+import kr.mom.probe.agent.SchedulePayload
 import kr.mom.probe.calendar.CalendarGateway
 import kr.mom.probe.calendar.CalendarSaveState
 import kr.mom.probe.task.AssistantTaskStore
@@ -87,6 +88,9 @@ class LocalVoiceCaptureSaver(
      * journal mark never landed.
      */
     private fun writeTask(store: AssistantTaskStore, captureId: String, clause: CaptureClause): String? {
+        // Defense in depth — the coordinator never routes MEMO here, and a
+        // memo must never become a task row.
+        require(clause.intent != AgentIntent.MEMO) { "메모는 할 일로 저장하지 않아요." }
         val key = "voice:$captureId:${clause.index}"
         store.tasks.value.firstOrNull { it.sourceNotificationId == key }?.let { return it.id }
         val text = clause.action ?: clause.plan.reply.proposedTask ?: clause.transcript
@@ -120,10 +124,10 @@ class LocalVoiceCaptureSaver(
     }
 
     private fun writeCalendar(captureId: String, clause: CaptureClause): String? {
-        val command = clause.plan.reply.scheduleCommand as? CalendarCreateCommand
+        val payload = calendarPayloadFor(clause)
             ?: throw CaptureWriteException("일정 내용을 다시 확인해 주세요.", retryable = false)
         val result = CalendarGateway(app).saveEvent(
-            "$captureId:${clause.index}", clause.transcript, command.payload,
+            "$captureId:${clause.index}", clause.transcript, payload,
         )
         return when (result.state) {
             CalendarSaveState.SAVED -> result.record?.eventId?.toString()
@@ -136,4 +140,24 @@ class LocalVoiceCaptureSaver(
             -> throw CaptureWriteException(result.message, retryable = true)
         }
     }
+}
+
+/**
+ * The payload the parent actually confirmed: clause edits win over the
+ * engine's proposal — action becomes the event title, dueAt becomes the
+ * start (duration preserved), zone/end semantics come from the parse.
+ * Pure and testable; returns null when the clause has no calendar command.
+ */
+internal fun calendarPayloadFor(clause: CaptureClause): SchedulePayload? {
+    val command = clause.plan.reply.scheduleCommand as? CalendarCreateCommand ?: return null
+    val base = command.payload
+    val title = (clause.action?.ifBlank { null } ?: clause.plan.reply.proposedTask
+        ?: base.title).take(120)
+    val start = clause.dueAt ?: base.startMillis
+    val duration = (base.endMillis - base.startMillis).coerceAtLeast(0L)
+    return base.copy(
+        title = title.ifBlank { base.title },
+        startMillis = start,
+        endMillis = start + duration,
+    )
 }

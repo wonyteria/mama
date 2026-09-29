@@ -96,6 +96,7 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
     private var batch by mutableStateOf<CaptureBatch?>(null)
     private var classificationFailed by mutableStateOf(false)
     private var errorText by mutableStateOf<String?>(null)
+    private var saveRetryable by mutableStateOf(true)
     private var needsFallbackConsent by mutableStateOf(false)
     private var permissionDenied by mutableStateOf(false)
     private var captureId = VoiceCaptureStore.newCaptureId()
@@ -133,6 +134,7 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
             batch = controller.batch
             classificationFailed = controller.classificationFailed
             errorText = controller.errorText
+            saveRetryable = controller.saveRetryable
             needsFallbackConsent = controller.needsFallbackConsent
         }
         // Pre-warm the stores off the main thread so classification/saving
@@ -149,6 +151,7 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
                     batch = batch,
                     classificationFailed = classificationFailed,
                     errorText = errorText,
+                    saveRetryable = saveRetryable,
                     permissionDenied = permissionDenied,
                     needsFallbackConsent = needsFallbackConsent,
                     onMicTap = ::onMicTap,
@@ -208,7 +211,7 @@ class VoiceQuickCaptureActivity : ComponentActivity() {
         lifecycleScope.launch {
             when (val result = saver.save(current, transcript)) {
                 VoiceSaveResult.Saved -> controller.finishSave(true)
-                is VoiceSaveResult.Failed -> controller.finishSave(false, result.message)
+                is VoiceSaveResult.Failed -> controller.finishSave(false, result.message, result.retryable)
             }
         }
     }
@@ -257,6 +260,7 @@ internal fun VoiceCaptureScreen(
     batch: CaptureBatch?,
     classificationFailed: Boolean,
     errorText: String?,
+    saveRetryable: Boolean = true,
     permissionDenied: Boolean,
     needsFallbackConsent: Boolean,
     onMicTap: () -> Unit,
@@ -302,6 +306,7 @@ internal fun VoiceCaptureScreen(
                 needsFallbackConsent -> FallbackConsentBody(onConsentContinue, onConsentCancel)
                 else -> CaptureBody(
                     state, transcript, batch, classificationFailed, errorText,
+                    saveRetryable,
                     onMicTap, onSave, onSaveMemo, onDiscard, onRetryClassification,
                     ClauseCallbacks(
                         onClauseTranscript, onClauseAction, onClauseDate,
@@ -371,6 +376,7 @@ private fun CaptureBody(
     batch: CaptureBatch?,
     classificationFailed: Boolean,
     errorText: String?,
+    saveRetryable: Boolean,
     onMicTap: () -> Unit,
     onSave: () -> Unit,
     onSaveMemo: () -> Unit,
@@ -426,7 +432,7 @@ private fun CaptureBody(
     if (state == VoiceCaptureState.DONE) {
         Spacer(Modifier.height(12.dp))
         DoneActions(
-            batch, classificationFailed,
+            batch, classificationFailed, saveRetryable, errorText,
             onSave, onSaveMemo, onDiscard, onRetryClassification,
         )
     }
@@ -611,6 +617,8 @@ private fun UnclassifiedCard(transcript: String, errorText: String?) {
 private fun DoneActions(
     batch: CaptureBatch?,
     classificationFailed: Boolean,
+    saveRetryable: Boolean,
+    errorText: String?,
     onSave: () -> Unit,
     onSaveMemo: () -> Unit,
     onDiscard: () -> Unit,
@@ -630,10 +638,20 @@ private fun DoneActions(
                     modifier = Modifier.minTouchTarget().testTag("voice-save-memo"),
                 ) { Text("메모로 저장") }
             }
-            batch.saveable -> Button(
+            // A non-retryable failure (setup/permission/destination) must not
+            // promise the same retry — the recovery copy stays visible and
+            // the save affordance is withheld.
+            batch.saveable && saveRetryable -> Button(
                 onClick = onSave,
                 modifier = Modifier.minTouchTarget().testTag("voice-save"),
             ) { Text("저장하기") }
+            batch.saveable && !saveRetryable -> Text(
+                "다시 시도해도 저장되지 않아요. 안내를 확인한 뒤 계속하거나 내려놓을 수 있어요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Clay.Muted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("voice-save-blocked"),
+            )
             else -> Unit
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
