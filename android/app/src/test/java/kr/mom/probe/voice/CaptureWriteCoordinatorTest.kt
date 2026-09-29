@@ -269,15 +269,18 @@ class CaptureWriteCoordinatorTest {
 
     private fun datedClause(
         index: Int,
+        intent: AgentIntent = AgentIntent.TASK,
         proposedDueAt: Long? = 1_800_000_000_000L,
         proposedRemindAt: Long? = null,
         dateInput: String? = null,
+        dateEdited: Boolean = false,
         dueAt: Long? = null,
         remindAt: Long? = null,
     ): CaptureClause {
-        val base = clause(index)
+        val base = clause(index, intent)
         return base.copy(
-            dateInput = dateInput, dueAt = dueAt, remindAt = remindAt,
+            dateInput = dateInput, dateEdited = dateEdited,
+            dueAt = dueAt, remindAt = remindAt,
             plan = base.plan.copy(
                 reply = base.plan.reply.copy(
                     proposedDueAt = proposedDueAt, proposedRemindAt = proposedRemindAt,
@@ -297,9 +300,36 @@ class CaptureWriteCoordinatorTest {
     @Test fun `edited task date wins over the proposal`() {
         val spec = taskWriteSpecFor(
             datedClause(0, proposedDueAt = 1_800_000_000_000L,
-                dateInput = "모레 오전 9시", dueAt = 1_900_000_000_000L),
+                dateInput = "모레 오전 9시", dateEdited = true,
+                dueAt = 1_900_000_000_000L),
         )
         assertEquals(1_900_000_000_000L, spec.dueAt)
+    }
+
+    @Test fun `edited reminder date moves the alarm never reuses the stale proposal`() {
+        // "알려줘" — the reminder IS the point. Editing the date to 모레
+        // must fire the alarm at 모레, not the original parsed time.
+        val reminder = datedClause(
+            0, intent = AgentIntent.REMINDER,
+            proposedDueAt = 1_800_000_000_000L, proposedRemindAt = 1_800_000_000_000L,
+            dateInput = "모레 오전 9시", dateEdited = true, dueAt = 1_900_000_000_000L,
+        )
+        val spec = taskWriteSpecFor(reminder)
+        assertEquals(1_900_000_000_000L, spec.dueAt)
+        assertEquals(1_900_000_000_000L, spec.remindAt)
+    }
+
+    @Test fun `edited non-reminder task drops the stale proposal reminder`() {
+        // A TASK clause never silently inherits a reminder proposal when
+        // the date was edited — only an explicitly set remind survives.
+        val spec = taskWriteSpecFor(
+            datedClause(0, proposedDueAt = 1_800_000_000_000L,
+                proposedRemindAt = 1_800_000_500_000L,
+                dateInput = "모레 오전 9시", dateEdited = true,
+                dueAt = 1_900_000_000_000L),
+        )
+        assertEquals(1_900_000_000_000L, spec.dueAt)
+        assertEquals(null, spec.remindAt)
     }
 
     @Test fun `explicitly blank task date persists null and clears the reminder`() {
@@ -307,7 +337,7 @@ class CaptureWriteCoordinatorTest {
         // resurrect the parsed proposal or leave a silent reminder behind.
         val spec = taskWriteSpecFor(
             datedClause(0, proposedDueAt = 1_800_000_000_000L,
-                proposedRemindAt = 1_800_000_500_000L, dateInput = ""),
+                proposedRemindAt = 1_800_000_500_000L, dateInput = "", dateEdited = true),
         )
         assertEquals(null, spec.dueAt)
         assertEquals(null, spec.remindAt)
@@ -316,7 +346,7 @@ class CaptureWriteCoordinatorTest {
     @Test fun `cleared calendar start is non-writable and the payload fails closed`() {
         // Blank clear on a calendar clause: the event needs a start, so the
         // clause stays non-saveable and the payload builder refuses reuse.
-        val cleared = calendarClause(0).copy(dateInput = "")
+        val cleared = calendarClause(0).copy(dateInput = "", dateEdited = true)
         assertFalse(cleared.writable)
         assertTrue(cleared.needsReview)
         assertNull(calendarPayloadFor(cleared))
@@ -338,7 +368,8 @@ class CaptureWriteCoordinatorTest {
         val sink = MemSink()
         val tasks = SpyWriter()
         val (records, recordWriter) = recorder()
-        val cleared = datedClause(0, proposedDueAt = 1_800_000_000_000L, dateInput = "")
+        val cleared = datedClause(0, proposedDueAt = 1_800_000_000_000L,
+            dateInput = "", dateEdited = true)
         assertTrue(cleared.writable)
         val journal = CaptureWriteCoordinator(sink, tasks, SpyWriter(), recordWriter)
             .commit(batchOf("cap-clr", cleared), "t")

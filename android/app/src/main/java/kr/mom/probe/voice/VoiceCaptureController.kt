@@ -177,9 +177,18 @@ class VoiceCaptureController(
     fun setClauseAction(index: Int, action: String) =
         editClause(index) { it.copy(action = action.take(MAX_CLAUSE_TEXT).ifBlank { null }) }
 
-    /** Parent adjusts the parsed due/remind times (null clears them). */
+    /**
+     * Parent adjusts the parsed due/remind times programmatically (e.g. a
+     * picker). Passing null clears the field — the edit is marked so the
+     * cleared value persists instead of falling back to the proposal.
+     */
     fun setClauseTimes(index: Int, dueAt: Long?, remindAt: Long?) =
-        editClause(index) { it.copy(dueAt = dueAt, remindAt = remindAt, dateParseFailed = false) }
+        editClause(index) {
+            it.copy(
+                dueAt = dueAt, remindAt = remindAt,
+                dateEdited = true, dateParseFailed = false,
+            )
+        }
 
     /**
      * Parent edits the due date/time as text — ISO, `M월 d일`, or
@@ -192,9 +201,12 @@ class VoiceCaptureController(
             val parsed = if (raw.isEmpty()) null else
                 kr.mom.probe.agent.LocalAgentEngine.parseEditableDateTime(raw)
             if (raw.isNotEmpty() && parsed == null) {
-                clause.copy(dateInput = rawInput, dateParseFailed = true)
+                clause.copy(dateInput = rawInput, dateEdited = true, dateParseFailed = true)
             } else {
-                clause.copy(dueAt = parsed, dateInput = rawInput, dateParseFailed = false)
+                clause.copy(
+                    dueAt = parsed, dateInput = rawInput,
+                    dateEdited = true, dateParseFailed = false,
+                )
             }
         }
 

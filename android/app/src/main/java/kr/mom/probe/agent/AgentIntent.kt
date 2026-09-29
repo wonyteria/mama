@@ -76,8 +76,14 @@ data class CaptureClause(
     val action: String? = null,
     /** Editable due time; defaults to the plan's proposal. */
     val dueAt: Long? = null,
-    /** Raw text of the parent's due-date edit; null = untouched. */
+    /** Raw text of the parent's due-date edit; null for picker edits. */
     val dateInput: String? = null,
+    /**
+     * The parent deliberately changed the date — typed text or picked
+     * times. This is the single source of truth for "touched": untouched
+     * falls back to the parsed proposal, edited never does.
+     */
+    val dateEdited: Boolean = false,
     /** Editable reminder time; defaults to the plan's proposal. */
     val remindAt: Long? = null,
     /** Editable disposition override; null follows the plan. */
@@ -98,13 +104,27 @@ data class CaptureClause(
     val intent: AgentIntent get() = intentOverride ?: plan.intent
 
     /**
-     * The due time the parent confirmed — tri-state on [dateInput]:
-     * untouched (null) follows the parsed proposal, explicit blank means
-     * deliberately cleared and stays null, a parsed edit wins. Writers must
-     * use this, never `dueAt ?: plan.reply.proposedDueAt`.
+     * The due time the parent confirmed — tri-state on [dateEdited]:
+     * untouched follows the parsed proposal, an explicit clear stays
+     * null, a parsed edit wins. Writers must use this, never
+     * `dueAt ?: plan.reply.proposedDueAt`.
      */
     val effectiveDueAt: Long?
-        get() = if (dateInput == null) dueAt ?: plan.reply.proposedDueAt else dueAt
+        get() = if (!dateEdited) dueAt ?: plan.reply.proposedDueAt else dueAt
+
+    /**
+     * The reminder time the parent confirmed — the same tri-state. On an
+     * explicit date edit a stale proposed reminder is never reused: an
+     * explicitly cleared date clears the reminder too, and a REMINDER
+     * clause ("알려줘") follows the edited due time since reminding is
+     * the whole intent. Untouched follows the proposal.
+     */
+    val effectiveRemindAt: Long?
+        get() = when {
+            dateEdited && dueAt == null -> null
+            dateEdited -> remindAt ?: (if (intent == AgentIntent.REMINDER) dueAt else null)
+            else -> remindAt ?: plan.reply.proposedRemindAt
+        }
 
     /**
      * A calendar clause whose start the parent explicitly cleared — an
@@ -112,7 +132,7 @@ data class CaptureClause(
      * until the parent enters a date or drops it. Never silently reused.
      */
     val calendarMissingStart: Boolean
-        get() = intent == AgentIntent.CALENDAR && dateInput != null && effectiveDueAt == null
+        get() = intent == AgentIntent.CALENDAR && dateEdited && effectiveDueAt == null
 
     /** Writable = kept + saveable + resolved out of the confirm bucket. */
     val writable: Boolean

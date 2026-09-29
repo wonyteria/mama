@@ -906,6 +906,25 @@ class VoiceCaptureScreenLayoutTest {
         compose.onNodeWithTag("voice-save").assertIsDisplayed()
     }
 
+    @Test fun `programmatic null times clear the date without restoring the proposal`() {
+        // The picker seam: setClauseTimes(i, null, null) must behave like a
+        // typed blank — the cleared date persists and never falls back to
+        // the parsed proposal.
+        val proposed = 1_800_000_000_000L
+        val driven = driveToDone(batchOf(
+            CaptureClause(0, "내일 물티슈 챙겨줘",
+                planOf("내일 물티슈 챙겨줘", dueAt = proposed)),
+        ))
+        driven.controller.setClauseTimes(0, null, null)
+        val clause = driven.controller.batch!!.clauses[0]
+        assertTrue(clause.dateEdited)
+        assertEquals(null, clause.dueAt)
+        assertEquals(null, clause.effectiveDueAt)
+        // Picked times mark the edit the same way typed text does.
+        driven.controller.setClauseTimes(0, 1_900_000_000_000L, null)
+        assertEquals(1_900_000_000_000L, driven.controller.batch!!.clauses[0].effectiveDueAt)
+    }
+
     @Test fun `drop hides a clause from the batch and keep restores it`() {
         val driven = driveToDone(
             batchOf(

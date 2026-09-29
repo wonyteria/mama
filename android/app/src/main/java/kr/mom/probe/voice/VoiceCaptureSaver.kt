@@ -155,13 +155,12 @@ internal data class TaskWriteSpec(
 )
 
 internal fun taskWriteSpecFor(clause: CaptureClause): TaskWriteSpec {
-    val cleared = clause.dateInput?.isBlank() == true
     val text = (clause.action ?: clause.plan.reply.proposedTask ?: clause.transcript)
         .ifBlank { clause.transcript }
     return TaskWriteSpec(
         text = text,
-        dueAt = if (cleared) null else clause.effectiveDueAt,
-        remindAt = if (cleared) null else clause.remindAt ?: clause.plan.reply.proposedRemindAt,
+        dueAt = clause.effectiveDueAt,
+        remindAt = clause.effectiveRemindAt,
         evidenceText = "음성 입력: ${clause.transcript.take(300)}",
     )
 }
@@ -181,7 +180,7 @@ internal fun calendarPayloadFor(clause: CaptureClause): SchedulePayload? {
     val title = (clause.action?.ifBlank { null } ?: clause.plan.reply.proposedTask
         ?: base.title).take(120)
     val start = when {
-        clause.dateInput != null -> clause.dueAt ?: return null
+        clause.dateEdited -> clause.dueAt ?: return null
         else -> clause.dueAt ?: base.startMillis
     }
     val duration = (base.endMillis - base.startMillis).coerceAtLeast(0L)
