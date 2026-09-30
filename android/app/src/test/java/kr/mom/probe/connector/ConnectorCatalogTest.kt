@@ -5,20 +5,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConnectorCatalogTest {
-    private val neis = ConnectorCatalog.site("neis-parent")!!
     private val ealimi = ConnectorCatalog.site("ealimi-web")!!
+    private val hiclass = ConnectorCatalog.site("hiclass-web")!!
 
-    @Test fun allowsOnlyHttpsNeisHosts() {
-        assertTrue(ConnectorCatalog.isAllowedHttps(neis, "https://parents.neis.go.kr/csp-prnt/"))
-        assertTrue(ConnectorCatalog.isAllowedHttps(neis, "https://auth.neis.go.kr/login"))
-        assertFalse(ConnectorCatalog.isAllowedHttps(neis, "http://parents.neis.go.kr/"))
-        assertFalse(ConnectorCatalog.isAllowedHttps(neis, "https://neis.go.kr.evil.example/"))
-        assertFalse(ConnectorCatalog.isAllowedHttps(neis, "javascript:alert(1)"))
+    @Test fun allowsOnlyAllowedHttpsHosts() {
+        assertTrue(ConnectorCatalog.isAllowedHttps(hiclass, "https://www.hiclass.net/"))
+        assertFalse(ConnectorCatalog.isAllowedHttps(hiclass, "http://www.hiclass.net/"))
+        assertFalse(ConnectorCatalog.isAllowedHttps(hiclass, "https://hiclass.net.evil.example/"))
+        assertFalse(ConnectorCatalog.isAllowedHttps(hiclass, "javascript:alert(1)"))
     }
 
     @Test fun introIsNotClaimedAsConnected() {
-        assertFalse(ConnectorCatalog.isLikelySignedIn(neis, neis.startUrl))
-        assertFalse(ConnectorCatalog.isLikelySignedIn(neis, "https://parents.neis.go.kr/csp-prnt/#/prn-main/home"))
+        assertFalse(ConnectorCatalog.isLikelySignedIn(hiclass, hiclass.startUrl))
+        assertFalse(ConnectorCatalog.isLikelySignedIn(hiclass, "https://www.hiclass.net/home"))
     }
 
     @Test fun ealimiSigninNeedsARealPostLoginUrl() {

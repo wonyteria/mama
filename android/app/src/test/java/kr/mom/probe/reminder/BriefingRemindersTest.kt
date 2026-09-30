@@ -119,22 +119,37 @@ class BriefingRemindersTest {
         assertEquals(20, prefs.getInt("snoozeMinutes0", 0))
     }
 
-    @Test fun activeBriefingSnoozeStopsAtCountAndMinuteLimits() {
-        context.getSharedPreferences("briefing-reminders", Application.MODE_PRIVATE).edit()
+    @Test fun briefingSnoozeContinuesBeyondTheFourthSnoozeAcrossRestarts() {
+        val preferences = context.getSharedPreferences("briefing-reminders", Application.MODE_PRIVATE)
+        preferences.edit()
             .putBoolean("enabled0", true)
-            .putString("activeOccurrence0", "count")
+            .putString("activeOccurrence0", "fire-0")
             .putLong("activeGeneration0", BriefingReminders.generation(context))
-            .putInt("snoozeCount0", 3)
-            .putInt("snoozeMinutes0", 30)
+            .putInt("activeNotificationId0", 710)
             .commit()
-        assertEquals(BriefingSnoozeResult.LimitReached, BriefingReminders.snoozeActive(context, 0, "count", BriefingReminders.generation(context), 10))
 
-        context.getSharedPreferences("briefing-reminders", Application.MODE_PRIVATE).edit()
-            .putString("activeOccurrence0", "minutes")
-            .putInt("snoozeCount0", 2)
-            .putInt("snoozeMinutes0", 40)
-            .commit()
-        assertEquals(BriefingSnoozeResult.LimitReached, BriefingReminders.snoozeActive(context, 0, "minutes", BriefingReminders.generation(context), 30))
+        var occurrence = "fire-0"
+        repeat(4) { index ->
+            val result = BriefingReminders.snoozeActive(context, 0, occurrence, BriefingReminders.generation(context), 10)
+            assertTrue(result is BriefingSnoozeResult.Scheduled)
+            if (index < 3) {
+                // A process restart re-reads prefs: the snoozed occurrence must fire and be snoozable again.
+                val snoozeAt = preferences.getLong("snoozeAt0", 0L)
+                val snoozeOccurrence = preferences.getString("snoozeOccurrence0", null)
+                assertTrue(snoozeAt > 0L)
+                assertTrue(snoozeOccurrence != null)
+                val firedAt = BriefingReminders.consumeScheduledFire(
+                    context, 0, snoozeOccurrence, snoozeAt, BriefingReminders.generation(context), 710, delayed = true,
+                )
+                assertEquals(snoozeAt, firedAt)
+                occurrence = preferences.getString("activeOccurrence0", null)!!
+            }
+        }
+
+        assertEquals(4, preferences.getInt("snoozeCount0", 0))
+        assertEquals(40, preferences.getInt("snoozeMinutes0", 0))
+        assertTrue(preferences.getLong("snoozeAt0", 0L) > 0L)
+        assertTrue(preferences.getString("snoozeOccurrence0", null) != null)
     }
 
     @Test fun briefingTaskProjectionMatchesOpenTodoScope() {

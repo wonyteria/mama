@@ -6,8 +6,10 @@ import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.fail
 import org.junit.Test
@@ -26,6 +28,14 @@ class ReleaseOnboardingDriverTest {
 
     @Test
     fun driveReleaseOnboarding() {
+        // The driver types a synthetic child profile through the real UI, which
+        // overwrites QA onboarding state. Skip on a physical device that still
+        // holds prior QA data rather than silently mutating it.
+        runBlocking {
+            kr.mom.probe.DeviceQaSafety.requireDestructibleState(
+                instrumentation.targetContext, "ReleaseOnboardingDriverTest"
+            )
+        }
         automation.serviceInfo = automation.serviceInfo.apply {
             flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }
@@ -35,7 +45,7 @@ class ReleaseOnboardingDriverTest {
         waitForText("동의해요", timeoutMs = 6_000)?.let { consent ->
             var checkable: AccessibilityNodeInfo? = consent
             while (checkable != null && !checkable.isCheckable) checkable = checkable.parent
-            if (checkable == null || !checkable.isChecked) clickRow(consent)
+            if (checkable == null || !AccessibilityNodeInfoCompat.wrap(checkable).isChecked) clickRow(consent)
             scrollUntil("이 기기에서 시작", 8)
             clickText("이 기기에서 시작", timeoutMs = 5_000)
         }
@@ -52,19 +62,23 @@ class ReleaseOnboardingDriverTest {
             clickText("2 학년", timeoutMs = 5_000, exact = true)
             scrollUntil("자녀 정보 저장", 10)
             clickText("자녀 정보 저장", timeoutMs = 5_000)
-
-            // 3. Connections: enable NEIS public school info (completes onboarding).
-            scrollUntil("나이스 학교정보", 10)
-            val neis = waitForText("나이스 학교정보", timeoutMs = 15_000)
-            assertNotNull("NEIS row not found", neis)
-            clickRow(neis!!)
         }
-        // Onboarding auto-completes once a site reports CONNECTED.
+        // 3. Connections: the NEIS production lane is intentionally disabled
+        // until a secure proxy exists, so finish through the explicit defer path.
+        if (waitForText("골라주세요", timeoutMs = 3_000) != null) {
+            scrollUntil("연결은 나중에 · 비서 만나기", 30)
+            clickText("연결은 나중에 · 비서 만나기", timeoutMs = 15_000)
+        }
+        // Onboarding completes after the explicit defer action.
         // The system notification-permission dialog may sit on top; grant it.
         val deadline = System.currentTimeMillis() + 30_000
         var reached = false
         while (System.currentTimeMillis() < deadline && !reached) {
+            // The system permission dialog renders its buttons uppercase on some
+            // locales/images, so all three spellings are accepted exactly.
             findByText("허용", exact = true)?.let { clickRow(it) }
+            findByText("Allow", exact = true)?.let { clickRow(it) }
+            findByText("ALLOW", exact = true)?.let { clickRow(it) }
             reached = findByText("오늘") != null
             if (!reached) Thread.sleep(500)
         }

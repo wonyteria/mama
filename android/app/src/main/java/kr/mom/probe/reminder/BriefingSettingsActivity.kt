@@ -5,7 +5,6 @@ import android.app.TimePickerDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import android.os.Bundle
 import android.widget.Toast
@@ -63,20 +62,17 @@ class BriefingSettingsActivity : ComponentActivity() {
                             val alarmEnabled = remember(revision) { BriefingReminders.alarmMode(this@BriefingSettingsActivity) }
                             ClayCard(Modifier.fillMaxWidth(), tint = Clay.Peach) {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text("전화처럼 알려주기", style = MaterialTheme.typography.titleMedium)
+                                        Text("알람처럼 크게 알려주기", style = MaterialTheme.typography.titleMedium)
                                         Switch(checked = alarmEnabled, enabled = alarmReady || alarmEnabled, onCheckedChange = {
                                             if (BriefingReminders.saveAlarmMode(this@BriefingSettingsActivity, it)) revision++
                                             else Toast.makeText(this@BriefingSettingsActivity, "권한을 확인하고 다시 시도해 주세요", Toast.LENGTH_LONG).show()
                                         })
                                     }
-                                    Text("정한 시각에 모모가 화면과 알람 소리로 찾아와요. 챙길 일이 없으면 울리지 않고 30초 뒤 멈춰요.")
-                                    if (!alarmReady) Text("처음 한 번, 아래 두 설정을 허용해주세요. 휴대폰에 따라 상단 알림으로 보일 수 있어요.", style = MaterialTheme.typography.bodySmall)
+                                    Text("정한 시각에 알림과 알람 소리로 알려줘요. 알림을 누르면 브리핑이 열려요. 챙길 일이 없으면 울리지 않고 30초 뒤 멈춰요.")
+                                    if (!alarmReady) Text("처음 한 번, 아래 설정을 허용해주세요. 알람이 울리면 상단 알림으로 보여요.", style = MaterialTheme.typography.bodySmall)
                                     OutlinedButton(onClick = {
                                         startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName")))
                                     }) { Text("시간 맞춰 울리기 허용") }
-                                    if (Build.VERSION.SDK_INT >= 34) OutlinedButton(onClick = {
-                                        startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName")))
-                                    }) { Text("잠금화면에 띄우기 허용") }
                             }
                             listOf(0, 2, 1).forEach { slot ->
                                 val value = remember(revision, lifecycleRevision) { BriefingReminders.read(this@BriefingSettingsActivity, slot) }

@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kr.mom.probe.R
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.data.ProbeRepository
 import kr.mom.probe.reminder.BriefingReminders
 import kr.mom.probe.reminder.TaskAlarmActivity
@@ -55,7 +56,7 @@ object TaskReminderScheduler {
     private fun ensureChannel(manager: NotificationManager) {
         manager.createNotificationChannel(NotificationChannel(
             CHANNEL,
-            "모모의 부탁 알림",
+            "${AgentIdentity.displayName}의 부탁 알림",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "직접 정한 시간 무렵에 챙길 일을 알려줘요"
@@ -116,14 +117,54 @@ object TaskReminderScheduler {
             val store = AssistantTaskStore.get(context)
             store.load()
             sync(context, store.tasks.value)
+            recoverActiveAlarms(context, store)
+            runCatching { AutoActionCoordinator.replayPending(context) }
         }
+    }
+
+    /** Tasks whose alarm occurrence was consumed but whose delivery is still pending. */
+    internal fun alarmsPendingRecovery(tasks: List<AssistantTask>): List<AssistantTask> =
+        tasks.filter { it.activeAlarmOccurrenceId != null && !it.completed && !it.suspended && !it.excluded }
+
+    /**
+     * A process can die between consuming a reminder and posting its
+     * notification. On restore, re-deliver pending occurrences under their
+     * stable notification id (a repost replaces in place, never duplicates),
+     * fall back to a scheduled retry while attempts remain, or drop the
+     * occurrence. Completed and excluded tasks never recover.
+     */
+    private fun recoverActiveAlarms(context: Context, store: AssistantTaskStore) {
+        alarmsPendingRecovery(store.tasks.value).forEach { task ->
+            val occurrenceId = task.activeAlarmOccurrenceId ?: return@forEach
+            if (canDeliver(context)) {
+                if (notificationVisible(context, task.activeAlarmNotificationId)) return@forEach
+                val delivered = notify(context, task)
+                if (!delivered && task.reminderAttempts < 2) {
+                    runCatching { store.rescheduleReminder(task.id, System.currentTimeMillis() + 15 * 60_000L) }
+                } else if (!delivered) {
+                    store.clearActiveAlarmAfterFailedNotification(task.id, occurrenceId)
+                }
+            } else if (task.reminderAttempts < 2) {
+                runCatching { store.rescheduleReminder(task.id, System.currentTimeMillis() + 15 * 60_000L) }
+            } else {
+                store.clearActiveAlarmAfterFailedNotification(task.id, occurrenceId)
+            }
+        }
+    }
+
+    private fun notificationVisible(context: Context, notificationId: Int?): Boolean {
+        if (notificationId == null) return false
+        return runCatching {
+            context.getSystemService(NotificationManager::class.java)
+                .activeNotifications.any { it.id == notificationId }
+        }.getOrDefault(false)
     }
 
     internal fun notify(context: Context, task: AssistantTask): Boolean {
         val occurrenceId = task.activeAlarmOccurrenceId ?: return false
         val notificationId = task.activeAlarmNotificationId ?: notificationId(task.id, occurrenceId)
         val scheduledAt = task.activeAlarmScheduledAt ?: return false
-        if (task.completed || task.suspended) return false
+        if (task.completed || task.suspended || task.excluded) return false
         if (!canDeliver(context)) return false
         val manager = context.getSystemService(NotificationManager::class.java)
         val ringing = BriefingReminders.alarmMode(context) && BriefingReminders.alarmPermissions(context)
@@ -168,7 +209,7 @@ object TaskReminderScheduler {
             .build()
         val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("모모가 부탁을 알려드려요")
+            .setContentTitle("${AgentIdentity.displayName}가 부탁을 알려드려요")
             .setContentText(task.text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(task.text))
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
@@ -179,7 +220,7 @@ object TaskReminderScheduler {
             .setAutoCancel(true)
             .addAction(0, "소리 끄기", stop)
             .addAction(0, "10분 뒤", snooze)
-        if (ringing) notification.setFullScreenIntent(open, true).setTimeoutAfter(30_000)
+        if (ringing) notification.setTimeoutAfter(30_000)
         return try {
             val built = notification.build()
             if (ringing) built.flags = built.flags or Notification.FLAG_INSISTENT
@@ -278,11 +319,23 @@ object TaskReminderScheduler {
     internal fun taskId(intent: Intent): String? = intent.getStringExtra(EXTRA_TASK_ID)
     internal fun occurrenceId(intent: Intent): String? = intent.getStringExtra(EXTRA_OCCURRENCE_ID)
     internal fun notificationId(intent: Intent): Int = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
+    internal fun stopIntent(
+        context: Context,
+        taskId: String,
+        occurrenceId: String,
+        notificationId: Int,
+        scheduledAt: Long,
+    ): Intent = alarmActionIntent(context, ACTION_STOP, taskId, occurrenceId, notificationId, scheduledAt)
 }
 
 class TaskReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+        // Boot and re-granted exact-alarm permission both re-arm every outstanding
+        // task reminder; schedule() falls back to inexact alarms when the
+        // permission is still unavailable.
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED ||
+            intent.action == AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
+        ) {
             val result = goAsync()
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                 try {

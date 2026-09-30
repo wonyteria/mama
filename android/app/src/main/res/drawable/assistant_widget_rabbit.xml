@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget-sized static rabbit matching AgentMascot's IDLE geometry.
+     Kept as a resource mirror: widgets cannot run Compose, and the
+     assistant_widget_momo.xml drawable is preserved untouched for
+     rollback compatibility. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="60dp" android:height="80dp"
+    android:viewportWidth="90" android:viewportHeight="120">
+    <!-- ground shadow -->
+    <path android:fillColor="#22847669" android:pathData="M14,105 C14,98 76,98 76,105 C76,112 14,112 14,105Z" />
+    <!-- ears (slight outward splay, IDLE) -->
+    <path android:fillColor="#F3EAE0" android:pathData="M30,44 C24,14 34,8 40,10 C46,12 44,42 38,48Z" />
+    <path android:fillColor="#F3EAE0" android:pathData="M60,44 C66,14 56,8 50,10 C44,12 46,42 52,48Z" />
+    <path android:fillColor="#FCE7DA" android:pathData="M33,40 C30,20 36,15 39,17 C42,19 40,38 37,42Z" />
+    <path android:fillColor="#FCE7DA" android:pathData="M57,40 C60,20 54,15 51,17 C48,19 50,38 53,42Z" />
+    <!-- rounded body -->
+    <path android:fillColor="#F3EAE0" android:pathData="M15,60 C15,40 75,40 75,60 L75,88 C75,102 15,102 15,88Z" />
+    <!-- eyes -->
+    <path android:fillColor="#57453B" android:pathData="M34,70 A2.2,3 0,1 0,38.4 70 A2.2,3 0,1 0,34 70 M53,70 A2.2,3 0,1 0,57.4 70 A2.2,3 0,1 0,53 70" />
+    <!-- nose -->
+    <path android:fillColor="#C08B76" android:pathData="M43,80 C43,77.5 49,77.5 49,80 C49,82.5 43,82.5 43,80Z" />
+    <!-- quiet smile -->
+    <path android:fillColor="#00000000" android:strokeColor="#57453B" android:strokeWidth="1.6" android:strokeLineCap="round" android:pathData="M39,87 Q46,90.5 53,87" />
+    <!-- sage leaf accessory -->
+    <path android:fillColor="#8BAE77" android:pathData="M69,55 C70,44 78,40 84,40 C83,50 77,56 69,58Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#547341" android:strokeWidth="1.4" android:strokeLineCap="round" android:pathData="M68,62 L76,45" />
+</vector>

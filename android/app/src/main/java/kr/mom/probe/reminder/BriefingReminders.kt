@@ -6,9 +6,9 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.RingtoneManager
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import kr.mom.probe.R
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.data.ProbeRepository
 import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.data.ProbeSettings
@@ -25,7 +25,6 @@ sealed class BriefingSnoozeResult {
     data class Scheduled(val nextAt: Long) : BriefingSnoozeResult()
     object Stale : BriefingSnoozeResult()
     object Disabled : BriefingSnoozeResult()
-    object LimitReached : BriefingSnoozeResult()
     object Failed : BriefingSnoozeResult()
 }
 
@@ -39,8 +38,6 @@ object BriefingReminders {
     const val OCCURRENCE_ID = "occurrenceId"
     const val GENERATION = "generation"
     private const val SEEN_IDS = "seenIds"
-    private const val MAX_SNOOZES = 3
-    private const val MAX_SNOOZE_MINUTES = 60
     private const val PENDING_GRACE_MS = 15 * 60_000L
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     fun read(context: Context, slot: Int): BriefingTime = prefs(context).let {
@@ -98,8 +95,10 @@ object BriefingReminders {
     )
     fun generation(context: Context): Long = prefs(context).getLong("generation", 0)
     fun alarmMode(context: Context): Boolean = prefs(context).getBoolean("alarmMode", false)
-    fun alarmPermissions(context: Context): Boolean = context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms() &&
-        (Build.VERSION.SDK_INT < 34 || context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent())
+    // Google Play scopes USE_FULL_SCREEN_INTENT to dedicated alarm/calling
+    // apps, so alarm mode rides heads-up high-priority notifications and only
+    // needs the exact-alarm grant. Tapping the notification opens the briefing.
+    fun alarmPermissions(context: Context): Boolean = context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
     fun saveAlarmMode(context: Context, enabled: Boolean): Boolean {
         if (enabled && !alarmPermissions(context)) return false
         val previous = alarmMode(context)
@@ -204,17 +203,25 @@ object BriefingReminders {
         val child = kr.mom.probe.data.NoticeDecisionEngine.childProfile(repository.settings.value)
         val since = maxOf(prefs(context).getLong("seen", 0), System.currentTimeMillis() - ProbeRules.RETENTION_MS)
         val seenIds = prefs(context).getStringSet(SEEN_IDS, emptySet()).orEmpty()
-        return activeRecords.filter {
+        val recent = activeRecords.filter {
             it.receivedAt > since && (it.sourceMetadata != null || (repository.settings.value.collectionEnabled && it.packageName in repository.settings.value.selectedPackages))
         }
             .sortedByDescending { it.receivedAt }
-            .distinctBy { ProbeRules.recordIdentity(it) }
+        val institution = kr.mom.probe.data.NoticeGrouping.institution(repository.settings.value)
+        val groupIds = kr.mom.probe.data.NoticeGrouping.groupIds(recent, institution)
+        return recent.distinctBy { groupIds.getValue(it.id) }
             .filter { it.id !in seenIds }
             .filter { kr.mom.probe.data.NoticeDecisionEngine.isBriefingAction(kr.mom.probe.data.NoticeDecisionEngine.decide(it, child), System.currentTimeMillis()) }
     }
     fun unseenRecords(context: Context, repository: ProbeRepository, tasks: List<kr.mom.probe.task.AssistantTask>): List<kr.mom.probe.data.ProbeRecord> {
-        val linked = tasks.mapNotNull { it.sourceNotificationId }.toSet()
-        return unseenRecords(context, repository).filter { ProbeRules.recordIdentity(it) !in linked }
+        val institution = kr.mom.probe.data.NoticeGrouping.institution(repository.settings.value)
+        val taskKeySets = tasks.map { it.noticeGroupKeys + listOfNotNull(it.sourceNotificationId) }
+            .filter { it.isNotEmpty() }
+        if (taskKeySets.isEmpty()) return unseenRecords(context, repository)
+        return unseenRecords(context, repository).filter { record ->
+            val recordKeys = kr.mom.probe.data.NoticeGrouping.keys(record, institution)
+            taskKeySets.none { kr.mom.probe.data.NoticeGrouping.matches(recordKeys, it) }
+        }
     }
     fun briefingTasks(tasks: List<kr.mom.probe.task.AssistantTask>, now: Long = System.currentTimeMillis()): List<kr.mom.probe.task.AssistantTask> =
         kr.mom.probe.task.TodoSelectors.open(tasks)
@@ -233,7 +240,14 @@ object BriefingReminders {
         val targetDate = Instant.ofEpochMilli(now).atZone(ZoneId.of("Asia/Seoul")).toLocalDate()
             .plusDays(if (slot == 1) 1 else 0)
         val sourceScopes = kr.mom.probe.sync.SourceScopeFactory.activeScopes(context, kr.mom.probe.sync.SourceRunTrigger.BRIEFING_STALE)
-        return kr.mom.probe.sync.SourceRecordSelectors.agenda(records, kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings), sourceScopes, now = now, daysAhead = 7)
+        return kr.mom.probe.sync.SourceRecordSelectors.agenda(
+            records,
+            kr.mom.probe.data.NoticeDecisionEngine.childProfile(settings),
+            sourceScopes,
+            now = now,
+            daysAhead = 7,
+            institution = kr.mom.probe.data.NoticeGrouping.institution(settings),
+        )
             .filter { it.dateIso == targetDate.toString() }
     }
     fun seenRevisionIdsFor(records: List<kr.mom.probe.data.ProbeRecord>): Set<String> =
@@ -301,12 +315,12 @@ object BriefingReminders {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val note = NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle(if (demo) "비서 알림 미리보기" else "모모가 새 알림을 모아뒀어요")
+            .setContentTitle(if (demo) "비서 알림 미리보기" else "${AgentIdentity.displayName}가 새 알림을 모아뒀어요")
             .setContentText(if (demo) "시험 알림이에요. 실제 기록은 만들지 않아요." else "일정 ${agendaCount}개 · 부탁 ${taskCount}개 · 새 알림 ${count}개")
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setContentIntent(open).setAutoCancel(true)
             .setCategory(if (ringing) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER).setPriority(NotificationCompat.PRIORITY_HIGH)
             .addAction(0, "브리핑 열기", open)
-        if (ringing) note.setFullScreenIntent(open, true).setTimeoutAfter(30_000)
+        if (ringing) note.setTimeoutAfter(30_000)
         if (!demo) note.addAction(0, "10분 뒤", pending(context, slot, true, occurrenceId = notifyOccurrenceId, expectedGeneration = expectedGeneration))
         return try { manager.notify(notificationId, note.build()); true } catch (_: SecurityException) { false }
     }
@@ -314,9 +328,8 @@ object BriefingReminders {
         require(minutes in setOf(5, 10, 30))
         if (slot !in 0..2 || expectedGeneration != generation(context) || !read(context, slot).enabled) return BriefingSnoozeResult.Disabled
         if (occurrenceId == null || occurrenceId != activeOccurrenceId(context, slot) || expectedGeneration != activeGeneration(context, slot)) return BriefingSnoozeResult.Stale
-        val currentCount = prefs(context).getInt("snoozeCount$slot", 0).coerceIn(0, MAX_SNOOZES)
-        val currentMinutes = prefs(context).getInt("snoozeMinutes$slot", 0).coerceIn(0, MAX_SNOOZE_MINUTES)
-        if (currentCount >= MAX_SNOOZES || currentMinutes + minutes > MAX_SNOOZE_MINUTES) return BriefingSnoozeResult.LimitReached
+        val currentCount = prefs(context).getInt("snoozeCount$slot", 0).coerceAtLeast(0)
+        val currentMinutes = prefs(context).getInt("snoozeMinutes$slot", 0).coerceAtLeast(0)
         val previousScheduledAt = activeScheduledAt(context, slot)
         val previousNotificationId = activeNotificationId(context, slot)
         val nextAt = System.currentTimeMillis() + minutes * 60_000L

@@ -11,9 +11,11 @@ import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import kr.mom.probe.MainActivity
 import kr.mom.probe.R
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.data.NoticeContentState
 import kr.mom.probe.data.NoticeDecision
 import kr.mom.probe.data.NoticeDecisionEngine
+import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.ProbeRecord
 import kr.mom.probe.data.ProbeRules
 import java.time.ZoneId
@@ -38,12 +40,13 @@ object AssistantAlertNotifier {
     fun reset(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
 
     fun cancel(context: Context, record: ProbeRecord) {
-        val stableNotificationId = ProbeRules.recordIdentity(record).hashCode()
+        val sourceId = sourceIdentity(context, record)
+        val stableNotificationId = sourceId.hashCode()
         context.getSystemService(NotificationManager::class.java).cancel(stableNotificationId)
-        val sourceId = ProbeRules.recordIdentity(record)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(postedKey(sourceId), false)
             .remove(linkKey(sourceId))
+            .remove(alertIdKey(stableNotificationId))
             .apply()
     }
 
@@ -76,9 +79,12 @@ object AssistantAlertNotifier {
     fun notify(context: Context, record: ProbeRecord): Boolean {
         if (!isEnabled(context)) return false
         val repository = kr.mom.probe.data.ProbeRepository.get(context)
-        val sourceId = ProbeRules.recordIdentity(record)
-        val completedSource = kr.mom.probe.task.AssistantTaskStore.get(context).tasks.value.any {
-            it.sourceNotificationId == sourceId && it.completed
+        val institution = NoticeGrouping.institution(repository.settings.value)
+        val sourceId = sourceIdentity(context, record)
+        val recordKeys = NoticeGrouping.keys(record, institution)
+        val completedSource = kr.mom.probe.task.AssistantTaskStore.get(context).tasks.value.any { task ->
+            task.completed &&
+                NoticeGrouping.matches(recordKeys, task.noticeGroupKeys + listOfNotNull(task.sourceNotificationId))
         }
         if (completedSource) {
             cancel(context, record)
@@ -97,7 +103,7 @@ object AssistantAlertNotifier {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(
             CHANNEL,
-            "모모의 긴급한 일",
+            "${AgentIdentity.displayName}의 긴급한 일",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "오늘 안에 놓치면 안 되는 준비물·제출·마감만 바로 알려줘요"
@@ -106,7 +112,7 @@ object AssistantAlertNotifier {
         })
         if (!manager.areNotificationsEnabled() || manager.getNotificationChannel(CHANNEL)?.importance == NotificationManager.IMPORTANCE_NONE) return false
 
-        val stableNotificationId = ProbeRules.recordIdentity(record).hashCode()
+        val stableNotificationId = sourceId.hashCode()
         val open = PendingIntent.getActivity(
             context,
             stableNotificationId,
@@ -118,7 +124,7 @@ object AssistantAlertNotifier {
         val description = decision.action?.label ?: "확인할 일이 있어요"
         val privateNotification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("모모가 챙길 일을 찾았어요")
+            .setContentTitle("${AgentIdentity.displayName}가 챙길 일을 찾았어요")
             .setContentText(listOfNotNull(record.title.ifBlank { description }, decision.action?.whenText).joinToString(" · "))
             .setStyle(NotificationCompat.BigTextStyle().bigText("$description. 눌러서 원문을 확인해주세요."))
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
@@ -161,6 +167,10 @@ object AssistantAlertNotifier {
         .minOrNull()
 
     internal fun alertFingerprintForTest(decision: NoticeDecision): String? = alertFingerprint(decision)
+    internal fun sourceIdentity(context: Context, record: ProbeRecord): String {
+        val institution = NoticeGrouping.institution(kr.mom.probe.data.ProbeRepository.get(context).settings.value)
+        return NoticeGrouping.groupId(record, institution)
+    }
     internal fun recordAlertedForTest(context: Context, sourceId: String, fingerprint: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(alertedKey(sourceId), fingerprint).commit()
     }

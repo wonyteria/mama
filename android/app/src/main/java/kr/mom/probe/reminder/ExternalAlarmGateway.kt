@@ -10,6 +10,7 @@ import java.io.Serializable
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.agent.SchedulePayload
 import kr.mom.probe.data.ProbeCrypto
 import kr.mom.probe.data.ProbeRules
@@ -103,7 +104,7 @@ class ExternalAlarmGateway(
         if (wallCheck != desired) {
             return ExternalAlarmResult(
                 ExternalAlarmState.INCOMPATIBLE_DATE,
-                "이 시계 앱 연결은 날짜를 지정할 수 없어요. 이 날짜에는 모모 알림이나 캘린더 저장으로 진행할 수 있어요.",
+                "이 시계 앱 연결은 날짜를 지정할 수 없어요. 이 날짜에는 ${AgentIdentity.displayName} 알림이나 캘린더 저장으로 진행할 수 있어요.",
             )
         }
         val key = dispatchKey(requestId, payload, live)

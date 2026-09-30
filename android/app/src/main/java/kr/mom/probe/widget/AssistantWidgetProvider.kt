@@ -45,8 +45,18 @@ class AssistantWidgetProvider : AppWidgetProvider() {
             val open = PendingIntent.getActivity(
                 context, 4200, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
+            // Separate requestCode + explicit component: the voice entry is an
+            // independent identity from the open-Todo intent. Both are
+            // explicit, so non-exported activities stay safe.
+            val voice = PendingIntent.getActivity(
+                context, 4201,
+                kr.mom.probe.voice.VoiceQuickCaptureActivity.intent(context)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
             val views = RemoteViews(context.packageName, R.layout.assistant_widget_layout).apply {
                 setOnClickPendingIntent(R.id.assistant_widget_root, open)
+                setOnClickPendingIntent(R.id.assistant_widget_voice, voice)
             }
             manager.updateAppWidget(id, views)
         }

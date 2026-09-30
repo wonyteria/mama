@@ -66,6 +66,14 @@ class ProbeRepository private constructor(context: Context) {
                     mutableSettings.value = dao.settings()?.let { decodeSettings(crypto.decrypt(it.encryptedPayload, "settings")) }
                         ?: ProbeSettings()
                     pruneLocked()
+                    // Publish the committed snapshot before isReady: replayPending
+                    // and other readers must never observe an empty records list
+                    // while rows are already persisted — a pending marker whose
+                    // record exists would otherwise be dropped as a ghost.
+                    val now = System.currentTimeMillis()
+                    mutableRecords.value = dao.currentRecords()
+                        .filterNot { ProbeRules.isExpired(it.receivedAt, now) }
+                        .map { decodeRecord(crypto.decrypt(it.encryptedPayload, "record:${it.id}")) }
                     storageReady = true
                     // Restoring existing consent is not a new policy generation. Callbacks that
                     // arrived during startup may proceed once ready if no actual setting changed.
@@ -142,6 +150,7 @@ class ProbeRepository private constructor(context: Context) {
     }
 
     suspend fun acceptConsent() = action {
+        require(!ResetMarker.isPending(app)) { "이전 삭제 정리가 끝날 때까지 다시 가입할 수 없어요." }
         saveLocked(settings.value.copy(consent = true, consentAt = System.currentTimeMillis(), consentVersion = ProbeRules.CONSENT_VERSION))
     }
 
@@ -171,12 +180,14 @@ class ProbeRepository private constructor(context: Context) {
 
     suspend fun completeSetup() = action {
         val current = settings.value
+        require(!ResetMarker.isPending(app)) { "이전 삭제 정리가 끝날 때까지 다시 가입할 수 없어요." }
         require(current.consent && current.consentVersion == ProbeRules.CONSENT_VERSION && current.childName.isNotBlank() && current.selectedPackages.isNotEmpty()) { "최신 설명에 동의하고 챙길 앱과 아이 이름을 설정해 주세요." }
         require(hasNotificationAccess()) { "알림 읽기를 허용한 뒤 다시 시도해 주세요." }
         saveLocked(current.copy(onboardingDone = true, collectionEnabled = true))
     }
 
     suspend fun deferSetup() = action {
+        require(!ResetMarker.isPending(app)) { "이전 삭제 정리가 끝날 때까지 다시 가입할 수 없어요." }
         require(settings.value.consent && settings.value.consentVersion == ProbeRules.CONSENT_VERSION) { "최신 참여 설명에 먼저 동의해 주세요." }
         saveLocked(settings.value.copy(onboardingDone = true, collectionEnabled = false))
     }
@@ -201,6 +212,24 @@ class ProbeRepository private constructor(context: Context) {
             dao.delete(id)
         }
         mutableRecords.value = mutableRecords.value.filterNot { it.id == id }
+    }
+
+    /** Whether a record id was tombstoned (user-deleted or retired by scope change). */
+    suspend fun isSuppressed(id: String): Boolean = withContext(Dispatchers.IO) { dao.isDeleted(id) > 0 }
+
+    /**
+     * Fresh committed-records snapshot for reconcile replay. Reads the DAO
+     * directly rather than the cached StateFlow, so a pending marker is never
+     * dropped against a stale or still-empty in-memory view. Throws while
+     * storage is unreadable so callers keep their markers pending.
+     */
+    internal suspend fun committedRecordsSnapshot(): List<ProbeRecord> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            check(storageReady) { "저장소를 아직 읽을 수 없어요." }
+            val now = System.currentTimeMillis()
+            dao.currentRecords().filterNot { ProbeRules.isExpired(it.receivedAt, now) }
+                .map { decodeRecord(crypto.decrypt(it.encryptedPayload, "record:${it.id}")) }
+        }
     }
 
     suspend fun ingestSource(scope: SourceScope, result: SourceFetchResult): IngestReceipt {
@@ -262,36 +291,45 @@ class ProbeRepository private constructor(context: Context) {
                 hasNotificationAccess(), ongoing, summary)) return@action
         // Extras are read only after consent, selected-package and live OS access checks.
         val extras = value.extras
-        var truncated = false
-        fun bounded(value: String): String {
-            if (value.length > 32_768) truncated = true
-            return value.take(32_768)
-        }
         fun rawField(key: String) = extras.getCharSequence(key)?.toString().orEmpty()
-        fun field(key: String) = bounded(rawField(key))
-        val title = field(Notification.EXTRA_TITLE)
-        val text = field(Notification.EXTRA_TEXT)
-        val bigText = field(Notification.EXTRA_BIG_TEXT)
         val originalLines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES).orEmpty()
-        if (originalLines.size > 100) truncated = true
-        val lines = originalLines.take(100).map { bounded(it.toString()) }
-        val subText = field(Notification.EXTRA_SUB_TEXT).ifEmpty { null }
-        val summaryText = field(Notification.EXTRA_SUMMARY_TEXT).ifEmpty { null }
-        // Hash the actual payload, including omitted suffixes, so updates beyond the storage limit
-        // remain distinct revisions rather than being silently mistaken for duplicate callbacks.
-        val rawHash = ProbeRules.digest(JSONObject().put("title", rawField(Notification.EXTRA_TITLE))
-            .put("text", rawField(Notification.EXTRA_TEXT)).put("bigText", rawField(Notification.EXTRA_BIG_TEXT))
-            .put("lines", JSONArray(originalLines.map { it.toString() }))
-            .put("subText", rawField(Notification.EXTRA_SUB_TEXT))
-            .put("summaryText", rawField(Notification.EXTRA_SUMMARY_TEXT)).toString())
-        val id = ProbeRules.revisionId(notification.packageName, notification.key, notification.postTime, rawHash)
-        if (dao.isDeleted(id) > 0) return@action
         val label = try { app.packageManager.getApplicationLabel(app.packageManager.getApplicationInfo(notification.packageName, 0)).toString() }
             catch (_: android.content.pm.PackageManager.NameNotFoundException) { notification.packageName }
-        val record = ProbeRecord(id, notification.packageName, label, notification.postTime, System.currentTimeMillis(),
-            title, text, bigText, lines, subText, summaryText, value.category, value.channelId,
-            notification.id, notification.key, ongoing, summary, rawHash, truncated)
+        // One normalization boundary shared with the synthetic-ingest seam.
+        val record = NotificationRecordAssembler.assemble(
+            NotificationRecordAssembler.Input(
+                packageName = notification.packageName,
+                key = notification.key,
+                postTime = notification.postTime,
+                notificationId = notification.id,
+                ongoing = ongoing,
+                groupSummary = summary,
+                appLabel = label,
+                category = value.category,
+                channelId = value.channelId,
+                title = rawField(Notification.EXTRA_TITLE),
+                text = rawField(Notification.EXTRA_TEXT),
+                bigText = rawField(Notification.EXTRA_BIG_TEXT),
+                textLines = originalLines.map { it.toString() },
+                subText = rawField(Notification.EXTRA_SUB_TEXT),
+                summaryText = rawField(Notification.EXTRA_SUMMARY_TEXT),
+            ),
+            receivedAt = System.currentTimeMillis(),
+        )
+        val id = record.id
+        if (dao.isDeleted(id) > 0) return@action
         if (epoch.get() != expectedEpoch || !hasNotificationAccess()) return@action
+        // Journal BEFORE the row commits: a failed journal write aborts the
+        // capture with nothing persisted, and a crash between this mark and the
+        // insert leaves only a ghost entry that replay drops because the record
+        // is missing. A crash after the commit replays the reconcile once.
+        kr.mom.probe.task.ReconcileJournal.markPending(
+            app,
+            kr.mom.probe.data.NoticeGrouping.groupId(
+                record,
+                kr.mom.probe.data.NoticeGrouping.institution(settings.value),
+            ),
+        )
         pruneLocked()
         val inserted = dao.insert(StoredRecord(id, record.receivedAt, crypto.encrypt(encodeRecord(record), "record:$id")))
         if (inserted != -1L) {
@@ -379,6 +417,7 @@ class ProbeRepository private constructor(context: Context) {
         val replacedIds = mutableListOf<String>()
         val seenItemIdentities = mutableSetOf<String>()
         val discoveryTimes = mutableListOf<Long>()
+        val ingestInstitution = kr.mom.probe.data.NoticeGrouping.institution(currentSettings)
         database.withTransaction {
             result.items.forEach { item ->
                 if (item.sourceId != scope.sourceId || !originHostMatchesScope(item.origin.host, scope)) {
@@ -407,6 +446,14 @@ class ProbeRepository private constructor(context: Context) {
                     unchanged++
                     return@forEach
                 }
+                // Journal inside the record transaction: a failed journal write
+                // rolls the whole batch back, and a crash after the commit leaves
+                // markers that replay resolves. A marker without a record (e.g.
+                // a rolled-back sibling) drops on replay because it is missing.
+                kr.mom.probe.task.ReconcileJournal.markPending(
+                    app,
+                    kr.mom.probe.data.NoticeGrouping.groupId(record, ingestInstitution),
+                )
                 previous?.takeIf { it.id != revisionId }?.let { replacedIds += it.id }
                 storedIds += revisionId
                 if (previous == null) {
@@ -429,6 +476,8 @@ class ProbeRepository private constructor(context: Context) {
         mutableRecords.value = dao.currentRecords().filterNot { ProbeRules.isExpired(it.receivedAt, System.currentTimeMillis()) }
             .map { decodeRecord(crypto.decrypt(it.encryptedPayload, "record:${it.id}")) }
         mutableRecords.value.filter { it.id in storedIds }.forEach { record ->
+            // The pending marker was committed inside the record transaction
+            // above, so this loop only needs to reconcile and alert.
             kr.mom.probe.task.AutoActionCoordinator.handle(app, record, settings.value)
             kr.mom.probe.reminder.AssistantAlertNotifier.notify(app, record)
         }
@@ -452,6 +501,11 @@ class ProbeRepository private constructor(context: Context) {
         @Volatile private var instance: ProbeRepository? = null
         fun get(context: Context): ProbeRepository = instance ?: synchronized(this) {
             instance ?: ProbeRepository(context).also { instance = it }
+        }
+
+        /** Test seam: drops the singleton so the next get() replays cold startup init. */
+        internal fun resetInstanceForTest() {
+            synchronized(this) { instance = null }
         }
     }
 }

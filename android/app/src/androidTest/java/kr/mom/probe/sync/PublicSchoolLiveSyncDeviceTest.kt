@@ -30,6 +30,7 @@ class PublicSchoolLiveSyncDeviceTest {
         check(context.packageName.endsWith(".qa")) { "Live source QA must never target the release app." }
         val repository = ProbeRepository.get(context)
         repository.isReady.first { it }
+        kr.mom.probe.DeviceQaSafety.requireDestructibleState(context, "PublicSchoolLiveSyncDeviceTest")
         assertTrue(repository.deleteAll())
         assertTrue(SourceSyncStateStore.get(context).reset())
         assertTrue(repository.acceptConsent())

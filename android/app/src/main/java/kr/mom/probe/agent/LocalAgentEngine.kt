@@ -12,9 +12,10 @@ import kr.mom.probe.data.NotificationCandidateParser
 import kr.mom.probe.data.NoticeApplicability
 import kr.mom.probe.data.NoticeDecision
 import kr.mom.probe.data.NoticeDecisionEngine
+import kr.mom.probe.data.NoticeGrouping
 import kr.mom.probe.data.NoticeObligation
 import kr.mom.probe.data.ProbeRecord
-import kr.mom.probe.data.ProbeRules
+import kr.mom.probe.reminder.ExternalAlarmHandler
 import kr.mom.probe.sync.SourceRecordSelectors
 import kr.mom.probe.sync.SourceScope
 import kr.mom.probe.task.AssistantTask
@@ -26,6 +27,7 @@ data class LocalAgentContext(
     val childProfile: ChildNoticeProfile = ChildNoticeProfile(),
     val sourceScopes: List<SourceScope> = emptyList(),
     val sourceStatusMessage: String? = null,
+    val institution: String = "",
 )
 
 data class LocalAgentReply(
@@ -35,6 +37,8 @@ data class LocalAgentReply(
     val proposedDueAt: Long? = null,
     val proposedRemindAt: Long? = null,
     val scheduleCommand: ScheduleCommand? = null,
+    /** Typed classification. Null for legacy chat-style answers; capture sets it. */
+    val intent: AgentIntent? = null,
 )
 
 /**
@@ -78,18 +82,20 @@ class LocalAgentEngine(
         }
 
         val pendingTasks = context.tasks.filter { !it.completed && !it.suspended }.sortedByDescending { it.createdAt }
-        val linkedNotificationIds = context.tasks.mapNotNull { it.sourceNotificationId }.toSet()
+        val linkedKeySets = context.tasks.map { it.noticeGroupKeys + listOfNotNull(it.sourceNotificationId) }
+            .filter { it.isNotEmpty() }
         val policyRecords = SourceRecordSelectors.activeRecords(context.notifications, context.sourceScopes, now = nowMillis())
+        val groupIds = NoticeGrouping.groupIds(policyRecords, context.institution)
         val notices = policyRecords.sortedByDescending { maxOf(it.postedAt, it.receivedAt) }
-            .distinctBy { ProbeRules.recordIdentity(it) }
+            .distinctBy { groupIds.getValue(it.id) }
         val decisions = notices.map { it to NoticeDecisionEngine.decide(it, context.childProfile) }
         val candidates = notices.mapNotNull { record ->
-            val identity = ProbeRules.recordIdentity(record)
-            if (identity in linkedNotificationIds) return@mapNotNull null
+            val recordKeys = NoticeGrouping.keys(record, context.institution)
+            if (linkedKeySets.any { NoticeGrouping.matches(recordKeys, it) }) return@mapNotNull null
             val decision = NoticeDecisionEngine.decide(record, context.childProfile)
             NotificationCandidateParser.parse(record, context.childProfile)?.let { CandidateNotice(record, it, decision) }
         }
-        val agenda = SourceRecordSelectors.agenda(context.notifications, context.childProfile, context.sourceScopes, now = nowMillis(), daysAhead = 7)
+        val agenda = SourceRecordSelectors.agenda(context.notifications, context.childProfile, context.sourceScopes, now = nowMillis(), daysAhead = 7, institution = context.institution)
         val name = context.childName.trim().ifBlank { "아이" }
 
         val reply = when {
@@ -119,10 +125,219 @@ class LocalAgentEngine(
         }
     }
 
+    /**
+     * Classifies a spoken/typed capture into a typed [CapturePlan]. This is
+     * the only classification engine — callers assemble context, show the
+     * preview, and may write only when [CapturePlan.saveable] and after an
+     * explicit user confirm. Nothing here persists or schedules anything.
+     *
+     * Dispositions follow the quiet-capture contract: dated action →
+     * KEEP_TODAY, undated action → REVIEW_LATER, plain note → MEMO_ONLY,
+     * clarification/alarm/unparseable → NEEDS_CONFIRM, question → answered
+     * inline and never stored.
+     */
+    fun capture(rawText: String, context: LocalAgentContext): CapturePlan {
+        val text = AgentIdentity.stripWakeName(rawText).trim().replace(whitespace, " ")
+        if (text.isBlank()) {
+            return CapturePlan(
+                transcript = rawText.trim(),
+                reply = LocalAgentReply("무슨 말인지 듣지 못했어요. 다시 말해주세요."),
+                intent = AgentIntent.MEMO,
+                disposition = CaptureDisposition.NEEDS_CONFIRM,
+                labels = listOf(CaptureLabels.USER_SPOKE, CaptureLabels.NO_SAVE),
+                saveable = false,
+            )
+        }
+
+        val reply = answer(text, context)
+        when (reply.scheduleCommand) {
+            is CalendarCreateCommand -> return plan(
+                text, reply.copy(intent = AgentIntent.CALENDAR), AgentIntent.CALENDAR,
+                CaptureDisposition.KEEP_TODAY,
+                listOf(CaptureLabels.USER_SPOKE, AgentIntent.CALENDAR.label),
+                saveable = true,
+            )
+            is AlarmRequestCommand -> return plan(
+                text, reply.copy(intent = AgentIntent.REMINDER), AgentIntent.REMINDER,
+                CaptureDisposition.NEEDS_CONFIRM,
+                listOf(CaptureLabels.USER_SPOKE, CaptureLabels.EXTERNAL_APP, CaptureLabels.NO_SAVE),
+                saveable = false,
+            )
+            is ScheduleClarification -> return plan(
+                text, reply.copy(intent = AgentIntent.MEMO), AgentIntent.MEMO,
+                CaptureDisposition.NEEDS_CONFIRM,
+                listOf(CaptureLabels.USER_SPOKE, CaptureDisposition.NEEDS_CONFIRM.label),
+                saveable = false,
+            )
+            else -> Unit
+        }
+
+        reply.proposedTask?.let { taskText ->
+            val intent = when {
+                reply.proposedRemindAt != null -> AgentIntent.REMINDER
+                shoppingMarker.containsMatchIn(taskText) -> AgentIntent.SHOPPING
+                else -> AgentIntent.TASK
+            }
+            return plan(
+                text, reply.copy(intent = intent), intent,
+                if (reply.proposedDueAt != null) CaptureDisposition.KEEP_TODAY else CaptureDisposition.REVIEW_LATER,
+                listOfNotNull(
+                    CaptureLabels.USER_SPOKE,
+                    intent.label,
+                    if (reply.proposedDueAt == null) CaptureLabels.NEEDS_DATE else null,
+                ),
+                saveable = true,
+            )
+        }
+
+        obligationProposal(text)?.let { proposed ->
+            val intent = if (shoppingMarker.containsMatchIn(proposed.text)) AgentIntent.SHOPPING else AgentIntent.TASK
+            return plan(
+                text,
+                LocalAgentReply(
+                    message = "‘${proposed.text}’${proposed.dueAt?.let { " (${absoluteDate(it)})" }.orEmpty()}를 이 기기 부탁 목록에 저장할게요.",
+                    proposedTask = proposed.text,
+                    proposedDueAt = proposed.dueAt,
+                    proposedRemindAt = proposed.remindAt,
+                    intent = intent,
+                ),
+                intent,
+                if (proposed.dueAt != null) CaptureDisposition.KEEP_TODAY else CaptureDisposition.REVIEW_LATER,
+                listOfNotNull(
+                    CaptureLabels.USER_SPOKE,
+                    intent.label,
+                    if (proposed.dueAt == null) CaptureLabels.NEEDS_DATE else null,
+                    CaptureLabels.RULE_ESTIMATE,
+                ),
+                saveable = true,
+            )
+        }
+
+        if (looksLikeQuestion(text)) {
+            return plan(
+                text, reply.copy(intent = AgentIntent.QUESTION), AgentIntent.QUESTION,
+                disposition = null,
+                labels = listOf(CaptureLabels.USER_SPOKE, AgentIntent.QUESTION.label, CaptureLabels.NO_SAVE),
+                saveable = false,
+            )
+        }
+
+        return plan(
+            text,
+            reply.copy(
+                message = "‘$text’를 메모로 남길게요. 할 일이나 알림은 만들지 않아요.",
+                intent = AgentIntent.MEMO,
+            ),
+            AgentIntent.MEMO, CaptureDisposition.MEMO_ONLY,
+            listOf(CaptureLabels.USER_SPOKE, AgentIntent.MEMO.label),
+            saveable = true,
+        )
+    }
+
+    /**
+     * Splits a brain-dump utterance into ordered clauses and classifies each
+     * one independently. Splitting is deliberately conservative — only real
+     * sentence boundaries (`.`, `!`, `?`, `…`, newline), comma-separated
+     * joins, and standalone conjunction tokens (그리고/또한/그 다음/또) —
+     * so a clause never invents child, date, time, context, or action that
+     * was not in the spoken words.
+     */
+    fun captureBatch(rawText: String, context: LocalAgentContext, captureId: String): CaptureBatch {
+        val clauses = splitClauses(rawText)
+        return CaptureBatch(
+            captureId = captureId,
+            clauses = clauses.mapIndexed { index, clauseText ->
+                CaptureClause(index = index, transcript = clauseText, plan = capture(clauseText, context))
+            },
+        )
+    }
+
+    /**
+     * Deterministic conservative clause splitter. Splits on sentence-ending
+     * punctuation and newlines, on standalone conjunction words at a word
+     * boundary, and on commas only when both sides carry their own action —
+     * "내일 도시락, 물통 챙겨줘" is a shared object list, not two clauses.
+     * Never merges, reorders, or rewrites the spoken text — a fragment stays
+     * a fragment and lands in memo/review rather than being turned into an
+     * action.
+     */
+    internal fun splitClauses(text: String): List<String> {
+        // Hard boundaries first: sentence-ending punctuation and line breaks.
+        // Then conditional comma joins, then standalone conjunction tokens
+        // ("그리고", "또한", "그 다음", or bare "또" between spaces — never
+        // inside a word like 또박또박).
+        return text.split(hardBoundary)
+            .flatMap(::splitOnActionCommas)
+            .flatMap { it.split(conjunctionJoin) }
+            .map { it.trim().trim(',', '，', '、') }
+            .filter { it.isNotBlank() }
+    }
+
+    /**
+     * A comma splits only when it joins two independently clause-like
+     * fragments — each side must carry its own action or obligation verb.
+     * Otherwise the comma is a shared-object list ("도시락, 물통 챙겨줘")
+     * and splitting it would orphan the left items from their verb and date.
+     */
+    private fun splitOnActionCommas(segment: String): List<String> {
+        val out = mutableListOf<String>()
+        var start = 0
+        for (match in clauseComma.findAll(segment)) {
+            val left = segment.substring(start, match.range.first).trim()
+            val right = segment.substring(match.range.last + 1).trim()
+            if (looksLikeActionClause(left) && looksLikeActionClause(right)) {
+                out += segment.substring(start, match.range.first)
+                start = match.range.last + 1
+            }
+        }
+        out += segment.substring(start)
+        return out
+    }
+
+    private fun looksLikeActionClause(fragment: String): Boolean =
+        fragment.isNotBlank() && (
+            taskCommand.containsMatchIn(fragment) ||
+                obligationMarker.containsMatchIn(fragment) ||
+                shoppingMarker.containsMatchIn(fragment) ||
+                questionTail.containsMatchIn(fragment)
+            )
+
+    private fun plan(
+        transcript: String,
+        reply: LocalAgentReply,
+        intent: AgentIntent,
+        disposition: CaptureDisposition?,
+        labels: List<String>,
+        saveable: Boolean,
+    ): CapturePlan = CapturePlan(
+        transcript = transcript,
+        reply = reply, intent = intent, disposition = disposition,
+        labels = labels, saveable = saveable,
+    )
+
+    /**
+     * Obligation statements without a command verb — "금요일까지 체육복 사야 돼"
+     * — still become task *candidates*, but carry the rule-estimate label so
+     * the preview is honest about how the interpretation was derived.
+     */
+    private fun obligationProposal(text: String): ProposedTask? {
+        if (interrogative.containsMatchIn(text)) return null
+        if (!obligationMarker.containsMatchIn(text)) return null
+        val normalized = text.take(MAX_PROPOSED_TASK_LENGTH).trim()
+        if (normalized.isBlank()) return null
+        val dueAt = resolveCommandDue(normalized)
+        return ProposedTask(normalized, dueAt, null)
+    }
+
+    private fun looksLikeQuestion(text: String): Boolean =
+        asksCapabilities(text) || asksPendingTasks(text) || asksRecentNotifications(text) ||
+            asksAgenda(text) || asksApplicability(text) || asksActionCandidates(text) ||
+            interrogative.containsMatchIn(text) || questionTail.containsMatchIn(text)
+
     private fun proposedTask(question: String): ProposedTask? {
         val match = taskCommand.matchEntire(question) ?: return null
         var subject = match.groupValues[1].trim(' ', ',', '.', '!', '?', '~')
-            .removePrefix("모모야 ").removePrefix("모모 ").trim()
+            .let { AgentIdentity.stripWakeName(it) }
         subject = subject.replace(taskListPrefix, "").trim()
         if (subject.isBlank() || interrogative.containsMatchIn(subject)) return null
 
@@ -357,11 +572,21 @@ class LocalAgentEngine(
         private const val MAX_RESULTS = 5
         private const val MAX_PROPOSED_TASK_LENGTH = 280
         private val whitespace = Regex("\\s+")
+        private val hardBoundary = Regex("[.!?…。\\n]+")
+        private val clauseComma = Regex("[,，、]")
+        private val conjunctionJoin = Regex(
+            "(?:^|\\s)(?:그리고|또한|그\\s*다음(?:에)?|또)\\s+",
+        )
         private val taskCommand = Regex("^(.+?)\\s*(챙겨\\s*줘|기억해\\s*줘|추가해\\s*줘|알려\\s*줘)[.!?~\\s]*$")
         private val relativeCommandDate = Regex("(오늘|내일|모레)(?:\\s*(오전|오후)?\\s*(\\d{1,2})(?::(\\d{2}))?\\s*시)?")
         private val taskListPrefix = Regex("^(?:부탁(?:\\s*목록)?|할\\s*일|준비물)(?:에|으로)?\\s+")
         private val interrogative = Regex("(?:뭐|무엇|어떤|언제|어디|누구|왜|어떻게)(?:를|을|가|이|야|지|죠|요)?(?:\\s|$)")
         private val capabilityQuestion = Regex("뭘?\\s*할\\s*수|무엇을\\s*할\\s*수|도와줄\\s*수|사용법|어떻게\\s*써")
+        private val obligationMarker = Regex(
+            "해야\\s*(?:돼|해|지|함)|사야\\s*(?:돼|해)|챙겨야|내야\\s*(?:돼|해)|납부해야|제출해야|신청해야|준비해야|가져가야|알아봐야|확인해야|해야\\s*할\\s*(?:거|것)",
+        )
+        private val shoppingMarker = Regex("사야\\s*(?:돼|해)|사\\s*줘|사다|구매|장보|주문|사러\\s*가")
+        private val questionTail = Regex("""[?？]\s*$|(?:뭐야|뭐냐|뭐지|있어\??|있니|없니|누구야|언제야|어디야)\s*[?？]?\s*$""")
         private val taskQuestion = Regex("부탁|할\\s*일|해야\\s*할\\s*일|기억한|기억해\\s*둔")
         private val recentNotificationQuestion = Regex("최근|새(?:로운)?\\s*알림|무슨\\s*알림|받은\\s*알림|공지\\s*(?:보여|알려)")
         private val agendaQuestion = Regex("일정|행사|학사")
@@ -371,5 +596,71 @@ class LocalAgentEngine(
         private val submitQuestion = Regex("제출|신청|회신|납부|입금")
         private val deadlineQuestion = Regex("마감|기한|언제까지")
         private val dueWords = listOf("오늘", "내일", "모레", "이번 주", "다음 주")
+
+        private val isoDate = Regex("""^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?$""")
+        private val koreanDate = Regex("""^(\d{1,2})월\s*(\d{1,2})일(?:\s*(오전|오후)?\s*(\d{1,2})시(?:\s*(\d{1,2})분)?)?$""")
+        private val relativeDay = Regex("""^(오늘|내일|모레)(?:\s*(오전|오후)?\s*(\d{1,2})(?::(\d{1,2}))?\s*시(?:\s*(\d{1,2})분)?)?$""")
+
+        /**
+         * Parses a user-edited date/time field: `yyyy-MM-dd [HH:mm]`,
+         * `M월 d일 [오전/오후 h시[mm분]]`, or `오늘/내일/모레 [오전/오후 h시[mm분]]`.
+         * Returns null on blank or unparseable input — never guesses.
+         */
+        /**
+         * A parsed date edit. The app never invents a time: a date-only
+         * edit ("모레", "10월 3일") carries `millis == null` and the chosen
+         * day in `dateIso` (ISO `YYYY-MM-DD`); only an explicit time
+         * produces epoch millis. Reminders and calendar writes require
+         * `millis` — a date-only edit supplies neither.
+         */
+        data class EditableDate(val millis: Long?, val dateIso: String?)
+
+        fun parseEditableDateTime(
+            input: String,
+            nowMillis: Long = System.currentTimeMillis(),
+            zoneId: ZoneId = ZoneId.of("Asia/Seoul"),
+        ): EditableDate? {
+            val text = input.trim().replace(whitespace, " ")
+            if (text.isEmpty()) return null
+            fun atTime(year: Int, month: Int, day: Int, meridiem: String?, hour: Int?, minute: Int?): EditableDate? {
+                // Date-only: preserve the day itself as an ISO date with no
+                // time attached — never a manufactured hour.
+                if (hour == null) {
+                    return runCatching { LocalDate.of(year, month, day) }
+                        .map { EditableDate(millis = null, dateIso = it.toString()) }.getOrNull()
+                }
+                val h = when (meridiem) {
+                    "오전" -> if (hour == 12) 0 else hour
+                    "오후" -> if (hour == 12) 12 else hour + 12
+                    else -> hour
+                }
+                return runCatching {
+                    LocalDate.of(year, month, day).atTime(LocalTime.of(h, minute ?: 0))
+                        .atZone(zoneId).toInstant().toEpochMilli()
+                }.map { EditableDate(millis = it, dateIso = null) }.getOrNull()
+            }
+            isoDate.matchEntire(text)?.let { m ->
+                return atTime(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt(),
+                    null, m.groupValues[4].toIntOrNull(), m.groupValues[5].toIntOrNull())
+            }
+            koreanDate.matchEntire(text)?.let { m ->
+                val year = Instant.ofEpochMilli(nowMillis).atZone(zoneId).year
+                return atTime(year, m.groupValues[1].toInt(), m.groupValues[2].toInt(),
+                    m.groupValues[3].ifBlank { null }, m.groupValues[4].toIntOrNull(), m.groupValues[5].toIntOrNull())
+            }
+            relativeDay.matchEntire(text)?.let { m ->
+                val base = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+                val date = base.plusDays(when (m.groupValues[1]) { "오늘" -> 0; "내일" -> 1; else -> 2 })
+                return atTime(date.year, date.monthValue, date.dayOfMonth,
+                    m.groupValues[2].ifBlank { null }, m.groupValues[3].toIntOrNull(), m.groupValues[5].toIntOrNull()
+                        ?: m.groupValues[4].toIntOrNull())
+            }
+            return null
+        }
     }
 }
+
+internal fun resolveExternalAlarmHandlerForPrepare(
+    explicit: ExternalAlarmHandler?,
+    selectedHandler: () -> ExternalAlarmHandler?,
+): ExternalAlarmHandler? = explicit ?: selectedHandler()

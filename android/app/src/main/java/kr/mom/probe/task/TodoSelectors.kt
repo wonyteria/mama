@@ -16,27 +16,62 @@ object TodoSelectors {
 
     fun openCount(tasks: List<AssistantTask>): Int = open(tasks).size
 
+    /**
+     * A confirmed date without a time — ISO `YYYY-MM-DD`, never millis.
+     * Date semantics apply to the whole day: such a task is overdue only
+     * once its day has fully passed, and never at an hour inside it.
+     */
+    private fun dueDateOf(task: AssistantTask): java.time.LocalDate? =
+        task.dueDate?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+
     fun overdue(tasks: List<AssistantTask>, now: Long = System.currentTimeMillis()): List<AssistantTask> {
         val today = today(now)
-        return open(tasks).filter { it.dueAt != null && dateOf(it.dueAt).isBefore(today) }
-            .sortedBy { it.dueAt }
+        return open(tasks).filter {
+            when {
+                it.dueAt != null -> dateOf(it.dueAt).isBefore(today) || it.dueAt <= now
+                else -> dueDateOf(it)?.isBefore(today) == true
+            }
+        }.sortedBy { it.dueAt ?: Long.MAX_VALUE }
     }
 
     fun dueSoon(tasks: List<AssistantTask>, now: Long = System.currentTimeMillis(), daysAhead: Long = 1): List<AssistantTask> {
         val today = today(now)
         val end = today.plusDays(daysAhead)
-        return open(tasks).filter { it.dueAt != null && !dateOf(it.dueAt).isBefore(today) && !dateOf(it.dueAt).isAfter(end) }
-            .sortedBy { it.dueAt }
+        return open(tasks).filter {
+            when {
+                it.dueAt != null -> it.dueAt > now && !dateOf(it.dueAt).isAfter(end)
+                else -> dueDateOf(it)?.let { d -> !d.isBefore(today) && !d.isAfter(end) } == true
+            }
+        }.sortedBy { it.dueAt ?: Long.MAX_VALUE }
     }
 
     fun later(tasks: List<AssistantTask>, now: Long = System.currentTimeMillis(), daysAhead: Long = 1): List<AssistantTask> {
         val end = today(now).plusDays(daysAhead)
-        return open(tasks).filter { it.dueAt != null && dateOf(it.dueAt).isAfter(end) }
-            .sortedBy { it.dueAt }
+        return open(tasks).filter {
+            when {
+                it.dueAt != null -> dateOf(it.dueAt).isAfter(end)
+                else -> dueDateOf(it)?.isAfter(end) == true
+            }
+        }.sortedBy { it.dueAt ?: Long.MAX_VALUE }
+    }
+
+    /** Dated work due after tomorrow but within this week (today + 7 days). */
+    fun thisWeek(tasks: List<AssistantTask>, now: Long = System.currentTimeMillis()): List<AssistantTask> {
+        val today = today(now)
+        val end = today.plusDays(7)
+        return open(tasks).filter {
+            val due = it.dueAt?.let { m -> dateOf(m) } ?: dueDateOf(it) ?: return@filter false
+            due.isAfter(today.plusDays(1)) && !due.isAfter(end)
+        }.sortedBy { it.dueAt ?: Long.MAX_VALUE }
     }
 
     fun undated(tasks: List<AssistantTask>): List<AssistantTask> =
-        open(tasks).filter { it.dueAt == null }.sortedByDescending { it.createdAt }
+        open(tasks).filter { it.dueAt == null && it.dueDate == null }.sortedByDescending { it.createdAt }
+
+    /** Truly dateless work plus anything flagged for review — Today's last bucket. */
+    fun undatedOrReview(tasks: List<AssistantTask>): List<AssistantTask> =
+        open(tasks).filter { (it.dueAt == null && it.dueDate == null) || it.needsReview }
+            .sortedByDescending { it.createdAt }
 
     fun completed(tasks: List<AssistantTask>): List<AssistantTask> =
         tasks.filter { it.completed && !it.suspended }.sortedByDescending { it.completedAt ?: it.createdAt }
@@ -44,9 +79,14 @@ object TodoSelectors {
     fun excluded(tasks: List<AssistantTask>): List<AssistantTask> =
         tasks.filter { it.excluded && !it.completed }.sortedByDescending { it.createdAt }
 
-    fun linkedTo(tasks: List<AssistantTask>, sourceNotificationId: String?): List<AssistantTask> =
-        if (sourceNotificationId == null) emptyList()
-        else tasks.filter { it.sourceNotificationId == sourceNotificationId && !it.suspended }
+    fun linkedTo(tasks: List<AssistantTask>, noticeGroupKeys: Set<String>): List<AssistantTask> =
+        if (noticeGroupKeys.isEmpty()) emptyList()
+        else tasks.filter { task ->
+            !task.suspended && kr.mom.probe.data.NoticeGrouping.matches(
+                noticeGroupKeys,
+                task.noticeGroupKeys + listOfNotNull(task.sourceNotificationId),
+            )
+        }
 
     fun checklistProgress(task: AssistantTask): Pair<Int, Int> =
         task.checklist.count { it.done } to task.checklist.size
@@ -58,8 +98,7 @@ object TodoSelectors {
     }
 
     fun dueLabel(task: AssistantTask, now: Long = System.currentTimeMillis()): String? {
-        val dueAt = task.dueAt ?: return null
-        val due = dateOf(dueAt)
+        val due = task.dueAt?.let(::dateOf) ?: dueDateOf(task) ?: return null
         val today = today(now)
         return when {
             due.isBefore(today) -> "기한 지남"
@@ -67,6 +106,48 @@ object TodoSelectors {
             due == today.plusDays(1) -> "내일"
             else -> null
         }
+    }
+
+    /**
+     * Home headline that never contradicts reality: an open task always counts,
+     * collection off or no connected source says so, a failed or partial sync is
+     * surfaced, real completion is named, and only a verified-empty state claims
+     * there is nothing to do.
+     */
+    fun todayHeadline(
+        tasks: List<AssistantTask>,
+        configuredSources: Boolean,
+        collectionEnabled: Boolean,
+        sourceStatusMessage: String?,
+    ): String {
+        val open = openCount(tasks)
+        return when {
+            open > 0 -> "남은 할 일\n${open}개"
+            !collectionEnabled -> "알림 모으기가\n꺼져 있어요"
+            !configuredSources -> "연결된 곳이\n아직 없어요"
+            sourceStatusMessage != null -> "연결 상태를\n확인해주세요"
+            tasks.any { it.completed } -> "오늘 챙길 일을\n다 끝냈어요"
+            else -> "확인된 할 일이\n아직 없어요"
+        }
+    }
+
+    /** Empty-state copy matching the same states as [todayHeadline]. */
+    fun todayEmptyMessage(
+        tasks: List<AssistantTask>,
+        configuredSources: Boolean,
+        collectionEnabled: Boolean,
+        sourceStatusMessage: String?,
+    ): Pair<String, String> = when {
+        !collectionEnabled ->
+            "알림 모으기가 꺼져 있어요" to "설정에서 다시 켜면 골라둔 곳의 새 소식을 모아요."
+        !configuredSources ->
+            "연결된 곳이 아직 없어요" to "학교·학원 앱이나 홈페이지를 연결하면 새 소식이 여기 모여요."
+        sourceStatusMessage != null ->
+            "지금은 소식을 다 확인하지 못했어요" to "연결 상태가 좋아지면 남은 할 일이 여기 나타나요."
+        tasks.any { it.completed } ->
+            "남은 할 일이 없어요" to "오늘 챙길 일을 모두 마쳤어요."
+        else ->
+            "확인된 할 일이 아직 없어요" to "새 소식에서 확인할 일이 생기면 여기 모여요. 직접 추가할 수도 있어요."
     }
 
     fun today(now: Long): LocalDate = Instant.ofEpochMilli(now).atZone(seoul).toLocalDate()

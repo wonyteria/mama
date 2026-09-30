@@ -17,15 +17,37 @@ class ProbeNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        instance = this
         repository.setListenerConnected(true)
         scope.launch { repository.cleanupExpired() }
         // Deliberately never request activeNotifications: past notifications are not collected.
     }
 
     override fun onListenerDisconnected() {
+        if (instance === this) instance = null
         repository.setListenerConnected(false)
         super.onListenerDisconnected()
     }
+
+    /**
+     * Cancels exactly one notification by its stored key and reports whether
+     * the cancel call itself was accepted. QA/debug tests use the listener's
+     * authority to remove the synthetic notification they posted — never a
+     * bulk cancel and never a user notification, since callers pass the key of
+     * the record they themselves created. The result is observable so teardown
+     * failure is a test failure, not a silent residue.
+     */
+    internal fun cancelNotificationByKey(key: String): Boolean =
+        runCatching { cancelNotification(key) }.isSuccess
+
+    /**
+     * Whether [key] still resolves to a live notification the listener can
+     * see. Throws when the active-notification query itself fails — a failed
+     * query must never masquerade as "key is gone", because callers use this
+     * to prove the synthetic notification they posted actually left the tray.
+     */
+    internal fun isNotificationActive(key: String): Boolean =
+        activeNotifications.any { it.key == key }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
@@ -37,7 +59,11 @@ class ProbeNotificationListener : NotificationListenerService() {
             repository.capture(sbn, epoch)
             // The original is cancelled only after capture + analysis + unified
             // alert posting all succeeded and the app is opted into hiding.
-            if (repository.shouldHideOriginal(sbn)) runCatching { cancelNotification(sbn.key) }
+            // NotificationHidingPolicy keeps the whole path off until physical-device
+            // evidence covers capture, delivery, consent revocation, and fallback.
+            if (NotificationHidingPolicy.mayHideOriginal() && repository.shouldHideOriginal(sbn)) {
+                runCatching { cancelNotification(sbn.key) }
+            }
         }
     }
 
@@ -50,8 +76,14 @@ class ProbeNotificationListener : NotificationListenerService() {
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
         repository.setListenerConnected(false)
         scope.cancel()
         super.onDestroy()
+    }
+
+    companion object {
+        /** Bound instance for QA instrumentation; null on release code paths. */
+        @Volatile internal var instance: ProbeNotificationListener? = null
     }
 }

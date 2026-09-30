@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,6 +47,7 @@ object Clay {
     val Muted = Color(0xFF60756C)
     val Green = Color(0xFF326D5E)
     val Sage = Color(0xFFDDEDE2)
+    val Sky = Color(0xFFDCE9F2)
     val Peach = Color(0xFFF7D5C6)
     val Coral = Color(0xFFE96361)
     val CoralDark = Color(0xFFB93F42)
@@ -65,23 +67,14 @@ fun MomTheme(content: @Composable () -> Unit) {
                 onDispose { }
             } else {
                 val controller = WindowCompat.getInsetsController(window, view)
-                val previousStatusColor = window.statusBarColor
-                val previousNavigationColor = window.navigationBarColor
+                val previousBars = window.legacyBarStyle()
                 val previousLightStatus = controller.isAppearanceLightStatusBars
                 val previousLightNavigation = controller.isAppearanceLightNavigationBars
-                val previousStatusContrast = window.isStatusBarContrastEnforced
-                val previousNavigationContrast = window.isNavigationBarContrastEnforced
-                window.statusBarColor = Clay.Background.toArgb()
-                window.navigationBarColor = Clay.Background.toArgb()
-                window.isStatusBarContrastEnforced = false
-                window.isNavigationBarContrastEnforced = false
+                window.applyClayBarBackground(Clay.Background.toArgb())
                 controller.isAppearanceLightStatusBars = true
                 controller.isAppearanceLightNavigationBars = true
                 onDispose {
-                    window.statusBarColor = previousStatusColor
-                    window.navigationBarColor = previousNavigationColor
-                    window.isStatusBarContrastEnforced = previousStatusContrast
-                    window.isNavigationBarContrastEnforced = previousNavigationContrast
+                    window.restoreBarStyle(previousBars)
                     controller.isAppearanceLightStatusBars = previousLightStatus
                     controller.isAppearanceLightNavigationBars = previousLightNavigation
                 }
@@ -113,6 +106,38 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+private class LegacyBarStyle(
+    val statusColor: Int,
+    val navigationColor: Int,
+    val statusContrast: Boolean,
+    val navigationContrast: Boolean,
+)
+
+// Status/navigation bar color APIs are deprecated and ignored from API 35, where
+// edge-to-edge is enforced; the values are only read and written on older devices.
+@Suppress("DEPRECATION")
+private fun android.view.Window.legacyBarStyle(): LegacyBarStyle? =
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) null
+    else LegacyBarStyle(statusBarColor, navigationBarColor, isStatusBarContrastEnforced, isNavigationBarContrastEnforced)
+
+@Suppress("DEPRECATION")
+private fun android.view.Window.applyClayBarBackground(background: Int) {
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) return
+    statusBarColor = background
+    navigationBarColor = background
+    isStatusBarContrastEnforced = false
+    isNavigationBarContrastEnforced = false
+}
+
+@Suppress("DEPRECATION")
+private fun android.view.Window.restoreBarStyle(previous: LegacyBarStyle?) {
+    if (previous == null || android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.VANILLA_ICE_CREAM) return
+    statusBarColor = previous.statusColor
+    navigationBarColor = previous.navigationColor
+    isStatusBarContrastEnforced = previous.statusContrast
+    isNavigationBarContrastEnforced = previous.navigationContrast
 }
 
 fun Modifier.claySurface(tint: Color = Clay.Background, radius: Dp = 28.dp): Modifier {
@@ -152,6 +177,9 @@ fun LeafMark(modifier: Modifier = Modifier) {
         drawLine(Clay.Green,Offset(w*.14f,w*.96f),Offset(w*.65f,w*.42f),w*.055f,cap=androidx.compose.ui.graphics.StrokeCap.Round)
     }
 }
+
+/** Expands small text-level actions to the 48dp minimum accessible touch target. */
+fun Modifier.minTouchTarget(): Modifier = sizeIn(minWidth = 48.dp, minHeight = 48.dp)
 
 @Composable
 fun ClayCard(modifier: Modifier = Modifier, tint: Color = Clay.Background, content: @Composable ColumnScope.() -> Unit) {
@@ -232,35 +260,6 @@ fun StatusPill(text: String, tint: Color = Color.White.copy(alpha = .65f)) {
 }
 
 @Composable
-fun BellMascot(modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        scale(size.width / 120f, size.height / 140f, pivot = Offset.Zero) {
-            drawOval(Brush.radialGradient(listOf(Color(0x20847869), Color.Transparent), Offset(60f, 122f), 43f), Offset(17f, 114f), Size(86f, 18f))
-            drawOval(Color(0xFFC8B9DF), Offset(52f, 7f), Size(18f, 25f))
-            drawCircle(Color(0xFFB3977D), 10f, Offset(60f, 112f))
-            val bell = Path().apply {
-                moveTo(32f, 39f); cubicTo(32f, 8f, 86f, 9f, 90f, 40f)
-                lineTo(92f, 81f); cubicTo(92f, 89f, 106f, 95f, 100f, 103f)
-                cubicTo(89f, 115f, 28f, 111f, 20f, 99f); cubicTo(15f, 92f, 29f, 86f, 29f, 78f); close()
-            }
-            drawPath(bell, Brush.linearGradient(listOf(Color(0xFFFFDDC4), Color(0xFFF5B49E), Color(0xFFDD927F)), Offset(20f, 10f), Offset(100f, 115f)))
-            val shine = Path().apply { moveTo(39f, 45f); cubicTo(39f, 29f, 47f, 24f, 60f, 23f) }
-            drawPath(shine, Color(0xFFFFE9D7), style = Stroke(6f, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-            val hem = Path().apply { moveTo(27f, 96f); quadraticTo(63f, 111f, 95f, 100f) }
-            drawPath(hem, Color(0xFFFFDBC6), style = Stroke(5f, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-            drawOval(Color(0xFF795C50), Offset(47f, 62f), Size(4.5f, 6f))
-            drawOval(Color(0xFF795C50), Offset(70f, 64f), Size(4.5f, 6f))
-            val smile = Path().apply { moveTo(56f, 74f); quadraticTo(62f, 80f, 67f, 75f) }
-            drawPath(smile, Color(0xFF986D5B), style = Stroke(2.2f, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-            drawCircle(Color(0x55D98F84), 5f, Offset(40f, 74f))
-            drawCircle(Color(0x55D98F84), 5f, Offset(81f, 76f))
-            drawLine(Color(0xFF9DB497), Offset(106f, 22f), Offset(110f, 13f), 3f)
-            drawLine(Color(0xFF9DB497), Offset(111f, 38f), Offset(119f, 34f), 3f)
-        }
-    }
-}
-
-@Composable
 fun NavGlyph(kind: String, selected: Boolean, modifier: Modifier = Modifier) {
     val color = if (selected) Clay.Green else Clay.Muted
     Canvas(modifier.size(21.dp)) {
@@ -302,7 +301,7 @@ fun ProbeBottomBar(current: String, onSelect: (String) -> Unit) {
         listOf("home" to "오늘", "todo" to "할 일", "news" to "소식").forEach { (key, label) ->
             val selected = current == key
             Column(Modifier.weight(1f).background(if (selected) Clay.Sage else Color.Transparent, RoundedCornerShape(26.dp))
-                .clickable(role = Role.Tab, onClick = { onSelect(key) }).padding(vertical = 9.dp),
+                .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(key) }).padding(vertical = 9.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 NavGlyph(key, selected)
                 Text(label, color = if (selected) Clay.Green else Clay.Muted, style = MaterialTheme.typography.bodySmall)

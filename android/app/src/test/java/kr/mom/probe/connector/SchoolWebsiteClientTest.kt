@@ -11,6 +11,7 @@ import kr.mom.probe.document.DocumentIssueCode
 import kr.mom.probe.document.DocumentTextIssue
 import kr.mom.probe.document.DocumentTextResult
 import kr.mom.probe.document.DocumentTypedText
+import kr.mom.probe.document.SyntheticHwp5
 import kr.mom.probe.sync.AttachmentFetchState
 import kr.mom.probe.sync.CanonicalSchoolScope
 import kr.mom.probe.sync.ChildSourceScope
@@ -181,6 +182,45 @@ class SchoolWebsiteClientTest {
         assertTrue(notice.attachments.any { it.url == parentClassAttachmentUrl && it.state == AttachmentFetchState.FETCHED })
         assertTrue(notice.evidence.any { it.label.startsWith("attachmentText:") && it.value.contains("초등 2학년") })
         assertTrue(notice.issues.any { it.message.contains("그림 자료") })
+    }
+
+    @Test fun extractsSyntheticHwp5AttachmentThroughRealExtractor() = runBlocking {
+        val familyBoard = board("12359")
+        val http = FixtureSchoolWebsiteHttp(
+            mapOf(
+                SchoolWebsiteParser.listUrl(board("12354")) to oldSingleEntryPage(board("12354"), 1),
+                SchoolWebsiteParser.listUrl(familyBoard) to singleEntryPage(
+                    board = familyBoard,
+                    page = 1,
+                    published = "2026.09.15",
+                    itemId = "1951993",
+                    title = "2026 학부모 수업 참여의 날 안내",
+                    totalPages = 1,
+                ),
+                SchoolWebsiteParser.listUrl(board("12570")) to oldSingleEntryPage(board("12570"), 1),
+            ),
+            detail = resource("family-detail-1951993-parent-day.html"),
+            binaryBody = { url, _ ->
+                assertEquals(parentClassAttachmentUrl, url)
+                SchoolWebsiteBinaryResponse(
+                    200,
+                    "application/x-hwp",
+                    SyntheticHwp5.hwp5WithBinData(
+                        "2026 학부모 수업 참여의 날 안내\n대상: 초등 2학년 학부모",
+                        flags = 1,
+                    ),
+                )
+            },
+        )
+        val client = SchoolWebsiteClient(http, nowProvider = { septemberFixtureNow })
+
+        val result = client.fetch(scope(), null)
+        val notice = result.items.single { it.itemId == "1951993" }
+
+        assertEquals(NoticeContentState.PARTIAL_EXTRACTION, notice.contentState)
+        assertTrue(notice.body.contains("2학년"))
+        assertTrue(notice.attachments.any { it.url == parentClassAttachmentUrl && it.state == AttachmentFetchState.FETCHED })
+        assertTrue(notice.issues.any { it.code == SourceIssueCode.UNSUPPORTED_ATTACHMENT })
     }
 
     @Test fun extractsRealParentClassHwpFixtureWhenPresent() = runBlocking {

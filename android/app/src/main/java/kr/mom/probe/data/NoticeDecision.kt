@@ -341,7 +341,7 @@ object NoticeDecisionEngine {
             issues += "주 단위 표현은 정확한 마감일로 확정하지 않았어요."
         }
         if (facts.any { it.role == NoticeDateRole.DUE && !it.hasExplicitTime }) {
-            issues += "시각 없는 날짜는 23:59 마감으로 만들지 않았어요."
+            issues += "시각 없는 날짜에는 시간을 붙이지 않았어요."
         }
         return facts
     }
@@ -446,8 +446,12 @@ object NoticeDecisionEngine {
             .removePrefix(":").trim().removePrefix("은 ").removePrefix("는 ").removePrefix("이 ").removePrefix("가 ").trim()
         if (tail.isBlank()) return emptyList()
         return tail.split(',', '·', '/', '•').map { it.trim(' ', ':', '-', '–') }
-            .filter { it.length in 1..40 }.take(8)
+            .filter { it.length in 1..40 }
+            .filterNot { requestEnding.containsMatchIn(it) }
+            .take(8)
     }
+
+    private val requestEnding = Regex("(주세요|주시기\\s*바랍니다|바랍니다|하세요|하십시오)$")
 
     private fun hasPublicationConflict(source: String): Boolean =
         source.contains("2026-09-17") && source.contains("20260914")

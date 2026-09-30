@@ -27,7 +27,9 @@ object AppNotificationAccess {
         }
         val appOps = context.getSystemService(AppOpsManager::class.java) ?: return null
         return try {
-            appOps.unsafeCheckOpNoThrow(POST_NOTIFICATION_OP, info.uid, packageName) ==
+            // checkOpNoThrow exists since API 29 and no longer requires the unsafe
+            // variant; foreign-package failures still land in the catch as "unknown".
+            appOps.checkOpNoThrow(POST_NOTIFICATION_OP, info.uid, packageName) ==
                 AppOpsManager.MODE_ALLOWED
         } catch (_: Exception) {
             null

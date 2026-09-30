@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
 import kr.mom.probe.MainActivity
 import kr.mom.probe.BuildConfig
 import kr.mom.probe.R
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.data.ProbeRepository
 import kr.mom.probe.data.ProbeRules
 import kr.mom.probe.ui.MomTheme
@@ -88,10 +89,10 @@ class AssistantTasksActivity : ComponentActivity() {
                 }) { Text("앱 열기") }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Image(painterResource(R.drawable.assistant_widget_momo), contentDescription = null,
+                Image(painterResource(R.drawable.assistant_widget_rabbit), contentDescription = null,
                     modifier = Modifier.size(width = 46.dp, height = 62.dp))
                 Spacer(Modifier.width(12.dp))
-                Text("모모에게 부탁하기", style = MaterialTheme.typography.headlineSmall)
+                Text("${AgentIdentity.displayName}에게 부탁하기", style = MaterialTheme.typography.headlineSmall)
             }
             Spacer(Modifier.height(8.dp))
             if (!ready) {

@@ -37,8 +37,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kr.mom.probe.ui.BellMascot
+import kr.mom.probe.agent.AgentIdentity
+import kr.mom.probe.ui.AgentMascot
+import kr.mom.probe.ui.AgentMascotState
 import kr.mom.probe.ui.Clay
+import kr.mom.probe.ui.minTouchTarget
 
 data class AlarmContentState(
     val title: String,
@@ -70,7 +73,7 @@ fun AlarmContent(
 ) {
     var details by remember(state.detailLines) { mutableStateOf(false) }
     val safeActionTitle = if (state.locked) "잠금을 풀고 확인하세요" else state.actionTitle
-    val safeActionSummary = if (state.locked) "모모가 알려드릴 소식이 있어요" else state.actionSummary
+    val safeActionSummary = if (state.locked) "${AgentIdentity.displayName}가 알려드릴 소식이 있어요" else state.actionSummary
     val safeStatus = if (state.locked) null else state.statusText
     val safeDetailLines = if (state.locked) emptyList() else state.detailLines
     Surface(modifier.fillMaxSize(), color = Clay.Background) {
@@ -106,7 +109,7 @@ fun AlarmContent(
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
                 )
-                if (!compact) BellMascot(Modifier.size(width = 44.dp, height = 52.dp).testTag("alarm-mascot"))
+                if (!compact) AgentMascot(state = AgentMascotState.NEW_INFO, modifier = Modifier.size(width = 44.dp, height = 52.dp).testTag("alarm-mascot"))
                 BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     val clockSize = if (compact) 44.sp else if (maxWidth < 360.dp) 52.sp else 64.sp
                     Text(
@@ -224,13 +227,14 @@ fun AlarmContent(
                     }
                 }
                 if (!state.locked && state.showSpeak && onSpeak != null) {
-                    TextButton(onClick = onSpeak, modifier = Modifier.testTag("alarm-speak")) { Text("소리로 듣기") }
+                    TextButton(onClick = onSpeak, modifier = Modifier.minTouchTarget().testTag("alarm-speak")) { Text("소리로 듣기") }
                 }
             }
             if (onAskMomo != null) {
                 TextButton(
                     onClick = onAskMomo,
                     modifier = Modifier
+                        .minTouchTarget()
                         .semantics { contentDescription = "할 일 열기" }
                         .testTag("alarm-ask-momo"),
                 ) { Text("할 일 열기") }

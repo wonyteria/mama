@@ -11,7 +11,6 @@ import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import kr.mom.probe.BuildConfig
 import kr.mom.probe.data.NoticeApplicability
 import kr.mom.probe.data.NoticeContentState
 import kr.mom.probe.data.NoticeDateRole
@@ -70,10 +69,17 @@ private val neisGradeFlags = mapOf(
 )
 
 class NeisPublicClient(
-    private val apiKey: String = BuildConfig.NEIS_API_KEY,
+    // No production API key is compiled into the APK; the lane runs its honestly
+    // labeled keyless-limited mode until a server-side proxy can hold the key.
+    private val apiKey: String = "",
     private val nowProvider: () -> Long = { System.currentTimeMillis() },
     transport: ((String) -> NeisResult<NeisJsonResponse>)? = null,
 ) : SourceFetcher {
+    companion object {
+        /** Production sync stays off until a server-side proxy owns credentials and rate limits. */
+        const val PRODUCTION_SYNC_ENABLED = false
+    }
+
     private val transport: (String) -> NeisResult<NeisJsonResponse> = transport ?: ::getJsonResponse
 
     val isSampleMode: Boolean get() = apiKey.isBlank()

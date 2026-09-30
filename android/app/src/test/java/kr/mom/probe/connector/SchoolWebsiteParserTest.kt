@@ -4,7 +4,11 @@ import kr.mom.probe.data.NoticeApplicability
 import kr.mom.probe.data.NoticeContentState
 import kr.mom.probe.data.NoticeDateRole
 import kr.mom.probe.data.NoticeObligation
+import kr.mom.probe.data.ProbeRecord
 import kr.mom.probe.data.SchoolLevel
+import kr.mom.probe.data.ChildNoticeProfile
+import kr.mom.probe.sync.RecordSourceMetadata
+import kr.mom.probe.sync.SourceAttachment
 import kr.mom.probe.sync.AttachmentFetchState
 import kr.mom.probe.sync.CanonicalSchoolScope
 import kr.mom.probe.sync.ChildSourceScope
@@ -96,6 +100,54 @@ class SchoolWebsiteParserTest {
         assertTrue(notice.audienceFacts.any {
             it.applicability == NoticeApplicability.UNKNOWN && it.gradeStart == 6 && it.gradeEnd == 6
         })
+    }
+
+    @Test fun attachmentOnlyTitleWithEventDateStaysIncompleteAndDoesNotBecomeAgendaCandidate() {
+        // Title carries an event date and a school-wide audience, but the
+        // body is blank and the only content is a link-only attachment.
+        // The notice stays evidence/reviewable as ATTACHMENT_MISSING and
+        // must never produce an agenda entry or auto-schedule.
+        val notice = SchoolWebsiteParser.toFetchedNotice(
+            scope = scope(),
+            entry = SchoolWebsiteListEntry(familyBoard, "att-only", "전학년 2026. 9. 20. 학부모 공개수업 행사", "2026-09-10", false, SchoolWebsiteParser.detailUrl(familyBoard, "att-only")),
+            detail = SchoolWebsiteDetail(
+                board = familyBoard,
+                itemId = "att-only",
+                title = "전학년 2026. 9. 20. 학부모 공개수업 행사",
+                publishedDateIso = "2026-09-10",
+                body = "",
+                attachments = listOf(SourceAttachment("공개수업 안내.hwpx", "https://snjj-e.goesn.kr/file.hwpx", "application/hwpml", AttachmentFetchState.LINK_ONLY)),
+                identityVerified = true,
+            ),
+            fetchedAt = 1_779_000_000_000L,
+        )
+
+        assertEquals(NoticeContentState.ATTACHMENT_MISSING, notice.contentState)
+        // The title-derived event date stays as evidence...
+        assertTrue(notice.dateFacts.any { it.role == NoticeDateRole.EVENT && it.dateIso == "2026-09-20" })
+        assertTrue(notice.audienceFacts.any { it.applicability == NoticeApplicability.APPLIES })
+        // ...but the incomplete record is never an agenda candidate.
+        val record = ProbeRecord(
+            id = "r-att", packageName = "source:${notice.sourceId}", appLabel = "학교",
+            postedAt = 0, receivedAt = 0, title = notice.title, text = notice.body,
+            bigText = "", textLines = emptyList(), subText = null, summaryText = null,
+            category = "source", channelId = "ch", notificationId = 0,
+            notificationKey = notice.itemId, isOngoing = false, isGroupSummary = false,
+            rawHash = "h",
+            sourceMetadata = RecordSourceMetadata(
+                kind = SourceKind.SCHOOL_WEBSITE, sourceId = notice.sourceId, itemId = notice.itemId,
+                revisionHash = notice.revisionHash, origin = notice.origin,
+                contentState = notice.contentState, obligation = notice.obligation,
+                audienceFacts = notice.audienceFacts, dateFacts = notice.dateFacts,
+                attachments = notice.attachments, evidence = notice.evidence, issues = notice.issues,
+                firstSeenAt = 1_779_000_000_000L, lastFetchedAt = 1_779_000_000_000L,
+            ),
+        )
+        val beforeEvent = java.time.LocalDate.of(2026, 9, 15).atStartOfDay(java.time.ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli()
+        assertEquals(
+            emptyList<kr.mom.probe.sync.SourceAgendaItem>(),
+            kr.mom.probe.sync.SourceRecordSelectors.agenda(listOf(record), ChildNoticeProfile(2, SchoolLevel.ELEMENTARY), beforeEvent, 30),
+        )
     }
 
     @Test fun mixedElementaryAndMiddleRangesDoNotUnionIntoElementarySecondGrade() {

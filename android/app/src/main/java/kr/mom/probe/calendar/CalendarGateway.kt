@@ -10,6 +10,7 @@ import android.net.Uri
 import android.provider.CalendarContract
 import java.time.Instant
 import java.time.ZoneId
+import kr.mom.probe.agent.AgentIdentity
 import kr.mom.probe.agent.SchedulePayload
 
 enum class CalendarSaveState {
@@ -224,7 +225,7 @@ class CalendarGateway(
 
     fun undo(record: CalendarCommandRecord, expectedGeneration: Long?): CalendarUndoResult {
         if (!mutationAllowed(expectedGeneration)) return CalendarUndoResult(CalendarUndoState.CANNOT_VERIFY, "앱 설정이 바뀌어 자동 취소를 중단했어요.")
-        val snapshot = record.snapshot ?: return CalendarUndoResult(CalendarUndoState.CANNOT_VERIFY, "모모가 만든 일정인지 확인할 기록이 부족해요.")
+        val snapshot = record.snapshot ?: return CalendarUndoResult(CalendarUndoState.CANNOT_VERIFY, "${AgentIdentity.displayName}가 만든 일정인지 확인할 기록이 부족해요.")
         val current = try {
             backend.readEvent(snapshot.eventId)
         } catch (_: Exception) {

@@ -15,10 +15,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -28,6 +35,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import java.io.File
 import kr.mom.probe.data.ProbeSettings
 import kr.mom.probe.data.ProbeRecord
@@ -36,11 +44,13 @@ import kr.mom.probe.data.NotificationCandidateParser
 import kr.mom.probe.connector.ConnectorState
 import kr.mom.probe.sync.SourceAgendaItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.shadows.ShadowLooper
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.LooperMode
@@ -95,7 +105,7 @@ class ProbeScreensRenderTest {
             onToggle = {},
             onToggleItem = { _, _ -> },
             onSnooze = { _, _ -> },
-            onEdit = { _, _, _ -> },
+            onEdit = { _, _, _, _ -> },
             onExclude = {},
             onOpenTodo = onOpenTodo,
             onOpenNews = onOpenNews,
@@ -147,6 +157,152 @@ class ProbeScreensRenderTest {
     }
 
     @Test
+    fun todayCapsQuietPriorityQueueAtThree() {
+        val overdueTasks = (1..5).map {
+            task(id = "o$it", text = "기한 지난 일 $it", dueAt = NOW - it * 3_600_000L)
+        }
+        render { today(tasks = overdueTasks) }
+        compose.onNodeWithText("오늘은 이것만").performScrollTo().assertIsDisplayed()
+        // The focus stack still caps at three (oldest overdue first); the
+        // overflow continues in the "기한 지남" bucket — never duplicated.
+        val bucketY = compose.onNodeWithText("기한 지남").assertExists()
+            .fetchSemanticsNode().positionInRoot.y
+        listOf("기한 지난 일 5", "기한 지난 일 4", "기한 지난 일 3").forEach { text ->
+            val y = compose.onNodeWithText(text).assertExists()
+                .fetchSemanticsNode().positionInRoot.y
+            assertTrue("$text must sit in the focus stack above 기한 지남", y < bucketY)
+        }
+        listOf("기한 지난 일 2", "기한 지난 일 1").forEach { text ->
+            val y = compose.onNodeWithText(text).assertExists()
+                .fetchSemanticsNode().positionInRoot.y
+            assertTrue("$text must sit in the 기한 지남 bucket", y > bucketY)
+        }
+        screenshot("today-quiet-queue")
+    }
+
+    @Test
+    fun todayKeepsUndatedWorkInTheLaterBucket() {
+        render {
+            today(
+                tasks = listOf(
+                    task(id = "o1", text = "지난 회신 정리", dueAt = NOW - 3_600_000L),
+                    task(id = "u1", text = "언젠가 확인할 일"),
+                ),
+            )
+        }
+        compose.onNodeWithText("오늘은 이것만").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("나중에 확인").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("언젠가 확인할 일").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun todayOrdersAttentionBucketsAndCapsFocusStack() {
+        val tasks = (1..4).map { task(id = "o$it", text = "지난 일 $it", dueAt = NOW - it * 86_400_000L) } +
+            listOf(
+                task(id = "s1", text = "내일 도시락", dueAt = dueOn(1)),
+                task(id = "w1", text = "금요일 체육복", dueAt = dueOn(4)),
+                task(id = "u1", text = "날짜 없는 일"),
+            )
+        render { today(tasks = tasks) }
+        // Ordered eyebrows: focus stack → 기한 지남 → 오늘·내일 → 이번 주 → 나중에 확인.
+        val ys = listOf("오늘은 이것만", "기한 지남", "오늘·내일", "이번 주", "나중에 확인")
+            .map { label ->
+                compose.onNodeWithText(label).assertExists()
+                    .fetchSemanticsNode().positionInRoot.y
+            }
+        assertTrue(ys.zipWithNext().all { (a, b) -> a < b })
+        // Focus stack still caps at 3 — the 4th (newest) overdue lands in
+        // the 기한 지남 bucket, exactly once.
+        compose.onAllNodesWithText("지난 일 4").assertCountEquals(1)
+        compose.onAllNodesWithText("지난 일 1").assertCountEquals(1)
+        // Each bucket's item appears exactly once, ordered.
+        compose.onAllNodesWithText("내일 도시락").assertCountEquals(1)
+        compose.onAllNodesWithText("금요일 체육복").assertCountEquals(1)
+        compose.onAllNodesWithText("날짜 없는 일").assertCountEquals(1)
+        // Complete all-items path stays visible.
+        compose.onNodeWithTag("open-todo-all").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun todayRoutesNeedsReviewIntoTheReviewBucketOnly() {
+        render {
+            today(
+                tasks = listOf(
+                    task(id = "r1", text = "수정된 급식 안내", dueAt = dueOn(4), needsReview = true),
+                    task(id = "w1", text = "이번 주 도시락", dueAt = dueOn(4)),
+                ),
+            )
+        }
+        // Dated + needsReview never duplicates into 이번 주 — it surfaces
+        // once, in 나중에 확인.
+        compose.onAllNodesWithText("수정된 급식 안내").assertCountEquals(1)
+        val weekY = compose.onNodeWithText("이번 주").fetchSemanticsNode().positionInRoot.y
+        val reviewItemY = compose.onNodeWithText("수정된 급식 안내")
+            .fetchSemanticsNode().positionInRoot.y
+        assertTrue(reviewItemY > weekY)
+        // Status is carried by text, not color alone.
+        compose.onNodeWithText("수정 공지 확인 필요", substring = true).assertExists()
+    }
+
+    @Test
+    fun todayStatusTextDoesNotDependOnColor() {
+        render {
+            today(
+                tasks = listOf(
+                    task(id = "o1", text = "지난 회신", dueAt = NOW - 86_400_000L),
+                    task(id = "u1", text = "언젠가 할 일"),
+                ),
+            )
+        }
+        // Every row exposes a textual status + due label — never color-only.
+        compose.onAllNodesWithText("진행 중", substring = true).fetchSemanticsNodes()
+            .also { assertTrue(it.isNotEmpty()) }
+        compose.onNodeWithText("날짜 없음", substring = true).assertExists()
+        // Checkbox exposes a TalkBack label carrying the task name + action.
+        val cd = compose.onNodeWithTag("task-check-o1").fetchSemanticsNode()
+            .config.getOrNull(SemanticsProperties.ContentDescription)
+        assertTrue(cd != null && cd.any { it.contains("지난 회신") && it.contains("완료") })
+        compose.onNodeWithTag("task-check-o1")
+            .assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test
+    fun todayBucketsStayReachableAt200PercentFont() {
+        render(fontScale = 2f) {
+            today(
+                tasks = listOf(
+                    task(id = "o1", text = "지난 회신", dueAt = NOW - 86_400_000L),
+                    task(id = "u1", text = "언젠가 할 일"),
+                ),
+            )
+        }
+        compose.onNodeWithText("오늘은 이것만").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("나중에 확인").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("open-todo-all").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("task-check-u1").performScrollTo()
+            .assertHeightIsAtLeast(48.dp)
+    }
+
+    @Config(qualifiers = "ko-rKR-land-xhdpi")
+    @Test
+    fun todayBucketsStayReachableInLandscape() {
+        render {
+            today(
+                tasks = (1..4).map { task(id = "o$it", text = "지난 회신 $it", dueAt = NOW - it * 86_400_000L) } +
+                    listOf(
+                        task(id = "s1", text = "내일 도시락", dueAt = dueOn(1)),
+                        task(id = "w1", text = "이번 주 일", dueAt = dueOn(4)),
+                        task(id = "u1", text = "언젠가 할 일"),
+                    ),
+            )
+        }
+        listOf("오늘은 이것만", "기한 지남", "오늘·내일", "이번 주", "나중에 확인").forEach {
+            compose.onNodeWithText(it).performScrollTo().assertIsDisplayed()
+        }
+        compose.onNodeWithTag("open-todo-all").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun todoShowsChecklistProgress() {
         render {
             TodoScreen(
@@ -165,12 +321,49 @@ class ProbeScreensRenderTest {
                 busy = false,
                 now = NOW,
                 onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
-                onEdit = { _, _, _ -> }, onExclude = {}, onAddTask = { _, _ -> },
+                onEdit = { _, _, _, _ -> }, onExclude = {}, onAddTask = { _, _, _ -> },
             )
         }
         compose.onNodeWithText("2/4 준비").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("할 일 1개").assertIsDisplayed()
         screenshot("todo-checklist-progress")
+    }
+
+    @Test
+    fun todoShowsEvidenceAndRevisionDifference() {
+        render {
+            TodoScreen(
+                tasks = listOf(
+                    kr.mom.probe.task.AssistantTask(
+                        id = "evidence-1",
+                        text = "동의서 월요일 제출",
+                        completed = false,
+                        createdAt = NOW,
+                        sourceNotificationId = "group-1",
+                        sourceRevisionId = "revision-2",
+                        sourceKind = kr.mom.probe.task.AssistantTaskSource.AUTO_NOTICE,
+                        actionKind = "submit",
+                        evidenceText = "동의서는 월요일까지 제출해 주세요.",
+                        originalEvidenceText = "동의서는 금요일까지 제출해 주세요.",
+                        sourceTitle = "동의서 제출일 정정",
+                        sourceLabel = "학교 앱",
+                        sourceCapturedAt = NOW,
+                        audienceLabel = "초등 2학년",
+                        revisionSummary = "기한 · 근거 문구 변경",
+                    ),
+                ),
+                busy = false,
+                now = NOW,
+                onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
+                onEdit = { _, _, _, _ -> }, onExclude = {}, onAddTask = { _, _, _ -> },
+            )
+        }
+
+        compose.onNodeWithText("동의서 월요일 제출").performClick()
+        compose.onNodeWithText("근거 보기").assertIsDisplayed().performClick()
+        compose.onNodeWithText("공지 수정 반영").assertIsDisplayed()
+        compose.onNodeWithText("동의서는 금요일까지 제출해 주세요.").assertIsDisplayed()
+        compose.onNodeWithText("동의서는 월요일까지 제출해 주세요.").assertIsDisplayed()
     }
 
     @Test
@@ -183,12 +376,127 @@ class ProbeScreensRenderTest {
                 busy = false,
                 now = NOW,
                 onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
-                onEdit = { _, _, _ -> }, onExclude = {}, onAddTask = { _, _ -> },
+                onEdit = { _, _, _, _ -> }, onExclude = {}, onAddTask = { _, _, _ -> },
             )
         }
         compose.onNodeWithText("할 일 0개").assertIsDisplayed()
         compose.onNodeWithText("완료한 일 1개 보기").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("끝낸 일").assertIsDisplayed()
+    }
+
+    @Test
+    fun addTaskDialogStaysOpenAndKeepsInputWhenSaveFails() {
+        // autoAdvance off: the focused field's cursor blink holds a frame awaiter
+        // forever, so once the dialog is open no waitForIdle-based API can be used.
+        // Every interaction below goes through the compose root registry and direct
+        // semantics action invocation instead.
+        compose.mainClock.autoAdvance = false
+        var attempts = 0
+        render {
+            TodoScreen(
+                tasks = emptyList(),
+                busy = false,
+                now = NOW,
+                onToggle = {}, onToggleItem = { _, _ -> }, onSnooze = { _, _ -> },
+                onEdit = { _, _, _, _ -> }, onExclude = {},
+                // Injected save failure: the first attempt reports false, the retry true.
+                onAddTask = { _, _, done -> done(attempts++ > 0) },
+            )
+        }
+        assertNotNull(nodeByTag("add-task"))
+        invokeOnClick("add-task")
+        // Dialog.show() is posted to the PAUSED main looper: pump it (plus the test
+        // clock) manually until the dialog root composes. Once it is open, the
+        // focused field's cursor blink pins every waitForIdle-based API forever,
+        // so all later steps use direct semantics action invocation instead.
+        awaitDialog("task-edit-text")
+
+        compose.runOnUiThread {
+            val field = nodeByTag("task-edit-text")!!
+            @Suppress("UNCHECKED_CAST")
+            val setText = field.config[SemanticsActions.SetText]!!.action as (AnnotatedString) -> Boolean
+            setText(AnnotatedString("도시락 싸기"))
+        }
+        pump()
+        invokeOnClick("task-save")
+        pump()
+
+        // Failed save keeps the dialog, the typed text, and shows a retryable error.
+        val fieldAfter = nodeByTag("task-edit-text")
+        assertNotNull(fieldAfter)
+        assertEquals("도시락 싸기", fieldAfter!!.config.getOrElseNullable(SemanticsProperties.EditableText) { null }?.text)
+        assertNotNull(nodeByText("저장하지 못했어요. 다시 시도해주세요."))
+        assertEquals(1, attempts)
+
+        invokeOnClick("task-save")
+        pump()
+        assertEquals(2, attempts)
+        org.junit.Assert.assertNull(nodeByTag("task-edit-text"))
+    }
+
+    private fun flatten(node: SemanticsNode): List<SemanticsNode> =
+        listOf(node) + node.children.flatMap { flatten(it) }
+
+    private fun allNodes(): List<SemanticsNode> {
+        val env = compose.javaClass.getDeclaredField("environment").apply { isAccessible = true }.get(compose)
+        val registry = env.javaClass.getMethod("getComposeRootRegistry\$ui_test_release").invoke(env)
+        @Suppress("UNCHECKED_CAST")
+        val roots = (
+            registry.javaClass.getMethod("getRegisteredComposeRoots").invoke(registry)
+                as Set<androidx.compose.ui.platform.ViewRootForTest>
+            ) + (
+            registry.javaClass.getMethod("getCreatedComposeRoots").invoke(registry)
+                as Set<androidx.compose.ui.platform.ViewRootForTest>
+            )
+        return roots.flatMap { flatten(it.semanticsOwner.rootSemanticsNode) }
+    }
+
+    private fun nodeByTag(tag: String): SemanticsNode? = compose.runOnUiThread {
+        allNodes().firstOrNull {
+            it.config.getOrElseNullable(SemanticsProperties.TestTag) { null } == tag
+        }
+    }
+
+    private fun nodeByText(text: String): SemanticsNode? = compose.runOnUiThread {
+        allNodes().firstOrNull {
+            it.config.getOrElseNullable(SemanticsProperties.Text) { null }
+                ?.any { item -> item.text == text } == true
+        }
+    }
+
+    private fun invokeOnClick(tag: String) = compose.runOnUiThread {
+        nodeByTag(tag)!!.config[SemanticsActions.OnClick]!!.action!!.invoke()
+    }
+
+    private fun pump() {
+        Snapshot.sendApplyNotifications()
+        ShadowLooper.idleMainLooper()
+        compose.mainClock.advanceTimeBy(500)
+    }
+
+    private fun awaitDialog(tag: String) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (nodeByTag(tag) == null) {
+            if (System.currentTimeMillis() > deadline) org.junit.Assert.fail("dialog node $tag never appeared")
+            pump()
+        }
+    }
+
+    @Test
+    fun uncertainNoticeOffersExplicitParentConfirmInsteadOfAutoTask() {
+        // A bare grade with no school-level marker makes the audience UNKNOWN, so
+        // the engine builds no action — the user must still be able to confirm
+        // the target themselves and create an evidence-linked task.
+        val record = candidateRecord().copy(
+            title = "3학년 체험학습 준비물",
+            text = "3학년 체험학습 준비물을 챙겨주세요.",
+        )
+        render {
+            DetailScreen(record, onBack = {}, onDelete = {}, onSource = {})
+        }
+
+        compose.onNodeWithText("엄마 확인 필요").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("확인하고 할 일로 추가").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -242,7 +550,37 @@ class ProbeScreensRenderTest {
         compose.onAllNodesWithText("하이클래스 웹").assertCountEquals(0)
         compose.onAllNodesWithText("e알리미 사이트 열기").assertCountEquals(0)
         compose.onAllNodesWithText("하이클래스 사이트 열기").assertCountEquals(0)
+        compose.onAllNodesWithText("정리되면 원본 알림 숨기기").assertCountEquals(0)
         screenshot("connections-apps-only")
+    }
+
+    @Test
+    fun connectionsStillShowsSchoolWebsiteRowWhenUnsupported() {
+        render {
+            ConnectionsScreen(
+                settings = ProbeSettings(
+                    consent = true,
+                    childName = "QA",
+                    schoolName = "다른초등학교",
+                    schoolGrade = 2,
+                    onboardingDone = true,
+                ),
+                installedApps = emptyList(),
+                missingApps = emptyList(),
+                verifiedAppPackages = emptySet(),
+                connectorState = ConnectorState(),
+                busy = false,
+                onBack = {},
+                onToggleApp = { _, _ -> },
+                onConnectNeis = {},
+                onDisconnectNeis = {},
+                onRecommendApp = {},
+            )
+        }
+
+        // An unsupported school keeps its row and explains why instead of vanishing.
+        compose.onNodeWithText("학교 공식 홈페이지").assertIsDisplayed()
+        compose.onNodeWithText("지금은 확인된 학교 홈페이지만 연결해요").assertIsDisplayed()
     }
 
     @Test
@@ -445,6 +783,8 @@ class ProbeScreensRenderTest {
         completed: Boolean = false,
         sourceNotificationId: String? = null,
         checklist: List<kr.mom.probe.task.TaskChecklistItem> = emptyList(),
+        dueAt: Long? = null,
+        needsReview: Boolean = false,
     ) = kr.mom.probe.task.AssistantTask(
         id = id,
         text = text,
@@ -452,7 +792,15 @@ class ProbeScreensRenderTest {
         createdAt = NOW,
         sourceNotificationId = sourceNotificationId,
         checklist = checklist,
+        dueAt = dueAt,
+        needsReview = needsReview,
     )
+
+    /** Seoul-date math matching TodoSelectors: 9am on today+days. */
+    private fun dueOn(daysFromNow: Long): Long =
+        java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul"))
+            .plusDays(daysFromNow).atTime(9, 0)
+            .atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli()
 
     private fun render(fontScale: Float = 1f, content: @Composable () -> Unit) {
         compose.setContent {
