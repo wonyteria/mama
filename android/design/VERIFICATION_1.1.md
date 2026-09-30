@@ -2,24 +2,29 @@
 
 feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin/main`(1.0.2) 위에 DESIGN.md의 1.1 신뢰성 항목만 재적용한 후보다. 아래는 자동 검증·에뮬레이터·실기기·사용자 조사를 구분한 현재 상태다. 실행하지 않은 항목은 NOT_RUN으로 남긴다.
 
-## 자동 검증 (PC, 최신 실행)
+## 자동 검증 (PC, HEAD 최신 — 이 섹션이 권위)
 
 `cd android && ./gradlew clean :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest`
 
-- 단위 테스트 XML 합계(testsuite 속성): tests=309, failures=0, errors=0, skipped=2 — 307 통과 + 2 skip. skip은 외부 공개 fixture opt-in 테스트다. Robolectric 화면 테스트는 프로덕션 Composable을 실제 렌더한다. `RingingNotificationContractTest`(3건, FSI 제거 회귀) 포함.
-- `AccessibilityLayoutTest` 21/21 통과, `ProbeScreensRenderTest` 22/22 통과.
-- lint 오류 0. debug APK·androidTest APK 조립 성공.
-- `8de5897`에서 `--no-build-cache`로 fresh clean 재실행(1m06s): 동일 XML 합계(309/307/2/0/0), lint 오류 0, debug APK 29M·androidTest APK 2.5M 조립 성공.
+- **현재 HEAD XML 합계(testsuite 속성): tests=428, pass=426, skipped=2, failures=0, errors=0.** skip 2개는 외부 공개 fixture opt-in 테스트다. Robolectric 화면 테스트는 프로덕션 Composable을 실제 렌더한다.
+- `AccessibilityLayoutTest`, `ProbeScreensRenderTest`, voice suite(Activity+Layout+Coordinator) 전부 통과.
+- lint **오류 0 / 경고 101**(신규 파일에 추가된 경고 없음). debug APK·androidTest APK 조립 성공.
+- API35 disposable 에뮬레이터(`mama_qa_api35`) `connectedDebugAndroidTest` 권위 XML: **tests=28, pass=26, skipped=2, failures=0, errors=0** — CI 베이스라인과 동일.
 - release 조립은 서명 정보 없이 실행하면 지정된 fail-closed 메시지로 실패한다.
   - `Release signing is not configured. Set MAMA_RELEASE_STORE_FILE, ...`
   - `Debug signing is never used for release builds.`
 - release `BuildConfig.java`에 `NEIS_API_KEY` 필드가 없다(grep 0건). APK에 운영 비밀 키를 싣지 않는다.
+- **규칙**: 이 문서의 repo-level 회귀(unit·lint·build·API35 에뮬레이터 계측)는 최신 HEAD에서 green이다. 반면 OS 경계·실기기·파괴적 시나리오(실제 process-kill/reboot, 권한 회수 재허용, 전체 삭제 중간 kill, 실기기 STT, 실제 개인 알림 수집, signed release, 부모 조사)는 아래와 DEFECT_TRACKING에서 표시된 대로 NOT_RUN이다 — green이 그들을 커버했다는 뜻이 아니다.
+
+### 과거 베이스라인 (히스토리 — 최신이 아님)
+
+- 초기 1.1 라운드(`8de5897` 시점): tests=309, pass=307, skipped=2, failures=0, errors=0; `RingingNotificationContractTest`(3건, FSI 제거 회귀) 포함. 이후 라운드로 수치가 증가했으며 현재 권위는 위 HEAD 섹션이다.
 
 ## 조용한 음성 캡처·오늘 큐 (자동, 이번 사이클)
 
 `8083878`(탭 기반 음성 캡처) 이후 Stage 4/5 — KUU의 "말하기 우선·모든 말을 할 일로 만들지 않음"을 MAMA 정책으로 번역했다(4분면 격자·ADHD 포지셔닝 복제 아님, 근거/확인 중심 유지).
 
-- fresh clean `testDebugUnitTest` XML 합계: **tests=420, pass=418, skipped=2, failures=0, errors=0**(follow-up 라운드 +17: 메모 라우팅·캘린더 편집 payload·unresolved fail-fast·non-retryable UI·새 세션 saveRetryable 리셋·날짜 tri-state·리마인더 일관성). lint **오류 0 / 경고 101**(신규 파일에 추가된 경고 없음 — 기존 싱글톤/`.edit()` 패턴과 동일 계열). debug·androidTest APK 조립 성공.
+- 이 라운드 시점의 단위 XML 합계는 위 "자동 검증 (PC, HEAD 최신)" 섹션이 권위다 — 아래 각 라운드 기록은 당시 수치를 보존한다.
 - 발화 분류: `LocalAgentEngine.capture()`가 MEMO/TASK/REMINDER/CALENDAR/SHOPPING/QUESTION으로 분류하고 preview는 `오늘 챙길 일`·`나중에 확인`·`메모만`·`엄마 확인 필요`·`내려놓기/저장 안 함` 버킷 중 하나를 표시한다. 질문형은 저장 없이 인라인 답변만, 알람·날짜 불명확·파싱 불가는 확인 없이 쓰지 않는다(`CaptureClassificationTest` 13건).
 - 리뷰 라운드 blocker 수정: `stopCapture()`는 `adapter.stop()` 성공 직후 즉시 THINKING+`onChanged()`(callback 지연/부재에도 LISTENING 잔류 불가), `begin()`의 `adapter.start()` 예외는 teardown → IDLE 복구 → fallback disclosure 표시이며 취소 후 다음 mic 탭으로 재시도 가능(`VoiceQuickCaptureTest` 회귀 2건 추가).
 - 저장 경로: 미리보기 → 명시 일괄 확인 → `VoiceCaptureSaver` → `CaptureWriteCoordinator`(captureId 저널) → 기존 `AssistantTaskStore`/`CalendarGateway`. 저장 실패 시 transcript+edit 보존·재시도, `voice:<captureId>:<index>` source key로 실제 task write까지 멱등, 내려놓기는 아무것도 쓰지 않는다(`VoiceQuickCaptureActivityTest` 25건 — 권한 거부/재시도·on-device 부재 disclosure·generic 취소·빈 결과·중복 탭·회전·stale callback·동기 stop 회귀·start 예외 fallback 재시도·edit 보존·분류 실패 포함).
@@ -61,6 +66,14 @@ feature/1.1-reliability-rebuild · versionCode 14 / versionName 1.1.0 · `origin
 `b2f6a61` 리뷰의 계약 결함 1건을 수정했다.
 
 - **편집된 리마인더는 편집된 시각에 울린다**: 날짜를 명시적으로 편집한 clause는 낡은 `proposedRemindAt`을 절대 재사용하지 않는다 — `effectiveRemindAt`이 같은 tri-state를 따른다. REMINDER clause("알려줘" — 알림이 곧 목적)의 날짜 편집은 알람을 편집된 시각으로 이동하고, 비-REMINDER의 편집은 숨은 알람을 남기지 않는다(명시 `setClauseTimes` remind만 유지). 비우면 due와 remind가 함께 null이다. 미리보기도 같은 tri-state를 그린다 — 날짜 필드는 `dateInput ?: effectiveDueAt`을 표시하므로 `setClauseTimes(i,null,null)` 후에는 낡은 제안 날짜가 아닌 빈 필드를 보여준다. 회귀: `edited reminder date moves the alarm never reuses the stale proposal`·`edited non-reminder task drops the stale proposal reminder`(production `taskWriteSpecFor` 심)·`programmatic null times clear the date without restoring the proposal`(모델 + `clause-date-0` 빈 필드·편집 포맷 UI 단언).
+
+`540c062` 리뷰의 계약 결함 4건(A–D)을 수정했다.
+
+- **A 쉼표는 양쪽이 각자 행동을 담을 때만 갈라진다**: `splitClauses`는 쉼표를 무조건 자르지 않는다 — 좌우 fragment가 모두 명령/의무/구매/질문 동사를 담아야만 분절한다("내일 물통 챙겨줘, 모레 체육복 사야 돼" → 2 clauses). 공유 목적어 나열("내일 도시락, 물통 챙겨줘")은 한 clause로 남아 날짜·동사를 잃은 MEMO 조각이 생기지 않는다. 회귀: `comma joined object list stays one coherent clause`·`comma splits only when both sides carry their own action`.
+- **B 날짜만 있는 편집은 시간을 발명하지 않는다**: `parseEditableDateTime`이 `EditableDate(millis, hasTime)`를 반환한다 — 시간이 없는 편집("모레", "10월 3일")은 09:00이 아니라 그날 끝(23:59:59)을 기준점으로 `dueDateOnly=true`를 세팅해, 작업이 같은 날 아침에 overdue가 되지 않고 알림도 예약되지 않는다(`effectiveRemindAt` 억제). 미리보기는 "M월 d일"만 보여준다. CALENDAR는 종일 개념이 없으므로 date-only 시작은 `needsReview`로 막히고 `calendarPayloadFor`는 fail-closed다. 회귀: `date only edit never invents a morning time`·`time bearing edit keeps the explicit time`·`date only edit stores the day boundary and no hidden reminder`·`date only edit on a calendar clause cannot invent an event start`.
+- **C 첨부만 있는 공지는 agenda를 발명하지 않는다**: `SourceRecordSelectors.agenda`의 INFORMATIONAL 면제를 제거 — `ATTACHMENT_MISSING`/`PARTIAL_EXTRACTION`/`FAILED` record는 obligation과 무관하게 agenda 항목을 만들지 않는다(검증된 본문 또는 추출된 첨부 텍스트가 생길 때까지). 제목의 행사 날짜는 `dateFacts` 증거로 남지만 일정·Todo·자동 스케줄이 되지 않는다(task 경로는 기존에도 REVIEW로 게이트). 회귀: `SourceRecordSelectorsTest.attachmentOnlyInformationalEventDateDoesNotInventAgenda`·`SchoolWebsiteParserTest.attachmentOnlyTitleWithEventDateStaysIncompleteAndDoesNotBecomeAgendaCandidate`.
+- **D 검증 기록의 정직성**: 이 문서 상단 "자동 검증 (PC, HEAD 최신)"이 유일한 권위 섹션이다. 309건 결과는 과거 베이스라인으로 명시 relabel했고, XML 합계가 권위다. A–N 대조: `DEFECT_TRACKING_1.1.md`에서 L·M은 PARTIAL(단위/배선 검증, 실제 권한 회수·삭제 중간 kill 시나리오 NOT_RUN), E·F는 로직+기기 통합 DONE이지만 실제 process-kill/reboot OS 경계는 NOT_RUN으로 남는다.
+- **테스트 하네스 자체 결함 수정(이번 라운드)**: `-wipe-data`로 재기동한 disposable 에뮬레이터에서 `postedSyntheticNotificationIsCapturedThroughSystemListenerIntoTaskStore`가 teardown에서 실패했다 — `cmd notification allow_listener`는 별도 정책 승인을 남기므로 `settings put`으로 원본 목록을 되써도 OS가 승인된 컴포넌트를 재추가했다(이전 실행들은 리스너가 설정에 이미 남아 있어 `modified=false` 경로만 타고 복원 경로가 한 번도 실행되지 않았다). `restoreQaListenerAccess`가 복원 전 `disallow_listener`로 승인을 회수하게 수정했다. 이후 API35 connected XML 28/26/2/0/0 green.
 
 ## A–N 결함 수정 (자동, 신규)
 

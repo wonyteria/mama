@@ -63,8 +63,13 @@ object SourceRecordSelectors {
             val metadata = record.sourceMetadata ?: return@flatMap emptyList()
             if (!appliesToChild(metadata, child)) return@flatMap emptyList()
             if (metadata.obligation == NoticeObligation.OPTIONAL_OPPORTUNITY) return@flatMap emptyList()
+            // Incomplete content (ATTACHMENT_MISSING, PARTIAL_EXTRACTION,
+            // FAILED) never invents agenda — an attachment-only title with
+            // an event date stays reviewable evidence, nothing more. Even
+            // INFORMATIONAL records must wait for verified body text or
+            // extracted attachment text.
             val incomplete = metadata.contentState !in setOf(NoticeContentState.NOTIFICATION_ONLY, NoticeContentState.VERIFIED)
-            if (incomplete && metadata.obligation != NoticeObligation.INFORMATIONAL) return@flatMap emptyList()
+            if (incomplete) return@flatMap emptyList()
             metadata.dateFacts
                 .filter { it.role == NoticeDateRole.EVENT }
                 .mapNotNull { fact -> fact.dateIso?.let { date -> runCatching { LocalDate.parse(date) }.getOrNull() } }

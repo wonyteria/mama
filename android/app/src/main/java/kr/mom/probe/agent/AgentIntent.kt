@@ -84,6 +84,12 @@ data class CaptureClause(
      * falls back to the parsed proposal, edited never does.
      */
     val dateEdited: Boolean = false,
+    /**
+     * The parent's edit named a day but no hour — "시간 없음". `dueAt`
+     * anchors the day's end so the task stays on that date; reminders are
+     * never scheduled from an invented time.
+     */
+    val dueDateOnly: Boolean = false,
     /** Editable reminder time; defaults to the plan's proposal. */
     val remindAt: Long? = null,
     /** Editable disposition override; null follows the plan. */
@@ -121,18 +127,19 @@ data class CaptureClause(
      */
     val effectiveRemindAt: Long?
         get() = when {
-            dateEdited && dueAt == null -> null
+            dateEdited && (dueAt == null || dueDateOnly) -> null
             dateEdited -> remindAt ?: (if (intent == AgentIntent.REMINDER) dueAt else null)
             else -> remindAt ?: plan.reply.proposedRemindAt
         }
 
     /**
-     * A calendar clause whose start the parent explicitly cleared — an
-     * event cannot exist without a start, so the clause stays non-writable
-     * until the parent enters a date or drops it. Never silently reused.
+     * A calendar clause whose start the parent explicitly cleared or left
+     * as a bare date — an event cannot exist without a start time, so the
+     * clause stays non-writable until the parent enters a timed date or
+     * drops it. Never silently reused or invented.
      */
     val calendarMissingStart: Boolean
-        get() = intent == AgentIntent.CALENDAR && dateEdited && effectiveDueAt == null
+        get() = intent == AgentIntent.CALENDAR && dateEdited && (effectiveDueAt == null || dueDateOnly)
 
     /** Writable = kept + saveable + resolved out of the confirm bucket. */
     val writable: Boolean

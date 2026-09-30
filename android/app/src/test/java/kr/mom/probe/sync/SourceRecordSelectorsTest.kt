@@ -27,6 +27,26 @@ class SourceRecordSelectorsTest {
         assertEquals(listOf("현장체험학습"), agenda.map { it.title })
     }
 
+    @Test fun attachmentOnlyInformationalEventDateDoesNotInventAgenda() {
+        // An attachment-only notice whose title carries an event date is
+        // still only a link — it stays reviewable as evidence but must not
+        // invent an agenda entry until body/attachment text is verified.
+        val record = sourceRecord(
+            "전학년 2026. 9. 16. 학부모 공개수업 행사",
+            audience = SourceAudienceFact(NoticeApplicability.APPLIES, SchoolLevel.ELEMENTARY, 2, 2, evidence = SourceEvidence("grade", "초등 2학년")),
+            dates = listOf(SourceDateFact(NoticeDateRole.EVENT, "2026. 9. 16.", "2026-09-16")),
+            contentState = NoticeContentState.ATTACHMENT_MISSING,
+            obligation = NoticeObligation.INFORMATIONAL,
+            attachments = listOf(SourceAttachment("안내문.hwpx", "https://snjj-e.goesn.kr/file.hwpx", "application/hwpml", AttachmentFetchState.LINK_ONLY)),
+            issues = listOf(SourceIssue(SourceIssueCode.UNSUPPORTED_ATTACHMENT, "첨부 본문은 아직 읽지 않았어요.")),
+        )
+
+        val agenda = SourceRecordSelectors.agenda(listOf(record), ChildNoticeProfile(2, SchoolLevel.ELEMENTARY), now, 7)
+
+        assertEquals(NoticeContentState.ATTACHMENT_MISSING, record.sourceMetadata?.contentState)
+        assertEquals(emptyList<SourceAgendaItem>(), agenda)
+    }
+
     @Test fun hwpOnlyNoticeRemainsStoredButDoesNotInventAgenda() {
         val record = sourceRecord(
             "첨부 안내",

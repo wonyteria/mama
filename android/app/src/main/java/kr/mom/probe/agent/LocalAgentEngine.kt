@@ -254,21 +254,53 @@ class LocalAgentEngine(
 
     /**
      * Deterministic conservative clause splitter. Splits on sentence-ending
-     * punctuation and newlines, on commas that join clauses, and on
-     * standalone conjunction words at a word boundary. Never merges,
-     * reorders, or rewrites the spoken text — a fragment stays a fragment
-     * and lands in memo/review rather than being turned into an action.
+     * punctuation and newlines, on standalone conjunction words at a word
+     * boundary, and on commas only when both sides carry their own action —
+     * "내일 도시락, 물통 챙겨줘" is a shared object list, not two clauses.
+     * Never merges, reorders, or rewrites the spoken text — a fragment stays
+     * a fragment and lands in memo/review rather than being turned into an
+     * action.
      */
     internal fun splitClauses(text: String): List<String> {
         // Hard boundaries first: sentence-ending punctuation and line breaks.
-        // Then soft joins: a comma, or a standalone conjunction token at a
-        // word boundary ("그리고", "또한", "그 다음", or bare "또" between
-        // spaces — never inside a word like 또박또박).
+        // Then conditional comma joins, then standalone conjunction tokens
+        // ("그리고", "또한", "그 다음", or bare "또" between spaces — never
+        // inside a word like 또박또박).
         return text.split(hardBoundary)
-            .flatMap { it.split(softJoin) }
+            .flatMap(::splitOnActionCommas)
+            .flatMap { it.split(conjunctionJoin) }
             .map { it.trim().trim(',', '，', '、') }
             .filter { it.isNotBlank() }
     }
+
+    /**
+     * A comma splits only when it joins two independently clause-like
+     * fragments — each side must carry its own action or obligation verb.
+     * Otherwise the comma is a shared-object list ("도시락, 물통 챙겨줘")
+     * and splitting it would orphan the left items from their verb and date.
+     */
+    private fun splitOnActionCommas(segment: String): List<String> {
+        val out = mutableListOf<String>()
+        var start = 0
+        for (match in clauseComma.findAll(segment)) {
+            val left = segment.substring(start, match.range.first).trim()
+            val right = segment.substring(match.range.last + 1).trim()
+            if (looksLikeActionClause(left) && looksLikeActionClause(right)) {
+                out += segment.substring(start, match.range.first)
+                start = match.range.last + 1
+            }
+        }
+        out += segment.substring(start)
+        return out
+    }
+
+    private fun looksLikeActionClause(fragment: String): Boolean =
+        fragment.isNotBlank() && (
+            taskCommand.containsMatchIn(fragment) ||
+                obligationMarker.containsMatchIn(fragment) ||
+                shoppingMarker.containsMatchIn(fragment) ||
+                questionTail.containsMatchIn(fragment)
+            )
 
     private fun plan(
         transcript: String,
@@ -541,8 +573,9 @@ class LocalAgentEngine(
         private const val MAX_PROPOSED_TASK_LENGTH = 280
         private val whitespace = Regex("\\s+")
         private val hardBoundary = Regex("[.!?…。\\n]+")
-        private val softJoin = Regex(
-            "[,，、]|(?:^|\\s)(?:그리고|또한|그\\s*다음(?:에)?|또)\\s+",
+        private val clauseComma = Regex("[,，、]")
+        private val conjunctionJoin = Regex(
+            "(?:^|\\s)(?:그리고|또한|그\\s*다음(?:에)?|또)\\s+",
         )
         private val taskCommand = Regex("^(.+?)\\s*(챙겨\\s*줘|기억해\\s*줘|추가해\\s*줘|알려\\s*줘)[.!?~\\s]*$")
         private val relativeCommandDate = Regex("(오늘|내일|모레)(?:\\s*(오전|오후)?\\s*(\\d{1,2})(?::(\\d{2}))?\\s*시)?")
@@ -573,24 +606,41 @@ class LocalAgentEngine(
          * `M월 d일 [오전/오후 h시[mm분]]`, or `오늘/내일/모레 [오전/오후 h시[mm분]]`.
          * Returns null on blank or unparseable input — never guesses.
          */
+        /**
+         * A parsed date edit. `hasTime=false` means the parent named a day
+         * but no hour — the app never invents one. `millis` then anchors the
+         * day's end (23:59:59 local) so a date-only task stays on that day
+         * and cannot turn overdue mid-morning; writers must suppress any
+         * reminder when `hasTime` is false.
+         */
+        data class EditableDate(val millis: Long, val hasTime: Boolean)
+
         fun parseEditableDateTime(
             input: String,
             nowMillis: Long = System.currentTimeMillis(),
             zoneId: ZoneId = ZoneId.of("Asia/Seoul"),
-        ): Long? {
+        ): EditableDate? {
             val text = input.trim().replace(whitespace, " ")
             if (text.isEmpty()) return null
-            fun atTime(year: Int, month: Int, day: Int, meridiem: String?, hour: Int?, minute: Int?): Long? {
-                val h = when {
-                    hour == null -> 9 // undated-time default: morning, shown as date-only
-                    meridiem == "오전" -> if (hour == 12) 0 else hour
-                    meridiem == "오후" -> if (hour == 12) 12 else hour + 12
+            fun atTime(year: Int, month: Int, day: Int, meridiem: String?, hour: Int?, minute: Int?): EditableDate? {
+                // A date-only edit anchors the end of that day — it is the
+                // honest "시간 없음" representation: the task belongs to the
+                // date and never becomes overdue at an invented morning time.
+                if (hour == null) {
+                    return runCatching {
+                        LocalDate.of(year, month, day).atTime(LocalTime.of(23, 59, 59))
+                            .atZone(zoneId).toInstant().toEpochMilli()
+                    }.map { EditableDate(it, hasTime = false) }.getOrNull()
+                }
+                val h = when (meridiem) {
+                    "오전" -> if (hour == 12) 0 else hour
+                    "오후" -> if (hour == 12) 12 else hour + 12
                     else -> hour
                 }
                 return runCatching {
                     LocalDate.of(year, month, day).atTime(LocalTime.of(h, minute ?: 0))
                         .atZone(zoneId).toInstant().toEpochMilli()
-                }.getOrNull()
+                }.map { EditableDate(it, hasTime = true) }.getOrNull()
             }
             isoDate.matchEntire(text)?.let { m ->
                 return atTime(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt(),

@@ -37,6 +37,51 @@ class CaptureClassificationTest {
         rawHash = "hash-$postedAt",
     )
 
+    @Test fun `comma joined object list stays one coherent clause`() {
+        // "내일 도시락, 물통 챙겨줘" — the comma joins a shared object list,
+        // not two clauses. Splitting would orphan "내일 도시락" into a memo
+        // fragment that loses the verb and the date.
+        val batch = engine.captureBatch("내일 도시락, 물통 챙겨줘", context(), "cap-obj")
+
+        assertEquals(1, batch.clauses.size)
+        val clause = batch.clauses.single()
+        assertEquals(AgentIntent.TASK, clause.intent)
+        assertTrue(clause.transcript.contains("도시락"))
+        assertTrue(clause.transcript.contains("물통"))
+        assertFalse(batch.clauses.any { it.intent == AgentIntent.MEMO })
+    }
+
+    @Test fun `comma splits only when both sides carry their own action`() {
+        // "내일 물통 챙겨줘, 모레 체육복 사야 돼" — each side has its own
+        // verb and its own date, so two clauses is honest.
+        val batch = engine.captureBatch("내일 물통 챙겨줘, 모레 체육복 사야 돼", context(), "cap-two")
+
+        assertEquals(2, batch.clauses.size)
+        assertTrue(batch.clauses[0].transcript.contains("물통"))
+        assertTrue(batch.clauses[1].transcript.contains("체육복"))
+    }
+
+    @Test fun `date only edit never invents a morning time`() {
+        // "모레" carries a date, not a time — the parse must say so instead
+        // of silently landing on 09:00. Date-only is stored as that day's
+        // end-of-day boundary so a task never turns overdue mid-morning.
+        val parsed = LocalAgentEngine.parseEditableDateTime("모레", fixedNow)!!
+
+        assertFalse(parsed.hasTime)
+        val local = java.time.Instant.ofEpochMilli(parsed.millis)
+            .atZone(java.time.ZoneId.of("Asia/Seoul"))
+        assertEquals(23, local.hour)
+        assertEquals(59, local.minute)
+    }
+
+    @Test fun `time bearing edit keeps the explicit time`() {
+        val parsed = LocalAgentEngine.parseEditableDateTime("모레 오후 3시", fixedNow)!!
+        assertTrue(parsed.hasTime)
+        val local = java.time.Instant.ofEpochMilli(parsed.millis)
+            .atZone(java.time.ZoneId.of("Asia/Seoul"))
+        assertEquals(15, local.hour)
+    }
+
     @Test fun `obligation statement without command verb becomes a reviewable task candidate`() {
         val plan = engine.capture("금요일까지 체육복 사야 돼", context())
 

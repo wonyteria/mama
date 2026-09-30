@@ -180,6 +180,7 @@ internal fun calendarPayloadFor(clause: CaptureClause): SchedulePayload? {
     val title = (clause.action?.ifBlank { null } ?: clause.plan.reply.proposedTask
         ?: base.title).take(120)
     val start = when {
+        clause.dateEdited && clause.dueDateOnly -> return null
         clause.dateEdited -> clause.dueAt ?: return null
         else -> clause.dueAt ?: base.startMillis
     }

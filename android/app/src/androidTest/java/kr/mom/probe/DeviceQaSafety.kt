@@ -101,6 +101,12 @@ object DeviceQaSafety {
         if (!restore.modified) return
         val component = ComponentName(context, ProbeNotificationListener::class.java).flattenToString()
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        // `allow_listener` records a separate policy approval — the system
+        // re-adds an approved component to the enabled list, so the grant
+        // must be revoked before the verbatim value is written back.
+        runCatching {
+            automation.executeShellCommand("cmd notification disallow_listener $component").close()
+        }
         if (restore.originalEnabled.isBlank()) {
             automation.executeShellCommand("settings delete secure enabled_notification_listeners").close()
         } else {

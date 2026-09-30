@@ -276,11 +276,12 @@ class CaptureWriteCoordinatorTest {
         dateEdited: Boolean = false,
         dueAt: Long? = null,
         remindAt: Long? = null,
+        dueDateOnly: Boolean = false,
     ): CaptureClause {
         val base = clause(index, intent)
         return base.copy(
             dateInput = dateInput, dateEdited = dateEdited,
-            dueAt = dueAt, remindAt = remindAt,
+            dueAt = dueAt, remindAt = remindAt, dueDateOnly = dueDateOnly,
             plan = base.plan.copy(
                 reply = base.plan.reply.copy(
                     proposedDueAt = proposedDueAt, proposedRemindAt = proposedRemindAt,
@@ -330,6 +331,32 @@ class CaptureWriteCoordinatorTest {
         )
         assertEquals(1_900_000_000_000L, spec.dueAt)
         assertEquals(null, spec.remindAt)
+    }
+
+    @Test fun `date only edit stores the day boundary and no hidden reminder`() {
+        // "모레" — a date, not a time. The write keeps the date (end-of-day)
+        // but never schedules a reminder off an invented 09:00.
+        val endOfDay = 1_899_999_999_000L
+        val clause = datedClause(
+            0, intent = AgentIntent.REMINDER,
+            proposedDueAt = 1_800_000_000_000L, proposedRemindAt = 1_800_000_000_000L,
+            dateInput = "모레", dateEdited = true, dueAt = endOfDay, dueDateOnly = true,
+        )
+        val spec = taskWriteSpecFor(clause)
+        assertEquals(endOfDay, spec.dueAt)
+        assertEquals(null, spec.remindAt)
+    }
+
+    @Test fun `date only edit on a calendar clause cannot invent an event start`() {
+        // An event needs a real start time — a date-only edit stays
+        // needs-review instead of manufacturing one, and the payload
+        // builder fails closed.
+        val clause = calendarClause(0).copy(
+            dateEdited = true, dueAt = 1_899_999_999_000L, dueDateOnly = true,
+        )
+        assertFalse(clause.writable)
+        assertTrue(clause.needsReview)
+        assertNull(calendarPayloadFor(clause))
     }
 
     @Test fun `explicitly blank task date persists null and clears the reminder`() {

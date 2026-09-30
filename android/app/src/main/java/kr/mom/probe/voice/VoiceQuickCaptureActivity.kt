@@ -443,6 +443,12 @@ private fun formatDue(millis: Long): String =
         "${it.monthValue}월 ${it.dayOfMonth}일 %02d:%02d".format(it.hour, it.minute)
     }
 
+/** A date-only edit shows the day alone — the app never displays a time it invented. */
+private fun formatDueDate(millis: Long): String =
+    java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.of("Asia/Seoul")).let {
+        "${it.monthValue}월 ${it.dayOfMonth}일"
+    }
+
 @Composable
 private fun ClauseCard(clause: CaptureClause, editable: Boolean, cb: ClauseCallbacks) {
     val i = clause.index
@@ -510,7 +516,9 @@ private fun ClauseCard(clause: CaptureClause, editable: Boolean, cb: ClauseCallb
                     // the proposal. A cleared date shows blank — never the
                     // stale proposed date the parent just removed.
                     value = clause.dateInput
-                        ?: clause.effectiveDueAt?.let(::formatDue).orEmpty(),
+                        ?: clause.effectiveDueAt?.let {
+                            if (clause.dueDateOnly) formatDueDate(it) else formatDue(it)
+                        }.orEmpty(),
                     onValueChange = { cb.date(i, it) },
                     tag = "clause-date-$i",
                     style = MaterialTheme.typography.bodyMedium.copy(

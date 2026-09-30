@@ -186,7 +186,7 @@ class VoiceCaptureController(
         editClause(index) {
             it.copy(
                 dueAt = dueAt, remindAt = remindAt,
-                dateEdited = true, dateParseFailed = false,
+                dateEdited = true, dateParseFailed = false, dueDateOnly = false,
             )
         }
 
@@ -204,8 +204,9 @@ class VoiceCaptureController(
                 clause.copy(dateInput = rawInput, dateEdited = true, dateParseFailed = true)
             } else {
                 clause.copy(
-                    dueAt = parsed, dateInput = rawInput,
+                    dueAt = parsed?.millis, dateInput = rawInput,
                     dateEdited = true, dateParseFailed = false,
+                    dueDateOnly = parsed?.let { !it.hasTime } ?: false,
                 )
             }
         }
