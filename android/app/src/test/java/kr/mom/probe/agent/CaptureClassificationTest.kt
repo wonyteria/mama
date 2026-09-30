@@ -61,23 +61,25 @@ class CaptureClassificationTest {
         assertTrue(batch.clauses[1].transcript.contains("체육복"))
     }
 
-    @Test fun `date only edit never invents a morning time`() {
-        // "모레" carries a date, not a time — the parse must say so instead
-        // of silently landing on 09:00. Date-only is stored as that day's
-        // end-of-day boundary so a task never turns overdue mid-morning.
+    @Test fun `date only edit keeps the day and invents no time`() {
+        // "모레" carries a date, not a time — no epoch millis may be
+        // manufactured. The day itself is preserved separately as an
+        // ISO date.
         val parsed = LocalAgentEngine.parseEditableDateTime("모레", fixedNow)!!
 
-        assertFalse(parsed.hasTime)
-        val local = java.time.Instant.ofEpochMilli(parsed.millis)
-            .atZone(java.time.ZoneId.of("Asia/Seoul"))
-        assertEquals(23, local.hour)
-        assertEquals(59, local.minute)
+        assertNull(parsed.millis)
+        assertEquals(
+            java.time.Instant.ofEpochMilli(fixedNow)
+                .atZone(java.time.ZoneId.of("Asia/Seoul"))
+                .toLocalDate().plusDays(2).toString(),
+            parsed.dateIso,
+        )
     }
 
     @Test fun `time bearing edit keeps the explicit time`() {
         val parsed = LocalAgentEngine.parseEditableDateTime("모레 오후 3시", fixedNow)!!
-        assertTrue(parsed.hasTime)
-        val local = java.time.Instant.ofEpochMilli(parsed.millis)
+        assertNull(parsed.dateIso)
+        val local = java.time.Instant.ofEpochMilli(parsed.millis!!)
             .atZone(java.time.ZoneId.of("Asia/Seoul"))
         assertEquals(15, local.hour)
     }

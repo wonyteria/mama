@@ -276,12 +276,12 @@ class CaptureWriteCoordinatorTest {
         dateEdited: Boolean = false,
         dueAt: Long? = null,
         remindAt: Long? = null,
-        dueDateOnly: Boolean = false,
+        dueDateIso: String? = null,
     ): CaptureClause {
         val base = clause(index, intent)
         return base.copy(
             dateInput = dateInput, dateEdited = dateEdited,
-            dueAt = dueAt, remindAt = remindAt, dueDateOnly = dueDateOnly,
+            dueAt = dueAt, remindAt = remindAt, dueDateIso = dueDateIso,
             plan = base.plan.copy(
                 reply = base.plan.reply.copy(
                     proposedDueAt = proposedDueAt, proposedRemindAt = proposedRemindAt,
@@ -333,18 +333,18 @@ class CaptureWriteCoordinatorTest {
         assertEquals(null, spec.remindAt)
     }
 
-    @Test fun `date only edit stores the day boundary and no hidden reminder`() {
-        // "모레" — a date, not a time. The write keeps the date (end-of-day)
-        // but never schedules a reminder off an invented 09:00.
-        val endOfDay = 1_899_999_999_000L
+    @Test fun `date only edit keeps due and remind null and preserves the day`() {
+        // "모레" — a date, not a time. The write keeps the chosen day in
+        // its own field and never manufactures a timestamp or a reminder.
         val clause = datedClause(
             0, intent = AgentIntent.REMINDER,
             proposedDueAt = 1_800_000_000_000L, proposedRemindAt = 1_800_000_000_000L,
-            dateInput = "모레", dateEdited = true, dueAt = endOfDay, dueDateOnly = true,
+            dateInput = "모레", dateEdited = true, dueDateIso = "2027-01-28",
         )
         val spec = taskWriteSpecFor(clause)
-        assertEquals(endOfDay, spec.dueAt)
+        assertEquals(null, spec.dueAt)
         assertEquals(null, spec.remindAt)
+        assertEquals("2027-01-28", spec.dueDateIso)
     }
 
     @Test fun `date only edit on a calendar clause cannot invent an event start`() {
@@ -352,7 +352,7 @@ class CaptureWriteCoordinatorTest {
         // needs-review instead of manufacturing one, and the payload
         // builder fails closed.
         val clause = calendarClause(0).copy(
-            dateEdited = true, dueAt = 1_899_999_999_000L, dueDateOnly = true,
+            dateEdited = true, dueAt = null, dueDateIso = "2027-01-28",
         )
         assertFalse(clause.writable)
         assertTrue(clause.needsReview)

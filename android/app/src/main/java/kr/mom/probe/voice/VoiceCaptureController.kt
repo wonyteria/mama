@@ -185,8 +185,8 @@ class VoiceCaptureController(
     fun setClauseTimes(index: Int, dueAt: Long?, remindAt: Long?) =
         editClause(index) {
             it.copy(
-                dueAt = dueAt, remindAt = remindAt,
-                dateEdited = true, dateParseFailed = false, dueDateOnly = false,
+                dueAt = dueAt, remindAt = remindAt, dueDateIso = null,
+                dateEdited = true, dateParseFailed = false,
             )
         }
 
@@ -206,7 +206,7 @@ class VoiceCaptureController(
                 clause.copy(
                     dueAt = parsed?.millis, dateInput = rawInput,
                     dateEdited = true, dateParseFailed = false,
-                    dueDateOnly = parsed?.let { !it.hasTime } ?: false,
+                    dueDateIso = parsed?.dateIso,
                 )
             }
         }

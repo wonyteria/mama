@@ -111,6 +111,7 @@ class LocalVoiceCaptureSaver(
                 sourceNotificationId = key,
                 dueAt = spec.dueAt,
                 remindAt = spec.remindAt,
+                dueDate = spec.dueDateIso,
                 sourceKind = kr.mom.probe.task.AssistantTaskSource.USER_LOCAL,
                 actionKind = "voice",
                 evidenceText = spec.evidenceText,
@@ -151,6 +152,8 @@ internal data class TaskWriteSpec(
     val text: String,
     val dueAt: Long?,
     val remindAt: Long?,
+    /** A confirmed date without a time — ISO `YYYY-MM-DD`, never millis. */
+    val dueDateIso: String?,
     val evidenceText: String,
 )
 
@@ -161,6 +164,7 @@ internal fun taskWriteSpecFor(clause: CaptureClause): TaskWriteSpec {
         text = text,
         dueAt = clause.effectiveDueAt,
         remindAt = clause.effectiveRemindAt,
+        dueDateIso = clause.dueDateIso.takeIf { clause.effectiveDueAt == null },
         evidenceText = "음성 입력: ${clause.transcript.take(300)}",
     )
 }
@@ -180,7 +184,6 @@ internal fun calendarPayloadFor(clause: CaptureClause): SchedulePayload? {
     val title = (clause.action?.ifBlank { null } ?: clause.plan.reply.proposedTask
         ?: base.title).take(120)
     val start = when {
-        clause.dateEdited && clause.dueDateOnly -> return null
         clause.dateEdited -> clause.dueAt ?: return null
         else -> clause.dueAt ?: base.startMillis
     }

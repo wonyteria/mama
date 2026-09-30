@@ -5,8 +5,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TodoSelectorsTest {
-    private fun task(id: String, completed: Boolean = false, dueAt: Long? = null) =
-        AssistantTask(id, "x", completed, 1L, dueAt = dueAt)
+    private fun task(
+        id: String,
+        completed: Boolean = false,
+        dueAt: Long? = null,
+        dueDate: String? = null,
+    ) = AssistantTask(id, "x", completed, 1L, dueAt = dueAt, dueDate = dueDate)
 
     @Test fun sameDayPastDeadlineCountsAsOverdueNotDueSoon() {
         val due = 100_000L
@@ -15,6 +19,33 @@ class TodoSelectorsTest {
 
         assertEquals(listOf("t1"), TodoSelectors.overdue(tasks, now).map { it.id })
         assertTrue(TodoSelectors.dueSoon(tasks, now).isEmpty())
+    }
+
+    @Test fun dateOnlyTaskIsNeverOverdueInsideItsDay() {
+        // A bare date carries no hour — neither 09:01 nor 23:59 inside the
+        // chosen day may classify the task as overdue.
+        val zone = java.time.ZoneId.of("Asia/Seoul")
+        fun at(day: Int, hour: Int, minute: Int) = java.time.LocalDateTime
+            .of(2027, 1, day, hour, minute).atZone(zone).toInstant().toEpochMilli()
+        val dateOnly = task("t1", dueDate = "2027-01-28")
+
+        assertTrue(TodoSelectors.overdue(listOf(dateOnly), at(28, 9, 1)).isEmpty())
+        assertTrue(TodoSelectors.overdue(listOf(dateOnly), at(28, 23, 59)).isEmpty())
+        // Date semantics still surface the task: it is today's work, shown
+        // with an honest "오늘" label — not dumped into the dateless bucket.
+        assertEquals(listOf("t1"), TodoSelectors.dueSoon(listOf(dateOnly), at(28, 23, 59)).map { it.id })
+        assertTrue(TodoSelectors.undated(listOf(dateOnly)).isEmpty())
+        assertEquals("오늘", TodoSelectors.dueLabel(dateOnly, at(28, 23, 59)))
+    }
+
+    @Test fun dateOnlyTaskTurnsOverdueOnlyAfterItsDayHasPassed() {
+        val zone = java.time.ZoneId.of("Asia/Seoul")
+        val nextMorning = java.time.LocalDateTime.of(2027, 1, 29, 0, 1)
+            .atZone(zone).toInstant().toEpochMilli()
+        val dateOnly = task("t1", dueDate = "2027-01-28")
+
+        assertEquals(listOf("t1"), TodoSelectors.overdue(listOf(dateOnly), nextMorning).map { it.id })
+        assertEquals("기한 지남", TodoSelectors.dueLabel(dateOnly, nextMorning))
     }
 
     @Test fun headlineCountsOpenTasksAboveEveryOtherState() {

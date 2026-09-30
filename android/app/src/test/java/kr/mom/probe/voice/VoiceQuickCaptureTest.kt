@@ -38,6 +38,8 @@ import kr.mom.probe.agent.CapturePlan
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -935,6 +937,29 @@ class VoiceCaptureScreenLayoutTest {
                     "${it.monthValue}월 ${it.dayOfMonth}일 %02d:%02d".format(it.hour, it.minute)
                 },
         )
+    }
+
+    @Test fun `date only edit shows the chosen day and says no time`() {
+        // "모레" names a day, not an hour. The preview must show the chosen
+        // date with an explicit "시간 없음" — never an invented clock time —
+        // and the write seam carries the same shape.
+        val driven = driveToDone(batchOf(
+            CaptureClause(0, "모레 물티슈 챙겨줘", planOf("모레 물티슈 챙겨줘")),
+        ))
+        compose.onNodeWithTag("clause-date-0").performTextReplacement("모레")
+        compose.waitForIdle()
+
+        val clause = driven.controller.batch!!.clauses[0]
+        assertNull(clause.dueAt)
+        assertNull(clause.effectiveDueAt)
+        assertNotNull(clause.dueDateIso)
+        compose.onNodeWithTag("clause-dateonly-0").assertIsDisplayed()
+        compose.onNodeWithText("시간 없음", substring = true).assertIsDisplayed()
+
+        val spec = taskWriteSpecFor(clause)
+        assertNull(spec.dueAt)
+        assertNull(spec.remindAt)
+        assertEquals(clause.dueDateIso, spec.dueDateIso)
     }
 
     @Test fun `drop hides a clause from the batch and keep restores it`() {

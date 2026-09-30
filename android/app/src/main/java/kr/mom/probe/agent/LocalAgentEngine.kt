@@ -607,13 +607,13 @@ class LocalAgentEngine(
          * Returns null on blank or unparseable input — never guesses.
          */
         /**
-         * A parsed date edit. `hasTime=false` means the parent named a day
-         * but no hour — the app never invents one. `millis` then anchors the
-         * day's end (23:59:59 local) so a date-only task stays on that day
-         * and cannot turn overdue mid-morning; writers must suppress any
-         * reminder when `hasTime` is false.
+         * A parsed date edit. The app never invents a time: a date-only
+         * edit ("모레", "10월 3일") carries `millis == null` and the chosen
+         * day in `dateIso` (ISO `YYYY-MM-DD`); only an explicit time
+         * produces epoch millis. Reminders and calendar writes require
+         * `millis` — a date-only edit supplies neither.
          */
-        data class EditableDate(val millis: Long, val hasTime: Boolean)
+        data class EditableDate(val millis: Long?, val dateIso: String?)
 
         fun parseEditableDateTime(
             input: String,
@@ -623,14 +623,11 @@ class LocalAgentEngine(
             val text = input.trim().replace(whitespace, " ")
             if (text.isEmpty()) return null
             fun atTime(year: Int, month: Int, day: Int, meridiem: String?, hour: Int?, minute: Int?): EditableDate? {
-                // A date-only edit anchors the end of that day — it is the
-                // honest "시간 없음" representation: the task belongs to the
-                // date and never becomes overdue at an invented morning time.
+                // Date-only: preserve the day itself as an ISO date with no
+                // time attached — never a manufactured hour.
                 if (hour == null) {
-                    return runCatching {
-                        LocalDate.of(year, month, day).atTime(LocalTime.of(23, 59, 59))
-                            .atZone(zoneId).toInstant().toEpochMilli()
-                    }.map { EditableDate(it, hasTime = false) }.getOrNull()
+                    return runCatching { LocalDate.of(year, month, day) }
+                        .map { EditableDate(millis = null, dateIso = it.toString()) }.getOrNull()
                 }
                 val h = when (meridiem) {
                     "오전" -> if (hour == 12) 0 else hour
@@ -640,7 +637,7 @@ class LocalAgentEngine(
                 return runCatching {
                     LocalDate.of(year, month, day).atTime(LocalTime.of(h, minute ?: 0))
                         .atZone(zoneId).toInstant().toEpochMilli()
-                }.map { EditableDate(it, hasTime = true) }.getOrNull()
+                }.map { EditableDate(millis = it, dateIso = null) }.getOrNull()
             }
             isoDate.matchEntire(text)?.let { m ->
                 return atTime(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt(),

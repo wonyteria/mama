@@ -16,23 +16,43 @@ object TodoSelectors {
 
     fun openCount(tasks: List<AssistantTask>): Int = open(tasks).size
 
+    /**
+     * A confirmed date without a time — ISO `YYYY-MM-DD`, never millis.
+     * Date semantics apply to the whole day: such a task is overdue only
+     * once its day has fully passed, and never at an hour inside it.
+     */
+    private fun dueDateOf(task: AssistantTask): java.time.LocalDate? =
+        task.dueDate?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+
     fun overdue(tasks: List<AssistantTask>, now: Long = System.currentTimeMillis()): List<AssistantTask> {
         val today = today(now)
-        return open(tasks).filter { it.dueAt != null && (dateOf(it.dueAt).isBefore(today) || it.dueAt <= now) }
-            .sortedBy { it.dueAt }
+        return open(tasks).filter {
+            when {
+                it.dueAt != null -> dateOf(it.dueAt).isBefore(today) || it.dueAt <= now
+                else -> dueDateOf(it)?.isBefore(today) == true
+            }
+        }.sortedBy { it.dueAt ?: Long.MAX_VALUE }
     }
 
     fun dueSoon(tasks: List<AssistantTask>, now: Long = System.currentTimeMillis(), daysAhead: Long = 1): List<AssistantTask> {
         val today = today(now)
         val end = today.plusDays(daysAhead)
-        return open(tasks).filter { it.dueAt != null && it.dueAt > now && !dateOf(it.dueAt).isAfter(end) }
-            .sortedBy { it.dueAt }
+        return open(tasks).filter {
+            when {
+                it.dueAt != null -> it.dueAt > now && !dateOf(it.dueAt).isAfter(end)
+                else -> dueDateOf(it)?.let { d -> !d.isBefore(today) && !d.isAfter(end) } == true
+            }
+        }.sortedBy { it.dueAt ?: Long.MAX_VALUE }
     }
 
     fun later(tasks: List<AssistantTask>, now: Long = System.currentTimeMillis(), daysAhead: Long = 1): List<AssistantTask> {
         val end = today(now).plusDays(daysAhead)
-        return open(tasks).filter { it.dueAt != null && dateOf(it.dueAt).isAfter(end) }
-            .sortedBy { it.dueAt }
+        return open(tasks).filter {
+            when {
+                it.dueAt != null -> dateOf(it.dueAt).isAfter(end)
+                else -> dueDateOf(it)?.isAfter(end) == true
+            }
+        }.sortedBy { it.dueAt ?: Long.MAX_VALUE }
     }
 
     /** Dated work due after tomorrow but within this week (today + 7 days). */
@@ -40,16 +60,17 @@ object TodoSelectors {
         val today = today(now)
         val end = today.plusDays(7)
         return open(tasks).filter {
-            it.dueAt != null && dateOf(it.dueAt).let { d -> d.isAfter(today.plusDays(1)) && !d.isAfter(end) }
-        }.sortedBy { it.dueAt }
+            val due = it.dueAt?.let { m -> dateOf(m) } ?: dueDateOf(it) ?: return@filter false
+            due.isAfter(today.plusDays(1)) && !due.isAfter(end)
+        }.sortedBy { it.dueAt ?: Long.MAX_VALUE }
     }
 
     fun undated(tasks: List<AssistantTask>): List<AssistantTask> =
-        open(tasks).filter { it.dueAt == null }.sortedByDescending { it.createdAt }
+        open(tasks).filter { it.dueAt == null && it.dueDate == null }.sortedByDescending { it.createdAt }
 
-    /** Undated work plus anything flagged for review — Today's last bucket. */
+    /** Truly dateless work plus anything flagged for review — Today's last bucket. */
     fun undatedOrReview(tasks: List<AssistantTask>): List<AssistantTask> =
-        open(tasks).filter { it.dueAt == null || it.needsReview }
+        open(tasks).filter { (it.dueAt == null && it.dueDate == null) || it.needsReview }
             .sortedByDescending { it.createdAt }
 
     fun completed(tasks: List<AssistantTask>): List<AssistantTask> =
@@ -77,8 +98,7 @@ object TodoSelectors {
     }
 
     fun dueLabel(task: AssistantTask, now: Long = System.currentTimeMillis()): String? {
-        val dueAt = task.dueAt ?: return null
-        val due = dateOf(dueAt)
+        val due = task.dueAt?.let(::dateOf) ?: dueDateOf(task) ?: return null
         val today = today(now)
         return when {
             due.isBefore(today) -> "기한 지남"

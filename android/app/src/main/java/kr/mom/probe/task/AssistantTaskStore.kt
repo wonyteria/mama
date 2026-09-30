@@ -74,6 +74,12 @@ data class AssistantTask(
     val revisionSummary: String? = null,
     /** An ambiguous revision could not confirm the obligation; the last trusted state stays active. */
     val needsReview: Boolean = false,
+    /**
+     * A date the parent confirmed without a time — ISO `YYYY-MM-DD`.
+     * Never a timestamp: `dueAt`/`remindAt` stay null, so the task cannot
+     * be overdue or fire a reminder off an invented hour.
+     */
+    val dueDate: String? = null,
 )
 
 sealed class TaskAlarmSnoozeResult {
@@ -123,6 +129,7 @@ class AssistantTaskStore private constructor(context: Context) {
         sourceNotificationId: String? = null,
         dueAt: Long? = null,
         remindAt: Long? = null,
+        dueDate: String? = null,
         sourceRevisionId: String? = null,
         sourceKind: AssistantTaskSource = if (sourceNotificationId == null) AssistantTaskSource.USER_LOCAL else AssistantTaskSource.USER_CONFIRMED_NOTICE,
         checklist: List<String> = emptyList(),
@@ -164,6 +171,7 @@ class AssistantTaskStore private constructor(context: Context) {
                     sourceRevisionId = sourceRevisionId ?: existing.sourceRevisionId,
                     dueAt = dueAt,
                     remindAt = remindAt,
+                    dueDate = dueDate,
                     reminderOccurrenceId = remindAt?.let { newOccurrenceId() },
                     reminderOccurrenceAt = remindAt,
                     activeAlarmOccurrenceId = null,
@@ -212,6 +220,7 @@ class AssistantTaskStore private constructor(context: Context) {
             sourceLabel = normalizedMetadata(sourceLabel),
             sourceCapturedAt = sourceCapturedAt,
             audienceLabel = normalizedMetadata(audienceLabel),
+            dueDate = dueDate?.takeIf { dueAt == null }?.take(16),
         )
         save(listOf(task) + current)
         return task
@@ -924,6 +933,7 @@ internal fun encodeTask(task: AssistantTask): JSONObject = JSONObject()
     .put("audienceLabel", task.audienceLabel ?: JSONObject.NULL)
     .put("revisionSummary", task.revisionSummary ?: JSONObject.NULL)
     .put("needsReview", task.needsReview)
+    .put("dueDate", task.dueDate ?: JSONObject.NULL)
 
 internal fun decodeTask(item: JSONObject): AssistantTask {
     val sourceNotificationId = item.optionalId("sourceNotificationId") ?: item.optionalId("sourceRecordId")
@@ -967,6 +977,7 @@ internal fun decodeTask(item: JSONObject): AssistantTask {
         item.optionalText("audienceLabel", AssistantTaskStore.MAX_ITEM_TEXT),
         item.optionalText("revisionSummary", AssistantTaskStore.MAX_TEXT),
         item.optBoolean("needsReview", false),
+        item.optionalText("dueDate", 16),
     )
 }
 

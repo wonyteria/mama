@@ -85,11 +85,11 @@ data class CaptureClause(
      */
     val dateEdited: Boolean = false,
     /**
-     * The parent's edit named a day but no hour — "시간 없음". `dueAt`
-     * anchors the day's end so the task stays on that date; reminders are
-     * never scheduled from an invented time.
+     * The parent's edit named a day but no hour — "시간 없음". The chosen
+     * day is preserved as an ISO date (`YYYY-MM-DD`); `dueAt`/`remindAt`
+     * stay null because a bare date is not a time.
      */
-    val dueDateOnly: Boolean = false,
+    val dueDateIso: String? = null,
     /** Editable reminder time; defaults to the plan's proposal. */
     val remindAt: Long? = null,
     /** Editable disposition override; null follows the plan. */
@@ -121,13 +121,14 @@ data class CaptureClause(
     /**
      * The reminder time the parent confirmed — the same tri-state. On an
      * explicit date edit a stale proposed reminder is never reused: an
-     * explicitly cleared date clears the reminder too, and a REMINDER
-     * clause ("알려줘") follows the edited due time since reminding is
-     * the whole intent. Untouched follows the proposal.
+     * explicitly cleared or date-only date has no `dueAt`, so the reminder
+     * is null too — a bare date cannot schedule an alarm. A timed edit on
+     * a REMINDER clause ("알려줘") follows the edited time since reminding
+     * is the whole intent. Untouched follows the proposal.
      */
     val effectiveRemindAt: Long?
         get() = when {
-            dateEdited && (dueAt == null || dueDateOnly) -> null
+            dateEdited && dueAt == null -> null
             dateEdited -> remindAt ?: (if (intent == AgentIntent.REMINDER) dueAt else null)
             else -> remindAt ?: plan.reply.proposedRemindAt
         }
@@ -139,7 +140,7 @@ data class CaptureClause(
      * drops it. Never silently reused or invented.
      */
     val calendarMissingStart: Boolean
-        get() = intent == AgentIntent.CALENDAR && dateEdited && (effectiveDueAt == null || dueDateOnly)
+        get() = intent == AgentIntent.CALENDAR && dateEdited && effectiveDueAt == null
 
     /** Writable = kept + saveable + resolved out of the confirm bucket. */
     val writable: Boolean

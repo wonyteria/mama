@@ -40,6 +40,12 @@ import kr.mom.probe.task.AssistantTaskStore
 import kr.mom.probe.task.TaskActionKind
 import kr.mom.probe.task.TodoSelectors
 
+/** An ISO `YYYY-MM-DD` date — a confirmed day with no invented hour. */
+private fun formatIsoDate(iso: String): String =
+    runCatching { java.time.LocalDate.parse(iso) }
+        .map { "${it.monthValue}월 ${it.dayOfMonth}일" }
+        .getOrDefault(iso)
+
 /** Shared task row used by 오늘 and 할 일. Tapping expands checklist and actions. */
 @Composable
 fun TaskRow(
@@ -90,7 +96,11 @@ fun TaskRow(
                         add(runCatching { TaskActionKind.valueOf(kind.uppercase()).label }.getOrDefault(kind))
                     }
                     task.audienceLabel?.let(::add)
-                    add(task.dueAt?.let { "기한 ${displayTime(it)}" } ?: "날짜 없음")
+                    add(
+                        task.dueAt?.let { "기한 ${displayTime(it)}" }
+                            ?: task.dueDate?.let { "날짜 ${formatIsoDate(it)} · 시간 없음" }
+                            ?: "날짜 없음"
+                    )
                     task.sourceLabel?.let(::add)
                     add(statusLabel)
                 }

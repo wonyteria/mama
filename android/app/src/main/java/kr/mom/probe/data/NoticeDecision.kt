@@ -341,7 +341,7 @@ object NoticeDecisionEngine {
             issues += "주 단위 표현은 정확한 마감일로 확정하지 않았어요."
         }
         if (facts.any { it.role == NoticeDateRole.DUE && !it.hasExplicitTime }) {
-            issues += "시각 없는 날짜는 23:59 마감으로 만들지 않았어요."
+            issues += "시각 없는 날짜에는 시간을 붙이지 않았어요."
         }
         return facts
     }

@@ -443,11 +443,11 @@ private fun formatDue(millis: Long): String =
         "${it.monthValue}월 ${it.dayOfMonth}일 %02d:%02d".format(it.hour, it.minute)
     }
 
-/** A date-only edit shows the day alone — the app never displays a time it invented. */
-private fun formatDueDate(millis: Long): String =
-    java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.of("Asia/Seoul")).let {
-        "${it.monthValue}월 ${it.dayOfMonth}일"
-    }
+/** An ISO `YYYY-MM-DD` date shown to the parent — no invented time attached. */
+internal fun formatIsoDate(iso: String): String =
+    runCatching { java.time.LocalDate.parse(iso) }
+        .map { "${it.monthValue}월 ${it.dayOfMonth}일" }
+        .getOrDefault(iso)
 
 @Composable
 private fun ClauseCard(clause: CaptureClause, editable: Boolean, cb: ClauseCallbacks) {
@@ -516,15 +516,23 @@ private fun ClauseCard(clause: CaptureClause, editable: Boolean, cb: ClauseCallb
                     // the proposal. A cleared date shows blank — never the
                     // stale proposed date the parent just removed.
                     value = clause.dateInput
-                        ?: clause.effectiveDueAt?.let {
-                            if (clause.dueDateOnly) formatDueDate(it) else formatDue(it)
-                        }.orEmpty(),
+                        ?: clause.effectiveDueAt?.let(::formatDue).orEmpty(),
                     onValueChange = { cb.date(i, it) },
                     tag = "clause-date-$i",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         color = if (clause.dateParseFailed) Clay.Error else Clay.Ink,
                     ),
                 )
+                clause.dueDateIso?.let { iso ->
+                    // A bare date carries no hour — say so honestly instead
+                    // of showing a time the app invented.
+                    Text(
+                        "날짜 ${formatIsoDate(iso)} · 시간 없음",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Clay.Muted,
+                        modifier = Modifier.testTag("clause-dateonly-$i"),
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(
                         CaptureDisposition.KEEP_TODAY to "clause-today-$i",

@@ -282,6 +282,22 @@ class AssistantTaskStoreTest {
         assertEquals(1_820_000L, restored.remindAt)
     }
 
+    @Test fun dateOnlyTaskKeepsItsIsoDateThroughStoreEncoding() {
+        // A date the parent confirmed without a time survives persist +
+        // reload as an ISO date — and never gains a manufactured timestamp.
+        val task = AssistantTask("t1", "물통 챙기기", false, 1L, dueDate = "2027-01-28")
+
+        val restored = decodeTask(encodeTask(task))
+
+        assertEquals(task, restored)
+        assertEquals("2027-01-28", restored.dueDate)
+        assertNull(restored.dueAt)
+        assertNull(restored.remindAt)
+        // Records written before the field existed still decode cleanly.
+        val legacy = encodeTask(task).also { it.remove("dueDate") }
+        assertNull(decodeTask(legacy).dueDate)
+    }
+
     @Test fun disjointOfficialIdsWithSameFingerprintProduceSeparateTasks() {
         // Two official documents share institution/title/date/body fingerprint but carry
         // different ext/url ids. The shared fp anchor must not reconcile one onto the other.
